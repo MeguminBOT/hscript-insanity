@@ -266,8 +266,21 @@ class InsanityScriptedClass implements IInsanityType implements ICustomReflectio
 	
 	public function typeCreateInstance(arguments:Array<Dynamic>):Dynamic {
 		if (!initialized) throw 'Type $path is not initialized';
-		
-		var inst:IInsanityScripted = Type.createEmptyInstance(instanceClass);
+
+		// Prefer the REAL native constructor so deep base classes (e.g. FlxState ->
+		// FlxGroup -> FlxBasic, with their signals/arrays) are fully initialized.
+		// createEmptyInstance leaves every native field as uninitialized garbage and
+		// only the macro-reconstructed __constructSuper sets a subset, so the rest
+		// corrupts the instance at runtime. Fall back to createEmptyInstance if the
+		// base class can't be constructed with no arguments.
+		var inst:IInsanityScripted;
+		try {
+			inst = cast Type.createInstance(instanceClass, []);
+			trace('[insanity] typeCreateInstance: createInstance OK for $path (members null? ' + (Reflect.field(inst, 'members') == null) + ')');
+		} catch (e:Dynamic) {
+			trace('[insanity] typeCreateInstance: createInstance FAILED for $path: $e -- falling back to createEmptyInstance');
+			inst = Type.createEmptyInstance(instanceClass);
+		}
 		inst.__construct(this, arguments);
 		return inst;
 	}

@@ -66,8 +66,17 @@ class ScriptedMacro {
 				var constr = type.constructor.get();
 				
 				function mapConstructor(type:ClassType):Expr {
+					// If this class declares no explicit constructor, reconstruct its
+					// SUPERCLASS's instead. Without this the native-init chain breaks at
+					// any intermediate class with no `new` (e.g. MusicBeatState), losing
+					// fields set further up (e.g. FlxGroup.members) -> uninitialized.
+					if (type.constructor == null) {
+						if (type.superClass != null)
+							return mapConstructor(type.superClass.t.get());
+						return macro {};
+					}
 					var constr = type.constructor.get();
-					
+
 					var args = null, ret = null;
 					switch (constr.type) {
 						default:
@@ -233,7 +242,7 @@ class ScriptedMacro {
 					default:
 					case EFunction(_, fun):
 						hasConstructor = true;
-						
+
 						fields.push({
 							pos: pos, meta: [{pos: pos, name: ':privateAccess'}], name: '__constructSuper',
 							kind: FFun({
