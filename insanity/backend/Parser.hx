@@ -843,17 +843,36 @@ class Parser {
 			case "try":
 				var e = parseExpr();
 				ensureToken(TId("catch"));
-				ensure(TPOpen);
-				var vname = getIdent();
-				ensure(TDoubleDot);
-				var t = null;
-				if (allowTypes)
-					t = parseType();
-				else
-					ensureToken(TId("Dynamic"));
-				ensure(TPClose);
-				var ec = parseExpr();
-				mk(ETry(e, vname, t, ec), p1, pmax(ec));
+				// One or more catch clauses: the first fills v/t/ecatch, the rest go into
+				// `extra`, matched in declaration order at runtime (typed multi-catch).
+				function parseCatch():{v:String, t:Null<CType>, expr:Expr} {
+					ensure(TPOpen);
+					var cv = getIdent();
+					var ct:Null<CType> = null;
+					if (maybe(TDoubleDot)) {
+						if (allowTypes)
+							ct = parseType();
+						else
+							ensureToken(TId("Dynamic"));
+					}
+					ensure(TPClose);
+					return {v: cv, t: ct, expr: parseExpr()};
+				}
+				var head = parseCatch();
+				var extra:Array<{v:String, t:Null<CType>, expr:Expr}> = null;
+				while (true) {
+					var tk = token();
+					switch (tk) {
+						case TId("catch"):
+							if (extra == null)
+								extra = [];
+							extra.push(parseCatch());
+						default:
+							push(tk);
+							break;
+					}
+				}
+				mk(ETry(e, head.v, head.t, head.expr, extra), p1, tokenMax);
 			case "switch":
 				var e = parseExpr();
 				var def = null, cases = [];
@@ -1374,6 +1393,45 @@ class Parser {
 		return params;
 	}
 
+	function parseAbstractDecl(name:String, meta:Metadata, params:Array<String>, isEnum:Bool, isPrivate:Bool):ModuleDecl {
+		// `abstract Name(Underlying) from A to B { ... }`. The underlying type and from/to casts
+		// erase (the runtime is dynamic). An enum abstract's members become static constants,
+		// tagged @:enumAbstract so the module exposes them unqualified, like enum constructors.
+		if (maybe(TPOpen)) {
+			parseType();
+			ensure(TPClose);
+		}
+		while (true) {
+			var t = token();
+			switch (t) {
+				case TId("from"), TId("to"):
+					parseType();
+				default:
+					push(t);
+					break;
+			}
+		}
+		var fields = [];
+		ensure(TBrOpen);
+		while (!maybe(TBrClose)) {
+			var f = parseField(true);
+			if (isEnum && !f.access.contains(AStatic))
+				f.access.push(AStatic);
+			fields.push(f);
+		}
+		var m = isEnum ? meta.concat([{name: ':enumAbstract', params: []}]) : meta;
+		return mkd(DClass({
+			name: name,
+			meta: m,
+			params: params,
+			extend: null,
+			implement: [],
+			fields: fields,
+			isPrivate: isPrivate,
+			isExtern: false,
+		}), tokenMin, tokenMax);
+	}
+
 	function parseModuleDecl(?decls:Array<ModuleDecl>, importModule:Bool = false):ModuleDecl {
 		var meta = parseMetadata();
 		var ident = getIdent();
@@ -1571,6 +1629,16 @@ class Parser {
 				if (importModule)
 					error(EImportHx, tokenMin, tokenMax);
 
+				// `enum abstract Name(T) { var A = v; }` -- constants of the underlying type.
+				var enumPeek = token();
+				if (enumPeek.match(TId("abstract"))) {
+					var aName = getIdent();
+					if (!aName.isTypeIdentifier())
+						error(ECustom('Type name should start with an uppercase letter'), tokenMin, tokenMax);
+					return parseAbstractDecl(aName, meta, parseParams(), true, isPrivate);
+				}
+				push(enumPeek);
+
 				var name = getIdent();
 				if (!name.isTypeIdentifier())
 					error(ECustom('Type name should start with an uppercase letter'), tokenMin, tokenMax);
@@ -1598,6 +1666,20 @@ class Parser {
 					constructs: constructs,
 					names: names
 				}), tokenMin, tokenMax);
+			case "abstract":
+				if (importModule)
+					error(EImportHx, tokenMin, tokenMax);
+
+				var name = getIdent();
+				if (!name.isTypeIdentifier())
+					error(ECustom('Type name should start with an uppercase letter'), tokenMin, tokenMax);
+
+				var params = parseParams();
+				var isEnumAbstract = false;
+				for (m in meta)
+					if (m.name == ':enum')
+						isEnumAbstract = true;
+				return parseAbstractDecl(name, meta, params, isEnumAbstract, isPrivate);
 			case "typedef":
 				if (importModule)
 					error(EImportHx, tokenMin, tokenMax);

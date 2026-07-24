@@ -65,7 +65,7 @@ enum ExprDef {
 	EArrayDecl(e:Array<Expr>);
 	ENew(cl:String, params:Array<Expr>);
 	EThrow(e:Expr);
-	ETry(e:Expr, v:String, t:Null<CType>, ecatch:Expr);
+	ETry(e:Expr, v:String, t:Null<CType>, ecatch:Expr, ?extra:Array<{v:String, t:Null<CType>, expr:Expr}>);
 	EObject(fl:Array<{name:String, e:Expr}>);
 	ETernary(cond:Expr, e1:Expr, e2:Expr);
 	ESwitch(e:Expr, cases:Array<{values:Array<Expr>, expr:Expr, ?guard:Expr}>, ?defaultExpr:Expr);

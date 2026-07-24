@@ -137,6 +137,20 @@ class Module {
 
 				for (i => v in e.constructNames())
 					interp.imports.set(v, Mirror.MEnumValue(e, i));
+			} else if (type is InsanityScriptedClass) {
+				// An enum abstract desugars to a class of static constants; expose those
+				// constants unqualified too, the same way enum constructors are.
+				var c:InsanityScriptedClass = cast type;
+				var enumAbstract:Bool = false;
+				for (m in @:privateAccess c.decl.meta)
+					if (m.name == ':enumAbstract')
+						enumAbstract = true;
+
+				if (enumAbstract) {
+					for (field in @:privateAccess c.decl.fields)
+						if (field.access.contains(AStatic))
+							interp.imports.set(field.name, Mirror.MProperty(c, field.name));
+				}
 			}
 		}
 	}

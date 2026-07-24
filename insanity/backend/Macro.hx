@@ -247,8 +247,12 @@ class Macro {
 					}, map(params, convert));
 				case EThrow(e):
 					EThrow(convert(e));
-				case ETry(e, v, t, ec):
-					ETry(convert(e), [{type: convertType(t), name: v, expr: convert(ec)}]);
+				case ETry(e, v, t, ec, extra):
+					var catches = [{type: convertType(t), name: v, expr: convert(ec)}];
+					if (extra != null)
+						for (cc in extra)
+							catches.push({type: convertType(cc.t), name: cc.v, expr: convert(cc.expr)});
+					ETry(convert(e), catches);
 				case EObject(fields):
 					var tf = [];
 					for (f in fields)

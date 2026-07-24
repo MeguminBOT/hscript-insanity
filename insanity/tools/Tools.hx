@@ -86,9 +86,12 @@ class Tools {
 					f(e);
 			case EThrow(e):
 				f(e);
-			case ETry(e, _, _, c):
+			case ETry(e, _, _, c, extra):
 				f(e);
 				f(c);
+				if (extra != null)
+					for (cc in extra)
+						f(cc.expr);
 			case EObject(fl):
 				for (fi in fl)
 					f(fi.e);
@@ -138,7 +141,7 @@ class Tools {
 			case EArrayDecl(el): EArrayDecl([for (e in el) f(e)]);
 			case ENew(cl, el): ENew(cl, [for (e in el) f(e)]);
 			case EThrow(e): EThrow(f(e));
-			case ETry(e, v, t, c): ETry(f(e), v, t, f(c));
+			case ETry(e, v, t, c, extra): ETry(f(e), v, t, f(c), extra == null ? null : [for (cc in extra) {v: cc.v, t: cc.t, expr: f(cc.expr)}]);
 			case EObject(fl): EObject([for (fi in fl) {name: fi.name, e: f(fi.e)}]);
 			case ETernary(c, e1, e2): ETernary(f(c), f(e1), f(e2));
 			case ESwitch(e, cases, def): ESwitch(f(e), [for (c in cases) {values: [for (v in c.values) f(v)], expr: f(c.expr)}], def == null ? null : f(def));

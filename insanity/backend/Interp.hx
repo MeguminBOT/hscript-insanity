@@ -643,6 +643,31 @@ class Interp {
 	}
 
 	/**
+	 * Whether a caught value satisfies a `catch` clause's declared type. Thrown values aren't
+	 * wrapped in `haxe.Exception` here, so `Dynamic`/`Any`/`Exception` (and any unresolvable
+	 * type) are treated as catch-all; a resolvable path is matched with `Std.isOfType`.
+	 */
+	function catchMatches(v:Dynamic, t:Null<CType>):Bool {
+		if (t == null)
+			return true;
+		switch (t) {
+			case CTPath(path, _):
+				var name:String = path[path.length - 1];
+				if (name == 'Dynamic' || name == 'Any' || name == 'Exception')
+					return true;
+				var type:Dynamic = null;
+				try {
+					type = ScriptedTools.resolveType(t, null, this);
+				} catch (_:Dynamic) {}
+				if (type == null)
+					return true;
+				return Std.isOfType(v, type);
+			default:
+				return true;
+		}
+	}
+
+	/**
 	 * Materializes a bare enum constructor `Mirror.MEnumValue`. Re-resolves the enum to its live
 	 * instance first (a cached import can outlive a reloaded module), so a bare `Foo` builds
 	 * against the current type exactly like qualified `Enum.Foo`. A parameterized constructor
@@ -1355,8 +1380,10 @@ class Interp {
 					a.push(expr(e));
 				return cnew(cl, a);
 			case EThrow(e):
-				error(ECustom(Std.string(expr(e))));
-			case ETry(e, n, _, ecatch):
+				// Throw the raw value so a typed `catch` can see its real type. Haxe wraps a
+				// non-exception value in haxe.Exception; the catch handler unwraps it back.
+				throw expr(e);
+			case ETry(e, n, t, ecatch, extra):
 				var old = declared.length;
 				var oldTry = inTry;
 				try {
@@ -1369,15 +1396,28 @@ class Interp {
 					inTry = oldTry;
 					throw err;
 				} catch (err:Dynamic) {
-					// restore vars
 					restore(old);
 					inTry = oldTry;
-					// declare 'v'
-					declared.push({n: n, old: locals.get(n)});
-					locals.set(n, {r: err});
-					var v:Dynamic = expr(ecatch);
-					restore(old);
-					return v;
+					// A thrown non-exception value arrives wrapped in a haxe.ValueException; unwrap
+					// to the original so a typed clause matches its real type and the catch var
+					// binds that value. Real exceptions pass through unchanged.
+					var raw:Dynamic = (err is haxe.ValueException) ? (cast(err, haxe.ValueException)).value : err;
+					// Match the value against each clause in order (typed multi-catch); the first
+					// whose declared type accepts it runs, otherwise the error is rethrown.
+					function runCatch(cn:String, ce:Expr):Dynamic {
+						declared.push({n: cn, old: locals.get(cn)});
+						locals.set(cn, {r: raw});
+						var rv:Dynamic = expr(ce);
+						restore(old);
+						return rv;
+					}
+					if (catchMatches(raw, t))
+						return runCatch(n, ecatch);
+					if (extra != null)
+						for (c in extra)
+							if (catchMatches(raw, c.t))
+								return runCatch(c.v, c.expr);
+					throw err;
 				}
 			case EObject(fl):
 				var o = {};
