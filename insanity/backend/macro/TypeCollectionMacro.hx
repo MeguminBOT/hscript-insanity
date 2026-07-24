@@ -11,9 +11,21 @@ import haxe.macro.TypedExprTools;
 #end
 import insanity.backend.TypeCollection;
 
+/**
+ * Compile-time builder of the global `TypeCollection`. After typing, it records a `TypeInfo` for
+ * every type in the build (serialized into this class's metadata), then emits runtime code that
+ * deserializes it into an indexed `TypeMap`. This is what lets scripts name any compiled type
+ * without extra reflection cost.
+ */
 class TypeCollectionMacro {
+	/** This macro class's own fully-qualified name (used to stash the serialized type table). */
 	static var _name:String = 'insanity.backend.macro.TypeCollectionMacro';
 
+	/**
+	 * Records every build type's info at compile time and emits code to rebuild the indexed map at runtime.
+	 *
+	 * @return An expression evaluating to the populated `TypeMap`.
+	 */
 	public static macro function build() {
 		Context.onAfterTyping(function(types) {
 			var self = TypeTools.getClass(Context.getType(_name));
@@ -59,7 +71,6 @@ class TypeCollectionMacro {
 				map.push(getTypeInfo(type));
 
 			self.meta.add('typed', [macro $v{haxe.Serializer.run(map)}], self.pos);
-			// Context.info('types registered !!', Context.currentPos());
 		});
 
 		return macro {

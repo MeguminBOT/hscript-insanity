@@ -7,33 +7,73 @@ import insanity.backend.Interp;
 import insanity.backend.Expr;
 import insanity.tools.Tools;
 
+/**
+ * A single parsed source unit: one script string compiled into a set of scripted types (classes,
+ * interfaces, enums, typedefs) plus its module-level fields, all sharing one `Interp`.
+ *
+ * The lifecycle is staged so cross-references between modules can resolve: `new` parses,
+ * `init` seeds the interpreter and exposes each type's name, `start` runs the module-level program,
+ * and `startType`/`startTypes` initialize the types themselves. An `Environment` drives those stages
+ * across every module in a world so imports between them line up.
+ */
 class Module {
+	/** Per-type-path saved statics, keyed by type path, used to restore `@:snapshot` fields on reload. */
 	public static var snapshots:Map<String, Map<String, Dynamic>> = [];
 
+	/** The module's short type name. */
 	public var name:String;
+
+	/** Source origin used for error positions (usually the file path). */
 	public var origin:String;
+
+	/** The package segments this module lives in. */
 	public var pack:Array<String>;
+
+	/** Fully-qualified module path (`pack.name`). */
 	public var path(get, never):String;
 
+	/** The parser that produced this module's declarations. */
 	public var parser:Parser = new Parser();
+
+	/** The interpreter that runs this module's program and hosts its variables/imports. */
 	public var interp:Interp = null;
 
+	/** The parsed declarations, in source order. */
 	public var decls:Array<ModuleDecl> = [];
+
+	/** Types declared by this module, keyed by their fully-qualified path. */
 	public var types:Map<String, IInsanityType> = [];
+
+	/** Synthetic host class holding the module's top-level fields, or null if it declares none. */
 	public var moduleFields:InsanityScriptedClass = null;
+
+	/** Callbacks run once `startTypes` completes; returning false removes the callback. */
 	public var onInitialized:Array<Map<String, IInsanityType>->Bool> = [];
 
+	/** Other modules merged into this one at `start` (imports, and cross-file dependencies). */
 	public var subModules:Array<Module> = [];
 
+	/** True while `start` is running the module-level program (guards against re-entrant starts). */
 	public var starting:Bool = false;
+
+	/** True once the module-level program has finished running. */
 	public var started:Bool = false;
 
+	/** The interpreter's variable table (module-level values). */
 	public var variables(get, never):Map<String, Dynamic>;
 
 	inline function get_variables():Map<String, Dynamic> {
 		return interp.variables;
 	}
 
+	/**
+	 * Creates a module and immediately parses its source.
+	 *
+	 * @param string The script source to parse.
+	 * @param name The module's short type name.
+	 * @param pack The package segments the module lives in.
+	 * @param origin Source origin used for error positions (usually the file path).
+	 */
 	public function new(string:String, name:String = 'Module', pack:Array<String>, origin:String = 'hscript'):Void {
 		parser.allowTypes = parser.allowJSON = true;
 		interp = Type.createInstance(Config.interpClass, [null, this]);
@@ -45,6 +85,13 @@ class Module {
 		parse(string);
 	}
 
+	/**
+	 * Parses `string` into `decls` and `types`, replacing any previous parse. Parse errors are routed
+	 * to `onParsingError` and leave the declarations collected so far in place.
+	 *
+	 * @param string The script source to parse.
+	 * @return The parsed declarations (also stored in `decls`).
+	 */
 	public function parse(string:String):Array<ModuleDecl> {
 		decls.resize(0);
 		types.clear();
@@ -66,6 +113,13 @@ class Module {
 		return decls;
 	}
 
+	/**
+	 * Builds the runtime type for one declaration. Top-level `DField`s have no type of their own;
+	 * they are collected onto a synthetic `<name>_Fields_` host class (created on first field).
+	 *
+	 * @param decl The module declaration to realize.
+	 * @return The created type, or null for declarations that produce no standalone type (e.g. fields).
+	 */
 	public function loadType(decl):IInsanityType {
 		return switch (decl.d) {
 			default:
@@ -89,7 +143,7 @@ class Module {
 					access: (m.isPrivate ? [AStatic, APrivate] : [AStatic, APublic])
 				};
 
-				if (t == null) { // creates Dummy class for the module level fields
+				if (t == null) { // synthesize the host class the first time a top-level field appears
 					var fieldsModule:ClassDecl = {
 						name: '${name}_Fields_',
 						params: [],
@@ -117,6 +171,13 @@ class Module {
 		}
 	}
 
+	/**
+	 * Seeds the interpreter from `environment` and imports every declared type by name. Enum
+	 * constructors (and enum-abstract constants) are additionally imported unqualified, so
+	 * same-module code refers to `Foo` rather than `MyEnum.Foo`, matching Haxe.
+	 *
+	 * @param environment The world whose variables are copied in and against which types resolve; may be null for a standalone module.
+	 */
 	public function init(?environment:Environment):Void {
 		interp.environment = environment;
 		setDefaults();
@@ -130,16 +191,13 @@ class Module {
 		for (type in types) {
 			interp.imports.set(type.name, type);
 
-			// Enums declared in this module expose their constructors unqualified, the
-			// same way Haxe does for same-module enums.
 			if (type is InsanityScriptedEnum) {
 				var e:InsanityScriptedEnum = cast type;
 
 				for (i => v in e.constructNames())
 					interp.imports.set(v, Mirror.MEnumValue(e, i));
 			} else if (type is InsanityScriptedClass) {
-				// An enum abstract desugars to a class of static constants; expose those
-				// constants unqualified too, the same way enum constructors are.
+				// An enum abstract desugars to a class of static constants; expose those the same way.
 				var c:InsanityScriptedClass = cast type;
 				var enumAbstract:Bool = false;
 				for (m in @:privateAccess c.decl.meta)
@@ -155,6 +213,12 @@ class Module {
 		}
 	}
 
+	/**
+	 * Merges each submodule (imports contribute their usings/imports; other dependencies contribute
+	 * their main type) and runs the module-level program. Runtime errors are routed to `onProgramError`.
+	 *
+	 * @param environment The world used to start imported submodules; may be null.
+	 */
 	public function start(?environment:Environment):Void {
 		try {
 			if (decls.length == 0)
@@ -188,6 +252,15 @@ class Module {
 		}
 	}
 
+	/**
+	 * Initializes one type, starting the module first if needed. Re-entrant and idempotent: a type
+	 * already initializing, initialized, or failed is returned untouched, and errors mark it failed
+	 * (routed to `onTypeError`) rather than propagating.
+	 *
+	 * @param environment The world the type initializes against; may be null.
+	 * @param type The type to initialize.
+	 * @return The same `type`, for chaining.
+	 */
 	public function startType(?environment:Environment, type:IInsanityType):IInsanityType {
 		if (type.initializing || type.initialized || type.failed)
 			return type;
@@ -215,6 +288,13 @@ class Module {
 		return type;
 	}
 
+	/**
+	 * Initializes the module-level fields (exposing them unqualified) and every declared type, then
+	 * fires the `onInitialized` callbacks.
+	 *
+	 * @param environment The world the types initialize against; may be null.
+	 * @return The module's type table.
+	 */
 	public function startTypes(?environment:Environment):Map<String, IInsanityType> {
 		if (moduleFields != null) {
 			startType(environment, moduleFields);
@@ -235,29 +315,48 @@ class Module {
 		return types;
 	}
 
+	/** Saves each type's `@:snapshot` statics into `Module.snapshots` so a later reload can restore them. */
 	public function snapshot():Void {
 		for (type in types)
 			type.snapshot();
 	}
 
+	/** Resets the interpreter to its default variables/imports and re-binds `module` to this instance. */
 	public function setDefaults():Void {
 		interp.setDefaults();
 
 		variables.set('module', this);
 	}
 
+	/**
+	 * Overridable hook invoked when parsing fails. Defaults to tracing.
+	 *
+	 * @param e The parse exception.
+	 */
 	public dynamic function onParsingError(e:haxe.Exception):Void {
 		trace('Failed to initialize module program!\n' + e.details());
 	}
 
+	/**
+	 * Overridable hook invoked when the module-level program throws. Defaults to tracing.
+	 *
+	 * @param e The runtime exception.
+	 */
 	public dynamic function onProgramError(e:haxe.Exception):Void {
 		trace('Module program stopped unexpectedly!\n' + e.details());
 	}
 
+	/**
+	 * Overridable hook invoked when a type fails to initialize. Defaults to tracing.
+	 *
+	 * @param e The exception thrown during initialization.
+	 * @param type The type that failed.
+	 */
 	public dynamic function onTypeError(e:haxe.Exception, type:IInsanityType):Void {
 		trace('Failed to load type ${type.name} for module $path!\n' + e.details());
 	}
 
+	/** @return The fully-qualified module path (`pack.name`), or just `name` when the package is empty. */
 	function get_path():String {
 		var path:String = pack.join('.');
 

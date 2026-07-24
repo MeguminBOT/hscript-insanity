@@ -8,104 +8,222 @@ import insanity.backend.Expr;
 **/
 typedef TypeCheck<Real, Script> = Real;
 
+/** A checker type: the vocabulary the optional static type-checker reasons in. */
 enum TType {
+	/** A type variable (monomorph) that may still be unified to a concrete type. */
 	TMono(r:{r:TType});
+
+	/** `Void`. */
 	TVoid;
+
+	/** `Int`. */
 	TInt;
+
+	/** `Float`. */
 	TFloat;
+
+	/** `Bool`. */
 	TBool;
+
+	/** `Dynamic`. */
 	TDynamic;
+
+	/** A named type parameter. */
 	TParam(name:String);
+
+	/** A name that could not be resolved to a type. */
 	TUnresolved(name:String);
+
+	/** A nullable wrapper `Null<T>`. */
 	TNull(t:TType);
+
+	/** A class instance with type arguments. */
 	TInst(c:CClass, args:Array<TType>);
+
+	/** An enum with type arguments. */
 	TEnum(e:CEnum, args:Array<TType>);
+
+	/** A typedef with type arguments. */
 	TType(t:CTypedef, args:Array<TType>);
+
+	/** An abstract with type arguments. */
 	TAbstract(a:CAbstract, args:Array<TType>);
+
+	/** A function type. */
 	TFun(args:Array<{name:String, opt:Bool, t:TType}>, ret:TType);
+
+	/** An anonymous structure type. */
 	TAnon(fields:Array<{name:String, opt:Bool, t:TType}>);
+
+	/** A lazily-computed type. */
 	TLazy(f:Void->TType);
 }
 
+/** The expected-value context an expression is checked in. */
 private enum WithType {
+	/** The value is unused. */
 	NoValue;
+
+	/** A value is expected, of no particular type. */
 	Value;
+
+	/** A value of a specific type is expected. */
 	WithType(t:TType);
 }
 
+/** A top-level type declaration the checker knows about. */
 enum CTypedecl {
+	/** A class. */
 	CTClass(c:CClass);
+
+	/** An enum. */
 	CTEnum(e:CEnum);
+
+	/** A typedef. */
 	CTTypedef(t:CTypedef);
+
+	/** A plain alias to a type. */
 	CTAlias(t:TType);
+
+	/** An abstract. */
 	CTAbstract(a:CAbstract);
 }
 
+/** Metadata as seen by the checker. */
 typedef CMetadata = Array<{name:String, params:Null<Array<Expr>>}>;
 
+/** Fields shared by every named checker type. */
 typedef CNamedType = {
+	/** The type's name. */
 	var name:String;
+
+	/** Its type parameters. */
 	var params:Array<TType>;
+
+	/** Its metadata, if any. */
 	var ?meta:CMetadata;
 }
 
+/** A class known to the checker. */
 typedef CClass = {
 	> CNamedType,
+
+	/** The super-class, if any. */
 	var ?superClass:TType;
+
+	/** The constructor field, if any. */
 	var ?constructor:CField;
+
+	/** Implemented interfaces, if any. */
 	var ?interfaces:Array<TType>;
+
+	/** Whether this is an interface. */
 	var ?isInterface:Bool;
+
+	/** Instance fields keyed by name. */
 	var fields:Map<String, CField>;
+
+	/** Static fields keyed by name. */
 	var statics:Map<String, CField>;
 }
 
+/** A class field known to the checker. */
 typedef CField = {
+	/** Whether the field is public. */
 	var isPublic:Bool;
+
+	/** Whether the field is writable. */
 	var canWrite:Bool;
+
+	/** Whether the field's type is fully known. */
 	var complete:Bool;
+
+	/** Whether the field is a method. */
 	var ?isMethod:Bool;
+
+	/** The field's own type parameters. */
 	var params:Array<TType>;
+
+	/** The field name. */
 	var name:String;
+
+	/** The field type. */
 	var t:TType;
+
+	/** The field's metadata, if any. */
 	var ?meta:CMetadata;
 }
 
+/** An enum known to the checker. */
 typedef CEnum = {
 	> CNamedType,
+
+	/** Its constructors, each with optional arguments. */
 	var constructors:Array<{name:String, ?args:Array<{name:String, opt:Bool, t:TType}>}>;
 }
 
+/** A typedef known to the checker. */
 typedef CTypedef = {
 	> CNamedType,
+
+	/** The aliased type. */
 	var t:TType;
 }
 
+/** An abstract known to the checker. */
 typedef CAbstract = {
 	> CNamedType,
+
+	/** The underlying type. */
 	var t:TType;
+
+	/** `from` conversion source types. */
 	var from:Array<TType>;
+
+	/** `to` conversion target types. */
 	var to:Array<TType>;
+
+	/** Names forwarded to the underlying type. */
 	var forwards:Map<String, Bool>;
+
+	/** The abstract's implementation class. */
 	var impl:CClass;
 }
 
+/** A completion result: an expression and its inferred type. */
 class Completion {
+	/** The completed expression. */
 	public var expr:Expr;
+
+	/** Its inferred type. */
 	public var t:TType;
 
+	/**
+	 * @param expr The completed expression.
+	 * @param t Its inferred type.
+	 */
 	public function new(expr, t) {
 		this.expr = expr;
 		this.t = t;
 	}
 }
 
+/** The type database the checker resolves names against, seeded from an RTTI XML API dump. */
 @:allow(hscript.Checker)
 class CheckerTypes {
+	/** All known type declarations, keyed by name. */
 	var types:Map<String, CTypedecl> = new Map();
+
+	/** Cached `String` type. */
 	var t_string:TType;
+
+	/** Type parameters in scope while resolving a type. */
 	var localParams:Map<String, TType>;
+
+	/** A parser used to parse type expressions from the RTTI dump. */
 	var parser:hscript.Parser;
 
+	/** Seeds the database with the primitive types. */
 	public function new() {
 		types = new Map();
 		types.set("Void", CTAlias(TVoid));
@@ -116,6 +234,11 @@ class CheckerTypes {
 		parser = new hscript.Parser();
 	}
 
+	/**
+	 * Loads types from an RTTI XML API description.
+	 *
+	 * @param api The RTTI XML root.
+	 */
 	public function addXmlApi(api:Xml) {
 		var types = new haxe.rtti.XmlParser();
 		types.process(api, "");
@@ -127,6 +250,13 @@ class CheckerTypes {
 		t_string = getType("String");
 	}
 
+	/**
+	 * Registers a class type, creating an empty one if none is given.
+	 *
+	 * @param name The class name.
+	 * @param ct An existing class definition to register, or null to create one.
+	 * @return The registered class definition.
+	 */
 	public function defineClass(name:String, ?ct:CClass) {
 		if (ct == null)
 			ct = {
@@ -139,6 +269,13 @@ class CheckerTypes {
 		return ct;
 	}
 
+	/**
+	 * Converts one RTTI class field into a checker field, skipping accessors, overrides, and
+	 * `@:noScript` members.
+	 *
+	 * @param f The RTTI class field.
+	 * @return The checker field, or null if it should be skipped.
+	 */
 	function addField(f:haxe.rtti.CType.ClassField) {
 		if (f.isOverride || f.name.substr(0, 4) == "get_" || f.name.substr(0, 4) == "set_")
 			return null;
@@ -177,6 +314,13 @@ class CheckerTypes {
 		return fl;
 	}
 
+	/**
+	 * Converts one RTTI type tree node (class/enum/typedef/abstract) into a checker declaration,
+	 * queueing follow-up work whose resolution needs all types present.
+	 *
+	 * @param x The RTTI type node.
+	 * @param todo A list to append deferred resolution steps to.
+	 */
 	function addXmlType(x:haxe.rtti.CType.TypeTree, todo:Array<Void->Void>) {
 		switch (x) {
 			case TPackage(name, full, subs):
@@ -315,6 +459,12 @@ class CheckerTypes {
 		}
 	}
 
+	/**
+	 * Copies metadata from an RTTI type onto a checker type.
+	 *
+	 * @param src The RTTI type info.
+	 * @param to The checker type to copy metadata onto.
+	 */
 	function addMeta(src:haxe.rtti.CType.TypeInfos, to:CNamedType) {
 		if (src.meta == null || src.meta.length == 0)
 			return;
@@ -323,6 +473,12 @@ class CheckerTypes {
 			to.meta.push({name: m.name, params: [for (p in m.params) try parser.parseString(p) catch (e:hscript.Expr.Error) null]});
 	}
 
+	/**
+	 * Converts an RTTI type reference into a checker `TType`.
+	 *
+	 * @param t The RTTI type.
+	 * @return The checker type.
+	 */
 	function makeXmlType(t:haxe.rtti.CType.CType):TType {
 		return switch (t) {
 			case CUnknown: TUnresolved("Unknown");
@@ -352,6 +508,13 @@ class CheckerTypes {
 		}
 	}
 
+	/**
+	 * Resolves a type by name to its concrete `TType`, following aliases.
+	 *
+	 * @param name The type name.
+	 * @param args Type arguments, if any.
+	 * @return The resolved type, or null if unknown.
+	 */
 	function getType(name:String, ?args:Array<TType>):TType {
 		if (localParams != null) {
 			var t = localParams.get(name);
@@ -374,6 +537,13 @@ class CheckerTypes {
 		return t;
 	}
 
+	/**
+	 * Resolves a type name (honouring local type parameters) to a `TType`.
+	 *
+	 * @param name The type name.
+	 * @param args Type arguments, if any.
+	 * @return The resolved type.
+	 */
 	public function resolve(name:String, ?args:Array<TType>):TType {
 		if (name == "Null") {
 			if (args == null || args.length != 1)
@@ -395,30 +565,71 @@ class CheckerTypes {
 	}
 }
 
+/**
+ * The optional static type-checker. It walks an expression tree, inferring and unifying `TType`s and
+ * reporting type errors, and also supports completion queries. It is opt-in and separate from the
+ * (untyped) runtime interpreter.
+ */
 class Checker {
+	/** The type database used to resolve names. */
 	public var types:CheckerTypes;
 
+	/** Local variable types in the current scope. */
 	var locals:Map<String, TType>;
+
+	/** Global variable types. */
 	var globals:Map<String, TType> = new Map();
+
+	/** Event types (callback signatures). */
 	var events:Map<String, TType> = new Map();
+
+	/** The function type currently being checked (for `return` typing). */
 	var currentFunType:TType;
+
+	/** Whether the current check is a completion query. */
 	var isCompletion:Bool;
+
+	/** Whether new variables may be defined in the current scope. */
 	var allowDefine:Bool;
+
+	/** Whether the current function has returned a value. */
 	var hasReturn:Bool;
+
+	/** The call expression currently being checked. */
 	var callExpr:Expr;
 
+	/** Whether `private` access is enforced. */
 	public var checkPrivate:Bool = true;
+
+	/** Whether `async`/`await` typing is allowed. */
 	public var allowAsync:Bool;
+
+	/** The expected return type, or null to disallow `return` with a value. */
 	public var allowReturn:Null<TType>;
+
+	/** Whether globals may be defined by assignment. */
 	public var allowGlobalsDefine:Bool;
+
+	/** Whether an `@:untyped`-style meta suppresses checks. */
 	public var allowUntypedMeta:Bool;
 
+	/**
+	 * @param types An existing type database, or null to create an empty one.
+	 */
 	public function new(?types) {
 		if (types == null)
 			types = new CheckerTypes();
 		this.types = types;
 	}
 
+	/**
+	 * Exposes a class's fields as globals (walking up its super-classes), so scripts can reference
+	 * them unqualified.
+	 *
+	 * @param cl The class whose fields to expose.
+	 * @param params Type arguments for the class, or null to use fresh monomorphs.
+	 * @param allowPrivate Whether to expose private fields too.
+	 */
 	public function setGlobals(cl:CClass, ?params:Array<TType>, allowPrivate = false) {
 		if (params == null)
 			params = [for (p in cl.params) makeMono()];
@@ -440,26 +651,44 @@ class Checker {
 		}
 	}
 
+	/** Removes a global. @param name The global name. */
 	public function removeGlobal(name:String) {
 		globals.remove(name);
 	}
 
+	/** Sets a global's type. @param name The global name. @param type Its type. */
 	public function setGlobal(name:String, type:TType) {
 		globals.set(name, type);
 	}
 
+	/** Sets an event's type. @param name The event name. @param type Its callback type. */
 	public function setEvent(name:String, type:TType) {
 		events.set(name, type);
 	}
 
+	/** @return The globals table. */
 	public function getGlobals() {
 		return globals;
 	}
 
+	/**
+	 * Overridable hook: whether a bare identifier should resolve as a top-down enum constructor.
+	 *
+	 * @param en The enum being considered.
+	 * @param field The constructor name.
+	 * @return True to accept it as that enum's constructor.
+	 */
 	public dynamic function onTopDownEnum(en:CEnum, field:String) {
 		return false;
 	}
 
+	/**
+	 * Builds the checker argument types for a function's parameters.
+	 *
+	 * @param args The parameter list.
+	 * @param pos An expression used for error positions.
+	 * @return The typed arguments.
+	 */
 	function typeArgs(args:Array<Argument>, pos:Expr) {
 		return [
 			for (i in 0...args.length) {
@@ -470,6 +699,14 @@ class Checker {
 		];
 	}
 
+	/**
+	 * Type-checks an expression tree, the checker's entry point.
+	 *
+	 * @param expr The expression to check.
+	 * @param withType The expected-value context.
+	 * @param isCompletion Whether this is a completion query rather than a plain check.
+	 * @return The inferred type.
+	 */
 	public function check(expr:Expr, ?withType:WithType, ?isCompletion = false) {
 		if (withType == null)
 			withType = NoValue;
@@ -516,10 +753,18 @@ class Checker {
 		return typeExpr(expr, withType);
 	}
 
+	/** @param e An expression. @return Its definition (following metadata wrappers). */
 	inline function edef(e:Expr) {
 		return e.e;
 	}
 
+	/**
+	 * Builds a position spanning two expressions (for error reporting).
+	 *
+	 * @param e1 The first expression.
+	 * @param e2 The second expression.
+	 * @return A dummy expression carrying the combined position.
+	 */
 	function punion(e1:Expr, e2:Expr):Expr {
 		return {
 			pmin: e1.pmin < e2.pmin ? e1.pmin : e2.pmin,
@@ -530,16 +775,30 @@ class Checker {
 		};
 	}
 
+	/**
+	 * Raises a type error at an expression's position.
+	 *
+	 * @param msg The error message.
+	 * @param curExpr The expression the error is about.
+	 */
 	inline function error(msg:String, curExpr:Expr) {
 		var e = new Error(ECustom(msg), curExpr.pmin, curExpr.pmax, curExpr.origin, curExpr.line);
 		if (!isCompletion)
 			throw e;
 	}
 
+	/** @return A shallow copy of the current locals, to restore after a nested scope. */
 	function saveLocals() {
 		return [for (k in locals.keys()) k => locals.get(k)];
 	}
 
+	/**
+	 * Converts a parsed type annotation into a checker `TType`.
+	 *
+	 * @param t The parsed type.
+	 * @param e An expression for error positions.
+	 * @return The checker type.
+	 */
 	function makeType(t:CType, e:Expr):TType {
 		return switch (t) {
 			case CTPath(path, params):
@@ -579,6 +838,12 @@ class Checker {
 		}
 	}
 
+	/**
+	 * Renders a checker type as a readable string (for messages).
+	 *
+	 * @param t The type.
+	 * @return Its display string.
+	 */
 	public static function typeStr(t:TType) {
 		inline function makeArgs(args:Array<TType>)
 			return args.length == 0 ? "" : "<" + [for (t in args) typeStr(t)].join(",") + ">";
@@ -601,6 +866,12 @@ class Checker {
 		}
 	}
 
+	/**
+	 * Applies a callback to each immediate sub-type of a type.
+	 *
+	 * @param t The type to visit.
+	 * @param callb The callback run on each direct child type.
+	 */
 	public static function typeIter(t:TType, callb:TType->Void) {
 		switch (t) {
 			case TMono(r) if (r.r != null):
@@ -623,6 +894,13 @@ class Checker {
 		}
 	}
 
+	/**
+	 * Occurs-check: whether monomorph `a` appears within `t` (which would make a cyclic link).
+	 *
+	 * @param a The monomorph to look for.
+	 * @param t The type to search.
+	 * @return True if `a` occurs in `t`.
+	 */
 	function linkLoop(a:TType, t:TType) {
 		if (t == a)
 			return true;
@@ -655,6 +933,14 @@ class Checker {
 		}
 	}
 
+	/**
+	 * Binds a monomorph to a type (unless that would create a cycle).
+	 *
+	 * @param a The type being linked to.
+	 * @param b The other type in the unification.
+	 * @param r The monomorph cell to write into.
+	 * @return True if the link succeeded.
+	 */
 	function link(a:TType, b:TType, r:{r:TType}) {
 		if (linkLoop(a, b))
 			return follow(b) == a;
@@ -664,6 +950,13 @@ class Checker {
 		return true;
 	}
 
+	/**
+	 * Whether two types are equal (up to monomorph following).
+	 *
+	 * @param t1 The first type.
+	 * @param t2 The second type.
+	 * @return True if equal.
+	 */
 	function typeEq(t1:TType, t2:TType) {
 		if (t1 == t2)
 			return true;
@@ -736,6 +1029,13 @@ class Checker {
 		return false;
 	}
 
+	/**
+	 * Attempts to unify two types, binding monomorphs as needed, without raising an error on failure.
+	 *
+	 * @param t1 The type to unify from.
+	 * @param t2 The type to unify to.
+	 * @return True if unification succeeded.
+	 */
 	public function tryUnify(t1:TType, t2:TType) {
 		if (t1 == t2)
 			return true;
@@ -863,11 +1163,26 @@ class Checker {
 		return typeEq(t1, t2);
 	}
 
+	/**
+	 * Unifies two types, raising a type error at `e` if they don't unify.
+	 *
+	 * @param t1 The type to unify from.
+	 * @param t2 The type to unify to.
+	 * @param e The expression for error positions.
+	 */
 	public function unify(t1:TType, t2:TType, e:Expr) {
 		if (!tryUnify(t1, t2) && !abstractCast(t1, t2, e))
 			error(typeStr(t1) + " should be " + typeStr(t2), e);
 	}
 
+	/**
+	 * Tries an abstract `from`/`to` implicit cast between two types.
+	 *
+	 * @param t1 The source type.
+	 * @param t2 The target type.
+	 * @param e The expression for error positions.
+	 * @return The cast-through type if one applies, else null.
+	 */
 	public function abstractCast(t1:TType, t2:TType, e:Expr) {
 		return false;
 		var tf1 = follow(t1);
@@ -875,6 +1190,15 @@ class Checker {
 		return getAbstractCast(tf1, tf2, e, false) || getAbstractCast(tf2, tf1, e, true);
 	}
 
+	/**
+	 * Finds an abstract conversion between two types in one direction.
+	 *
+	 * @param from The source type.
+	 * @param to The target type.
+	 * @param e The expression for error positions.
+	 * @param isFrom Whether to search the abstract's `from` list (else its `to` list).
+	 * @return The converted type if a conversion applies, else null.
+	 */
 	function getAbstractCast(from:TType, to:TType, e:Expr, isFrom:Bool) {
 		switch (from) {
 			case TAbstract(a, args) if (a.impl != null):
@@ -906,6 +1230,14 @@ class Checker {
 		return false;
 	}
 
+	/**
+	 * Substitutes type parameters with arguments throughout a type.
+	 *
+	 * @param t The type to specialize.
+	 * @param params The type-parameter placeholders.
+	 * @param args The type arguments to substitute in.
+	 * @return The specialized type.
+	 */
 	public function apply(t:TType, params:Array<TType>, args:Array<TType>) {
 		if (args.length != params.length)
 			throw "Invalid number of type parameters";
@@ -923,6 +1255,13 @@ class Checker {
 		return map(t);
 	}
 
+	/**
+	 * Rebuilds a type with `f` applied to each immediate sub-type.
+	 *
+	 * @param t The type to map.
+	 * @param f The mapping applied to each direct child type.
+	 * @return The mapped type.
+	 */
 	public function mapType(t:TType, f:TType->TType) {
 		switch (t) {
 			case TMono(r):
@@ -952,6 +1291,12 @@ class Checker {
 		}
 	}
 
+	/**
+	 * Follows bound monomorphs and aliases to the underlying type.
+	 *
+	 * @param t The type to follow.
+	 * @return The followed type.
+	 */
 	public function follow(t:TType) {
 		return switch (t) {
 			case TMono(r): if (r.r != null) follow(r.r) else t;
@@ -962,6 +1307,12 @@ class Checker {
 		}
 	}
 
+	/**
+	 * Lists the accessible fields of a type (for completion), including inherited ones.
+	 *
+	 * @param t The type.
+	 * @return Each field's name and type.
+	 */
 	public function getFields(t:TType):Array<{name:String, t:TType}> {
 		var fields = [];
 		switch (follow(t)) {
@@ -1012,6 +1363,16 @@ class Checker {
 		return fields;
 	}
 
+	/**
+	 * Resolves and validates one field access, applying type arguments and write-access checks.
+	 *
+	 * @param cf The field.
+	 * @param ct The owning type.
+	 * @param args The owning type's type arguments.
+	 * @param forWrite Whether the access is a write.
+	 * @param e The expression for error positions.
+	 * @return The field's (specialized) type.
+	 */
 	function checkField(cf:CField, ct:CNamedType, args, forWrite, e) {
 		if (!cf.isPublic && checkPrivate)
 			error("Can't access private field " + cf.name + " on " + ct.name, e);
@@ -1023,6 +1384,15 @@ class Checker {
 		return apply(t, ct.params, args);
 	}
 
+	/**
+	 * Looks up field `f` on type `t`, searching classes, anonymous structures, and abstract forwards.
+	 *
+	 * @param t The owning type.
+	 * @param f The field name.
+	 * @param e The expression for error positions.
+	 * @param forWrite Whether the access is a write.
+	 * @return The field's type, or null if not found.
+	 */
 	function getField(t:TType, f:String, e:Expr, forWrite = false) {
 		switch (follow(t)) {
 			case TInst(c, args):
@@ -1100,6 +1470,12 @@ class Checker {
 		}
 	}
 
+	/**
+	 * Unwraps an async/`Promise`-like type to the value it resolves to.
+	 *
+	 * @param t The (possibly async) type.
+	 * @return The awaited value type.
+	 */
 	public function unasync(t:TType):TType {
 		switch (follow(t)) {
 			case TFun(args, ret) if (args.length > 0):
@@ -1113,16 +1489,30 @@ class Checker {
 		return null;
 	}
 
+	/**
+	 * Type-checks an expression against an expected type.
+	 *
+	 * @param expr The expression.
+	 * @param t The expected type.
+	 * @return The inferred type.
+	 */
 	function typeExprWith(expr:Expr, t:TType) {
 		var et = typeExpr(expr, WithType(t));
 		unify(et, t, expr);
 		return t;
 	}
 
+	/** @return A fresh, unbound monomorph type. */
 	function makeMono() {
 		return TMono({r: null});
 	}
 
+	/**
+	 * Infers the element type produced by iterating a type.
+	 *
+	 * @param t The iterable type.
+	 * @return The element type.
+	 */
 	function makeIterator(t):TType {
 		return TAnon([
 			{name: "next", opt: false, t: TFun([], t)},
@@ -1130,6 +1520,13 @@ class Checker {
 		]);
 	}
 
+	/**
+	 * Wraps an expression definition with another expression's position.
+	 *
+	 * @param e The expression definition.
+	 * @param p The expression whose position to copy.
+	 * @return The positioned expression.
+	 */
 	function mk(e, p):Expr {
 		return {
 			e: e,
@@ -1140,16 +1537,33 @@ class Checker {
 		};
 	}
 
+	/** @param t A type. @return Whether it is `String`. */
 	function isString(t:TType) {
 		t = follow(t);
 		return t.match(TInst({name: "String"}, _));
 	}
 
+	/**
+	 * Records a completion result and stops checking (by throwing a `Completion`).
+	 *
+	 * @param expr The expression being completed.
+	 * @param t Its type.
+	 */
 	function onCompletion(expr:Expr, t:TType) {
 		if (isCompletion)
 			throw new Completion(expr, t);
 	}
 
+	/**
+	 * Type-checks a field access `o.f`.
+	 *
+	 * @param o The object expression.
+	 * @param f The field name.
+	 * @param expr The whole access expression (for positions).
+	 * @param withType The expected-value context.
+	 * @param forWrite Whether the access is a write.
+	 * @return The field's type.
+	 */
 	function typeField(o:Expr, f:String, expr:Expr, withType, forWrite:Bool) {
 		if (f == null && isCompletion) {
 			var ot = typeExpr(o, Value);
@@ -1172,6 +1586,14 @@ class Checker {
 		return readPath(typeExpr(o, Value), path, forWrite);
 	}
 
+	/**
+	 * Walks a resolved field-access path, typing each step.
+	 *
+	 * @param ot The base object type.
+	 * @param path The chain of field accesses.
+	 * @param forWrite Whether the final access is a write.
+	 * @return The type at the end of the path.
+	 */
 	function readPath(ot:TType, path:Array<{f:String, e:Expr}>, forWrite) {
 		for (p in path) {
 			var ft = getField(ot, p.f, p.e, p == path[path.length - 1] ? forWrite : false);
@@ -1184,6 +1606,14 @@ class Checker {
 		return ot;
 	}
 
+	/**
+	 * Types a dotted access path, resolving a leading type/global run before member access.
+	 *
+	 * @param path The chain of field accesses.
+	 * @param withType The expected-value context.
+	 * @param forWrite Whether the final access is a write.
+	 * @return The type at the end of the path.
+	 */
 	function typePath(path:Array<{f:String, e:Expr}>, withType, forWrite:Bool) {
 		var root = path[0];
 		var l = locals.get(root.f);
@@ -1213,6 +1643,13 @@ class Checker {
 		return TDynamic;
 	}
 
+	/**
+	 * Whether a metadata list contains an entry with the given name.
+	 *
+	 * @param meta The metadata.
+	 * @param name The name to look for.
+	 * @return True if present.
+	 */
 	function hasMeta(meta:Metadata, name:String) {
 		for (m in meta)
 			if (m.name == name)
@@ -1220,6 +1657,14 @@ class Checker {
 		return false;
 	}
 
+	/**
+	 * Resolves a bare identifier as a global, type, or top-down enum constructor.
+	 *
+	 * @param name The identifier.
+	 * @param expr The expression for error positions.
+	 * @param withType The expected-value context (steers top-down enum resolution).
+	 * @return The resolved type, or null if unresolved.
+	 */
 	function resolveGlobal(name:String, expr:Expr, withType:WithType):TType {
 		var g = globals.get(name);
 		if (g != null) {
@@ -1321,10 +1766,26 @@ class Checker {
 		return null;
 	}
 
+	/**
+	 * Builds the expression that accesses a type value (or one of its statics) at runtime.
+	 *
+	 * @param t The type being accessed.
+	 * @param expr The source expression.
+	 * @param field An optional static field name.
+	 * @return The rewritten access expression.
+	 */
 	function getTypeAccess(t:TType, expr:Expr, ?field:String):ExprDef {
 		return null;
 	}
 
+	/**
+	 * The core type-inference switch: infers the type of one expression in a given value context,
+	 * recursing into sub-expressions and unifying as it goes.
+	 *
+	 * @param expr The expression to type.
+	 * @param withType The expected-value context.
+	 * @return The inferred type.
+	 */
 	function typeExpr(expr:Expr, withType:WithType):TType {
 		if (expr == null && isCompletion)
 			return switch (withType) {
@@ -1730,12 +2191,29 @@ class Checker {
 		return TDynamic;
 	}
 
+	/**
+	 * Handles a metadata annotation during checking (e.g. an untyped escape).
+	 *
+	 * @param m The metadata name.
+	 * @param args The metadata arguments.
+	 * @param next The annotated expression.
+	 * @param expr The whole meta expression (for positions).
+	 * @param withType The expected-value context.
+	 * @return The resulting type, or null to fall through to normal checking.
+	 */
 	function checkMeta(m:String, args:Array<Expr>, next:Expr, expr:Expr, withType) {
 		if (m == ":untyped" && allowUntypedMeta)
 			return makeMono();
 		return typeExpr(next, withType);
 	}
 
+	/**
+	 * Infers the element type of a `for (x in it)` iterator.
+	 *
+	 * @param itt The iterator/iterable type.
+	 * @param it The iterator expression (for errors).
+	 * @return The element type.
+	 */
 	function getIteratorType(itt:TType, it:Expr) {
 		switch (follow(itt)) {
 			case TInst({name: "Array"}, [t]):
@@ -1765,6 +2243,13 @@ class Checker {
 		return t;
 	}
 
+	/**
+	 * Infers the key and value types of a `for (k => v in it)` iterator.
+	 *
+	 * @param itt The key-value iterator/iterable type.
+	 * @param it The iterator expression (for errors).
+	 * @return The key and value types.
+	 */
 	function getKeyIteratorTypes(itt:TType, it:Expr) {
 		switch (follow(itt)) {
 			case TInst({name: "Array"}, [t]):

@@ -12,7 +12,16 @@ using haxe.macro.ExprTools;
 using haxe.macro.ComplexTypeTools;
 #end
 
+/**
+ * The heart of the scripting bridge. Applied (via `@:autoBuild` on `IInsanityScripted`) to a
+ * generated bridge class, it makes a native base class scriptable: it overrides each inherited,
+ * non-inline, non-final method to route through the instance's interpreter when the script defines
+ * an override, records which fields are inlined/unexposed, reconstructs the native constructor as
+ * `__constructSuper`, and implements the reflection hooks. It also keeps a registry of every native
+ * class that has a bridge, exposed by `listScriptedClasses`.
+ */
 class ScriptedMacro {
+	/** Field names reserved by the bridge machinery; a script may not declare them. */
 	public static var ignoreFields:Array<String> = [
 		'reflectHasField',
 		'reflectGetField',
@@ -40,8 +49,16 @@ class ScriptedMacro {
 		'super'
 	];
 
+	/** This macro class's own fully-qualified name (used to stash the scripted-class registry). */
 	static var _name:String = 'insanity.backend.macro.ScriptedMacro';
 
+	/**
+	 * Generates the scripting bridge for the class being built: overrides inherited methods to defer
+	 * to the interpreter, reconstructs the native constructor, records inlined/unexposed fields, and
+	 * adds the reflection hooks.
+	 *
+	 * @return The generated fields to add to the bridge class.
+	 */
 	public static macro function build():Array<Field> {
 		var pos = Context.currentPos();
 		var cls = Context.getLocalClass().get();
@@ -58,10 +75,10 @@ class ScriptedMacro {
 		var inlinedFields:Array<String> = [];
 		var omittedFields:Array<String> = [];
 
-		// `Type.toComplexType()` renders a sub-module type as `pack.SubType`, dropping the
-		// module that actually holds it (`flixel.group.FlxTypedGroup` instead of
-		// `flixel.group.FlxGroup.FlxTypedGroup`), which then fails to resolve. Rebuild
-		// paths from the module so `sub` is filled in, recursing through type parameters.
+		// `Type.toComplexType()` renders a sub-module type as `pack.SubType`, dropping the module that
+		// actually holds it (e.g. `pack.SubType` instead of `pack.Module.SubType`), which then fails
+		// to resolve. Rebuild paths from the module so `sub` is filled in, recursing through type
+		// parameters.
 		function toCT(t:Type):ComplexType {
 			function fromModule(pack:Array<String>, module:String, name:String, params:Array<Type>):ComplexType {
 				var parts:Array<String> = module.split('.');
@@ -275,10 +292,9 @@ class ScriptedMacro {
 				}
 
 				function mapConstructor(type:ClassType):Expr {
-					// A class with no `new` of its own still owns member initializers, and
-					// its native init continues in the superclass. Emit both, otherwise the
-					// chain breaks at any constructor-less link (e.g. MusicBeatState) and
-					// everything above it (e.g. FlxGroup.members) stays uninitialized.
+					// A class with no `new` of its own still owns member initializers, and its native
+					// init continues in the superclass. Emit both, otherwise the chain breaks at any
+					// constructor-less link and everything above it stays uninitialized.
 					if (type.constructor == null) {
 						var inits:Array<Expr> = fieldInits(type);
 
@@ -550,10 +566,6 @@ class ScriptedMacro {
 									access.push(AExtern);
 								if (field.isAbstract)
 									access.push(AAbstract);
-
-								// Context.info(field.name, pos);
-								// Context.info(Std.string(ret.toComplexType()), pos);
-								// trace(f);
 
 								// Type parameters the METHOD itself declares stay as-is: an override
 								// has to repeat them verbatim. Only class-level parameters that
@@ -1129,6 +1141,12 @@ class ScriptedMacro {
 		return fields;
 	}
 
+	/**
+	 * Collects every generated bridge class at compile time and emits runtime code that maps each
+	 * native base class to the bridge that makes it scriptable.
+	 *
+	 * @return An expression evaluating to a `Map` from native base class to its bridge class.
+	 */
 	public static macro function listScriptedClasses() {
 		Context.onAfterTyping(function(types) {
 			var self = TypeTools.getClass(Context.getType(_name));

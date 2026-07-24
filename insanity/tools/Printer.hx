@@ -25,13 +25,25 @@ package insanity.tools;
 import insanity.backend.Expr;
 import insanity.backend.Exception;
 
+/** Turns parsed AST back into source text, and renders parser/interpreter errors. */
 class Printer {
+	/** Accumulates the printed output. */
 	var buf:StringBuf;
+
+	/** Current indentation string (one tab per level). */
 	var tabs:String;
+
+	/** Current block nesting depth. */
 	var level:Int;
 
 	public function new() {}
 
+	/**
+	 * Prints an expression tree as source.
+	 *
+	 * @param e The expression to print.
+	 * @return The source text.
+	 */
 	public function exprToString(e:Expr) {
 		buf = new StringBuf();
 		tabs = "";
@@ -40,6 +52,12 @@ class Printer {
 		return buf.toString();
 	}
 
+	/**
+	 * Prints a type as source.
+	 *
+	 * @param t The type to print.
+	 * @return The source text.
+	 */
 	public function typeToString(t:CType) {
 		buf = new StringBuf();
 		tabs = "";
@@ -48,9 +66,15 @@ class Printer {
 		return buf.toString();
 	}
 
+	/** Appends a value to the output buffer. */
 	inline function add<T>(s:T)
 		buf.add(s);
 
+	/**
+	 * Prints a type into the buffer.
+	 *
+	 * @param t The type to print.
+	 */
 	function type(t:CType) {
 		switch (t) {
 			case CTOpt(t):
@@ -115,6 +139,11 @@ class Printer {
 		}
 	}
 
+	/**
+	 * Prints a ` : Type` suffix, or nothing when the type is null.
+	 *
+	 * @param t The optional type annotation.
+	 */
 	function addType(t:CType) {
 		if (t != null) {
 			add(" : ");
@@ -122,6 +151,11 @@ class Printer {
 		}
 	}
 
+	/**
+	 * Prints a constant literal (escaping strings and regex delimiters).
+	 *
+	 * @param c The constant to print.
+	 */
 	function addConst(c:Const) {
 		switch (c) {
 			case CInt(i):
@@ -147,6 +181,11 @@ class Printer {
 		}
 	}
 
+	/**
+	 * Prints an expression into the buffer, recursing into sub-expressions.
+	 *
+	 * @param e The expression to print; a null expression prints a `??NULL??` marker.
+	 */
 	function expr(e:Expr) {
 		if (e == null) {
 			add("??NULL??");
@@ -154,7 +193,7 @@ class Printer {
 		}
 		switch (e.e) {
 			case EDecl(d):
-				add('decl'); // TODO
+				add('decl'); // TODO: declarations aren't printed back to source yet
 			case EUsing(path):
 				add('using ${path.join('.')}');
 			case EImport(path, INormal):
@@ -454,10 +493,24 @@ class Printer {
 		}
 	}
 
+	/**
+	 * Convenience: prints an expression as source with a fresh printer.
+	 *
+	 * @param e The expression to print.
+	 * @return The source text.
+	 */
 	public static function toString(e:Expr) {
 		return new Printer().exprToString(e);
 	}
 
+	/**
+	 * Renders a parser/interpreter error as a human-readable message, prefixed with its source
+	 * position when available.
+	 *
+	 * @param e The error to render.
+	 * @param p The parser exception carrying origin/line, if any.
+	 * @return The formatted message.
+	 */
 	public static function errorToString(e:Error, ?p:ParserException) {
 		var message = switch (e) {
 			case EImportHx: 'Only import and using is allowed in import.hx files';

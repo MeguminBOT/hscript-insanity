@@ -29,7 +29,14 @@ using insanity.backend.TypeCollection;
 using insanity.backend.types.Abstract;
 using insanity.Environment;
 
+/** AST and type-resolution helpers used throughout the parser and interpreter. */
 class Tools {
+	/**
+	 * Applies `f` to each immediate sub-expression of `e` (a shallow, non-recursive walk).
+	 *
+	 * @param e The expression to visit.
+	 * @param f The callback run on every direct child expression.
+	 */
 	public static function iter(e:Expr, f:Expr->Void) {
 		switch (expr(e)) {
 			case EConst(_), EIdent(_), EImport(_, _), EUsing(_), EDecl(_):
@@ -120,6 +127,14 @@ class Tools {
 		}
 	}
 
+	/**
+	 * Rebuilds `e` with `f` applied to each immediate sub-expression, preserving structure and
+	 * position (a shallow transform used to rewrite trees).
+	 *
+	 * @param e The expression to transform.
+	 * @param f The mapping applied to every direct child expression.
+	 * @return A new expression with the mapped children.
+	 */
 	public static function map(e:Expr, f:Expr->Expr) {
 		var edef = switch (expr(e)) {
 			case EConst(_), EIdent(_), EBreak, EContinue, EImport(_, _), EUsing(_), EDecl(_): expr(e);
@@ -152,10 +167,23 @@ class Tools {
 		return mk(edef, e.pos);
 	}
 
+	/**
+	 * Unwraps an expression to its definition.
+	 *
+	 * @param e The positioned expression.
+	 * @return Its inner `ExprDef`.
+	 */
 	public static inline function expr(e:Expr):ExprDef {
 		return e.e;
 	}
 
+	/**
+	 * Wraps an expression definition with a copy of a position.
+	 *
+	 * @param e The expression definition.
+	 * @param pos The position to attach (copied).
+	 * @return The positioned expression.
+	 */
 	public static inline function mk(e:ExprDef, pos:Position) {
 		return {
 			e: e,
@@ -169,6 +197,13 @@ class Tools {
 		};
 	}
 
+	/**
+	 * Recognises a key-value iteration head (`k => v in iter`) and reports its parts.
+	 *
+	 * @param e The iterator expression.
+	 * @param callb Receives the key name, value name (both null for a plain `in`), and the iterated expression.
+	 * @return Whatever `callb` returns.
+	 */
 	public static inline function getKeyIterator<T>(e:Expr, callb:String->String->Expr->T) {
 		var key = null, value = null, it = e;
 		switch (expr(it)) {
@@ -189,15 +224,37 @@ class Tools {
 		return callb(key, value, it);
 	}
 
+	/**
+	 * Joins a package and name into a dotted path.
+	 *
+	 * @param name The type or field name.
+	 * @param pack The package segments; may be null or empty.
+	 * @return `pack.name`, or just `name` when the package is empty.
+	 */
 	public static inline function pathToString(name:String, ?pack:Array<String>):String {
 		var pack:String = (pack?.join('.') ?? '');
 		return (pack.length > 0 ? '$pack.$name' : name);
 	}
 
+	/**
+	 * Heuristic for whether an identifier names a type (starts with an upper-case letter).
+	 *
+	 * @param id The identifier.
+	 * @return True if it looks like a type name.
+	 */
 	public static inline function isTypeIdentifier(id:String):Bool {
 		return (id.charAt(0) == id.charAt(0).toUpperCase());
 	}
 
+	/**
+	 * Resolves a dotted path to a runtime type, trying (in order) a scripted type in the environment,
+	 * an abstract, a class, then an enum. Rewrites the path to its compile path first if the
+	 * collection knows it.
+	 *
+	 * @param path The type path to resolve.
+	 * @param env An optional world to consult for scripted types.
+	 * @return The resolved type, or null if unknown.
+	 */
 	public static inline function resolve(path:String, ?env:Environment):Dynamic {
 		var info = (TypeCollection.main.fromPath(path) ?? env?.types.fromPath(path));
 		if (info != null)
@@ -211,6 +268,17 @@ class Tools {
 		return type;
 	}
 
+	/**
+	 * Lists the importable types at a path (a package's types, or a single module/type). Classes,
+	 * enums, and abstracts pass through; supported typedefs are included, while unsupported ones warn
+	 * (unless suppressed).
+	 *
+	 * @param path The package, module, or type path.
+	 * @param fromPack Whether `path` names a package (list all its types) rather than a single module/type.
+	 * @param canIgnoreWarnings Suppress the "unsupported import" warnings.
+	 * @param collection The collection to search; defaults to the global one.
+	 * @return The importable type infos, or null if the path is unknown.
+	 */
 	public static inline function listTypes(path:String, fromPack:Bool = false, canIgnoreWarnings:Bool = false, ?collection:TypeCollection):Array<TypeInfo> {
 		var typeInfos:Array<TypeInfo> = [];
 
@@ -248,6 +316,15 @@ class Tools {
 		return types;
 	}
 
+	/**
+	 * Like `listTypes`, but searches several collections and concatenates the results.
+	 *
+	 * @param path The package, module, or type path.
+	 * @param fromPack Whether `path` names a package rather than a single module/type.
+	 * @param canIgnoreWarnings Suppress the "unsupported import" warnings.
+	 * @param collections The collections to search (nulls are skipped).
+	 * @return The combined type infos, or null if none matched.
+	 */
 	public static inline function listTypesEx(path:String, fromPack:Bool = false, canIgnoreWarnings:Bool = false,
 			collections:Array<TypeCollection>):Array<TypeInfo> {
 		var types:Array<TypeInfo> = null;

@@ -2,27 +2,37 @@ package insanity.backend;
 
 import insanity.backend.Interp;
 
+/** One interpreter stack frame: its local variables and the call-site descriptor. */
 typedef Stack = {
+	/** The frame's local variables. */
 	var locals:Map<String, Variable>;
+
+	/** What the frame represents (script, module, method, ...). */
 	var item:StackItem;
 }
 
+/** The interpreter's own call stack, used for scoping locals and rendering script traces. */
 class CallStack {
+	/** The frames, innermost last. */
 	public var stack:Array<Stack>;
 
+	/** Number of frames on the stack. */
 	public var length(get, never):Int;
 
 	inline function get_length():Int
 		return stack.length;
 
+	/** @return The innermost (top) frame. */
 	public inline function last() {
 		return stack[stack.length - 1];
 	}
 
+	/** @return The outermost (bottom) frame. */
 	public inline function first() {
 		return stack[0];
 	}
 
+	/** @return A `Called from ...` trace of every frame. */
 	public function toString():String {
 		var b = new StringBuf();
 		for (s in stack) {
@@ -36,6 +46,13 @@ class CallStack {
 		stack = [];
 	}
 
+	/**
+	 * Trims the tail of this stack that matches the frames of another, so a captured stack can be
+	 * reported relative to a baseline.
+	 *
+	 * @param stack The baseline stack to subtract.
+	 * @return This stack, truncated in place.
+	 */
 	public function subtract(stack:CallStack):CallStack {
 		var startIndex = -1;
 		var i = -1;
@@ -59,12 +76,20 @@ class CallStack {
 		return this;
 	}
 
+	/** @return A shallow copy sharing the same frame objects. */
 	public inline function copy():CallStack {
 		var copy:CallStack = new CallStack();
 		copy.stack = stack.copy();
 		return copy;
 	}
 
+	/**
+	 * Structural equality of two stack items.
+	 *
+	 * @param item1 The first item.
+	 * @param item2 The second item.
+	 * @return True if they describe the same call site.
+	 */
 	static function equalItems(item1:Null<StackItem>, item2:Null<StackItem>):Bool {
 		return switch ([item1, item2]) {
 			case [null, null]: true;
@@ -81,6 +106,12 @@ class CallStack {
 		}
 	}
 
+	/**
+	 * Appends a human-readable rendering of one stack item to a buffer.
+	 *
+	 * @param b The buffer to append to.
+	 * @param s The stack item to render.
+	 */
 	static function itemToString(b:StringBuf, s) {
 		switch (s) {
 			case SScript(s):
@@ -114,10 +145,20 @@ class CallStack {
 	}
 }
 
+/** What a call-stack frame represents. */
 enum StackItem {
+	/** A top-level script body. */
 	SScript(s:String);
+
+	/** A module's top-level program. */
 	SModule(m:String);
+
+	/** A source position, optionally wrapping the item it belongs to. */
 	SFilePos(s:Null<StackItem>, file:String, line:Int, ?column:Int);
+
+	/** A method call on a (possibly unknown) class. */
 	SMethod(classname:Null<String>, method:String);
+
+	/** A local (anonymous) function, identified by its runtime slot. */
 	SLocalFunction(?v:Int);
 }

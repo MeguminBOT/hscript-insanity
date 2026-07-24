@@ -12,7 +12,19 @@ using haxe.macro.TypeTools;
 using haxe.macro.ComplexTypeTools;
 #end
 
+/**
+ * Build macro applied to abstract implementation classes so scripts can use abstracts at runtime.
+ * An abstract has no runtime representation of its own, so this emits an `InsanityAbstract_*` wrapper
+ * class that boxes the underlying value and re-exposes the abstract's fields, operators, and
+ * `from`/`to` conversions (and, for an `enum abstract`, its constants) in a reflectable form.
+ * Standard-library and core-type abstracts are left untouched.
+ */
 class AbstractMacro {
+	/**
+	 * Generates the runtime wrapper for the abstract being built.
+	 *
+	 * @return The fields of the generated wrapper (or the original fields for a skipped abstract).
+	 */
 	public static macro function build():Array<Field> {
 		var pos = Context.currentPos();
 		var type = Context.getLocalType();
@@ -70,7 +82,6 @@ class AbstractMacro {
 			path: [for (v in (ab.module + (ab.module != '' ? '.' : '') + ab.name).split('.')) {name: v, pos: pos}],
 			mode: INormal
 		});*/
-		// trace(imports);
 
 		function getTypePath(tt:Dynamic, ?ty:Dynamic) {
 			if (tt.isPrivate || tt.name.length <= 1 || tt.name == ty?.name)
@@ -174,7 +185,6 @@ class AbstractMacro {
 				expr: castExpr
 			})
 		});
-		// trace(expr.toString());
 
 		var fromExpr = [macro return null];
 		var toExpr = [macro return null];
@@ -219,7 +229,6 @@ class AbstractMacro {
 			} else {
 				newExpr = (typeIsAbstract ? macro new $abstractT($expr) : macro $expr);
 			}
-			// trace(ExprTools.toString(newExpr));
 
 			return newExpr;
 		}
@@ -271,8 +280,6 @@ class AbstractMacro {
 								continue;
 							}
 							if (meta.name == ':op') {
-								// trace('op');
-
 								custom = true;
 								continue;
 							}
@@ -322,7 +329,7 @@ class AbstractMacro {
 							continue;
 
 						var typeIsMe:Bool = matchAbstract(t);
-						function mapIdent(e:Expr) { // oh
+						function mapIdent(e:Expr) {
 							return switch (e.expr) {
 								case EConst(CIdent(f)):
 									var ee = e;
@@ -420,14 +427,12 @@ class AbstractMacro {
 										case EConst(CIdent('this')):
 											{expr: EConst(CIdent('__a')), pos: expr.pos};
 										default:
-											// trace(expr);
 											ExprTools.map(expr, transformThis);
 									}
 								}
 
 								setterExpr = macro ${f.expr};
 								setterExpr = setterExpr.map(transformThis);
-								// trace(setterExpr.toString());
 							}
 
 							var returnsMe:Bool = matchAbstract(f.ret);
@@ -456,7 +461,6 @@ class AbstractMacro {
 							pos: pos,
 							kind: FProp(get, set, macro :Dynamic)
 						});
-					// trace('$get, $set, $t ');
 
 					case FVar(t, e):
 						if (isEnum) {
@@ -543,7 +547,6 @@ class AbstractMacro {
 			kind: FProp('default', 'never', macro :Array<Dynamic>, (isEnum ? macro $a{enumIndex} : null))
 		});
 
-		// Context.info(ab.pack.join('.') + (ab.pack.length > 0 ? '.' : '') + cls.name, pos);
 		Context.defineModule(ab.pack.join('.') + (ab.pack.length > 0 ? '.' : '') + cls.name, [cls], imports);
 
 		return fields;

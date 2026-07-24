@@ -27,82 +27,150 @@ import insanity.backend.Exception;
 
 using insanity.tools.Tools;
 
+/** The lexer's token kinds. */
 enum Token {
+	/** End of input. */
 	TEof;
+
+	/** A literal constant. */
 	TConst(c:Const);
+
+	/** An identifier or keyword. */
 	TId(s:String);
+
+	/** An operator. */
 	TOp(s:String);
+
+	/** `(`. */
 	TPOpen;
+
+	/** `)`. */
 	TPClose;
+
+	/** `{`. */
 	TBrOpen;
+
+	/** `}`. */
 	TBrClose;
+
+	/** `.`. */
 	TDot;
+
+	/** `?.`. */
 	TQuestionDot;
+
+	/** `,`. */
 	TComma;
+
+	/** `;`. */
 	TSemicolon;
+
+	/** `[`. */
 	TBkOpen;
+
+	/** `]`. */
 	TBkClose;
+
+	/** `?`. */
 	TQuestion;
+
+	/** `:`. */
 	TDoubleDot;
+
+	/** A metadata token `@name`. */
 	TMeta(s:String);
+
+	/** A preprocessor token `#name`. */
 	TPrepro(s:String);
 }
 
+/** A recursive-descent parser/lexer that turns script source into `Expr`/`ModuleDecl` trees. */
 class Parser {
-	// config / variables
+	/** The current 1-based line number. */
 	public var line:Int;
+
+	/** Characters that may appear in operators. */
 	public var opChars:String;
+
+	/** Characters that may appear in identifiers. */
 	public var identChars:String;
+
+	/** Operator precedence, keyed by operator (lower binds looser). */
 	public var opPriority:Map<String, Int>;
+
+	/** Which operators are right-associative. */
 	public var opRightAssoc:Map<String, Bool>;
+
+	/** Column offset applied to positions (for embedded sources). */
 	public var columnOffset:Int;
 
-	/**
-		allows to check for #if / #else in code
-	**/
+	/** Preprocessor values used to evaluate `#if`/`#else`. */
 	public var preprocessorValues:Map<String, Dynamic> = new Map();
 
-	/**
-		activate JSON compatiblity
-	**/
+	/** Whether to accept JSON-style syntax. */
 	public var allowJSON:Bool;
 
-	/**
-		allow types declarations
-	**/
+	/** Whether to accept type declarations. */
 	public var allowTypes:Bool;
 
-	/**
-		allow haxe metadata declarations
-	**/
+	/** Whether to accept Haxe metadata. */
 	public var allowMetadata:Bool;
 
-	/**
-		resume from parsing errors (when parsing incomplete code, during completion for example)
-	**/
+	/** Whether to recover from parse errors (e.g. for completion over incomplete code) rather than throw. */
 	public var resumeErrors:Bool;
 
-	// implementation
+	/** Whether the parser is currently at a declaration position. */
 	var decl:Bool;
+
+	/** The package being parsed into. */
 	var pack:Array<String>;
+
+	/** The source origin (for error positions). */
 	var origin:String;
+
+	/** The source text. */
 	var input:String;
+
+	/** The current read offset into `input`. */
 	var readPos:Int;
+
+	/** Base offset added to positions. */
 	var offset:Int;
+
+	/** The absolute current position (`readPos + offset`). */
 	var currentPos(get, never):Int;
 
+	/** The most recently read character code. */
 	var char:Int;
+
+	/** Lookup of which character codes are operator characters. */
 	var ops:Array<Bool>;
+
+	/** Lookup of which character codes are identifier characters. */
 	var idents:Array<Bool>;
+
+	/** Counter for anonymous-function ids. */
 	var fid:Int = 0;
+
+	/** Counter for unique ids. */
 	var uid:Int = 0;
 
+	/** Start offset of the current token. */
 	var tokenMin:Int;
+
+	/** End offset of the current token. */
 	var tokenMax:Int;
+
+	/** Start offset of the previous token. */
 	var oldTokenMin:Int;
+
+	/** End offset of the previous token. */
 	var oldTokenMax:Int;
+
+	/** The pushed-back token buffer for lookahead. */
 	var tokens:List<{min:Int, max:Int, t:Token}>;
 
+	/** Initializes the operator tables and preprocessor operators. */
 	public function new() {
 		line = 1;
 		opChars = "+*/-=!><&|^%~";
@@ -150,18 +218,37 @@ class Parser {
 		];
 	}
 
+	/** @return The absolute current read position. */
 	inline function get_currentPos()
 		return readPos + offset;
 
+	/**
+	 * Raises a parse error (unless in resume-errors mode).
+	 *
+	 * @param err The error kind.
+	 * @param pmin Start offset of the offending span.
+	 * @param pmax End offset of the offending span.
+	 */
 	public inline function error(err, pmin, pmax) {
 		if (!resumeErrors)
 			throw new ParserException(err, pmin, pmax, origin, line);
 	}
 
+	/**
+	 * Raises an invalid-character error at the current position.
+	 *
+	 * @param c The offending character code.
+	 */
 	public function invalidChar(c) {
 		error(EInvalidChar(c), readPos - 1, readPos - 1);
 	}
 
+	/**
+	 * Resets all lexer state for a fresh parse.
+	 *
+	 * @param origin The source origin.
+	 * @param pos The starting byte offset.
+	 */
 	function initParser(origin, pos) {
 		columnOffset = 0;
 		line = 1;
@@ -183,6 +270,14 @@ class Parser {
 			idents[identChars.charCodeAt(i)] = true;
 	}
 
+	/**
+	 * Parses a full script into a single expression (a block if it has several statements).
+	 *
+	 * @param s The source text.
+	 * @param origin The source origin for error positions.
+	 * @param position The starting byte offset.
+	 * @return The parsed program expression.
+	 */
 	public function parseScript(s:String, ?origin:String = "hscript", ?position:Int = 0) {
 		initParser(origin, position);
 		input = s;
@@ -198,29 +293,56 @@ class Parser {
 		return if (a.length == 1) a[0] else mk(EBlock(a), 0);
 	}
 
+	/**
+	 * Raises an "unexpected token" error.
+	 *
+	 * @param tk The unexpected token.
+	 * @return Never returns; typed `Dynamic` to stand in an expression.
+	 */
 	function unexpected(tk):Dynamic {
 		error(EUnexpected(tokenString(tk)), tokenMin, tokenMax);
 		return null;
 	}
 
+	/**
+	 * Pushes a token back for re-reading (one-token lookahead).
+	 *
+	 * @param tk The token to push back.
+	 */
 	inline function push(tk) {
 		tokens.push({t: tk, min: tokenMin, max: tokenMax});
 		tokenMin = oldTokenMin;
 		tokenMax = oldTokenMax;
 	}
 
+	/**
+	 * Consumes the next token, erroring unless it equals `tk`.
+	 *
+	 * @param tk The expected token.
+	 */
 	inline function ensure(tk) {
 		var t = token();
 		if (t != tk)
 			unexpected(t);
 	}
 
+	/**
+	 * Consumes the next token, erroring unless it structurally equals `tk`.
+	 *
+	 * @param tk The expected token.
+	 */
 	inline function ensureToken(tk) {
 		var t = token();
 		if (!Type.enumEq(t, tk))
 			unexpected(t);
 	}
 
+	/**
+	 * Consumes the next token only if it matches `tk`.
+	 *
+	 * @param tk The token to look for.
+	 * @return True if it was consumed, false (and pushed back) otherwise.
+	 */
 	function maybe(tk) {
 		var t = token();
 		if (Type.enumEq(t, tk))
@@ -229,6 +351,11 @@ class Parser {
 		return false;
 	}
 
+	/**
+	 * Consumes and returns an identifier, erroring on anything else.
+	 *
+	 * @return The identifier text.
+	 */
 	function getIdent() {
 		var tk = token();
 		switch (tk) {
@@ -240,26 +367,52 @@ class Parser {
 		}
 	}
 
+	/** @param e An expression. @return Its definition. */
 	inline function expr(e:Expr) {
 		return e.e;
 	}
 
+	/** @param e An expression. @return Its start offset. */
 	inline function pmin(e:Expr) {
 		return e.pos.pmin;
 	}
 
+	/** @param e An expression. @return Its end offset. */
 	inline function pmax(e:Expr) {
 		return e.pos.pmax;
 	}
 
+	/**
+	 * Wraps an expression definition with a position.
+	 *
+	 * @param e The expression definition.
+	 * @param pmin Optional start offset (defaults to the current token's).
+	 * @param pmax Optional end offset (defaults to the current token's).
+	 * @return The positioned expression.
+	 */
 	inline function mk(e, ?pmin:Int, ?pmax:Int):Expr {
 		return {e: e, pos: getPos(pmin, pmax)};
 	}
 
+	/**
+	 * Wraps a declaration definition with a position.
+	 *
+	 * @param d The declaration definition.
+	 * @param pmin Optional start offset.
+	 * @param pmax Optional end offset.
+	 * @return The positioned declaration.
+	 */
 	inline function mkd(d, ?pmin:Int, ?pmax:Int):ModuleDecl {
 		return {d: d, pos: getPos(pmin, pmax)};
 	}
 
+	/**
+	 * Builds a position from offsets, computing the column.
+	 *
+	 * @param pmin Start offset, or -1 for the current token's.
+	 * @param pmax End offset, or -1 for the current token's.
+	 * @return The position.
+	 */
 	inline function getPos(pmin:Int = -1, pmax:Int = -1):Position {
 		if (pmin < 0)
 			pmin = tokenMin;
@@ -277,6 +430,12 @@ class Parser {
 		};
 	}
 
+	/**
+	 * Whether an expression ends in a brace block (so no trailing `;` is required after it).
+	 *
+	 * @param e The expression to test.
+	 * @return True if it is block-like.
+	 */
 	function isBlock(e) {
 		if (e == null)
 			return false;
@@ -298,6 +457,11 @@ class Parser {
 		}
 	}
 
+	/**
+	 * Parses one full statement into `exprs`, expanding a comma-separated `var a, b, c;` into several.
+	 *
+	 * @param exprs The list to append the parsed expression(s) to.
+	 */
 	function parseFullExpr(exprs:Array<Expr>) {
 		var e = parseExpr();
 		exprs.push(e);
@@ -318,8 +482,13 @@ class Parser {
 		}
 	}
 
+	/**
+	 * Parses an anonymous object literal (its opening brace already consumed).
+	 *
+	 * @param p1 The start offset of the literal.
+	 * @return The object expression (with any following postfix access parsed).
+	 */
 	function parseObject(p1) {
-		// parse object
 		var fl = new Array();
 		while (true) {
 			var tk = token(false);
@@ -354,13 +523,20 @@ class Parser {
 		return parseExprNext(mk(EObject(fl), p1));
 	}
 
+	/**
+	 * Turns a single-quoted string's `$ident` / `${expr}` interpolations into a chain of string
+	 * concatenations.
+	 *
+	 * @param s The literal text preceding the interpolation cursor.
+	 * @return An expression evaluating to the interpolated string.
+	 */
 	function interpolateString(s:String) {
 		var se = mk(EConst(CString(s)));
 
 		while (true) {
 			var e:Expr = null;
 
-			var c = StringTools.fastCodeAt(input, readPos); // this is so Stupid
+			var c = StringTools.fastCodeAt(input, readPos);
 			if (idents[c]) {
 				var ident:String = '';
 				while (true) {
@@ -394,6 +570,12 @@ class Parser {
 		return mk(EParent(se));
 	}
 
+	/**
+	 * Parses a single (possibly compound) expression, dispatching on the leading token.
+	 *
+	 * @param type An optional expected type, threaded through for typed forms.
+	 * @return The parsed expression.
+	 */
 	function parseExpr(?type) {
 		var tk = token();
 		var p1 = tokenMin;
@@ -558,6 +740,13 @@ class Parser {
 		}
 	}
 
+	/**
+	 * Parses the remaining parameters of an arrow lambda `(a, b) -> expr` and its body.
+	 *
+	 * @param args The already-parsed leading arguments.
+	 * @param pmin The lambda's start offset.
+	 * @return The function expression.
+	 */
 	function parseLambda(args:Array<Argument>, pmin) {
 		while (true) {
 			var id = getIdent();
@@ -578,10 +767,23 @@ class Parser {
 		return mkLambda(args, eret, pmin);
 	}
 
+	/**
+	 * Builds a lambda whose body returns `eret`.
+	 *
+	 * @param args The arguments.
+	 * @param eret The body expression, wrapped in a `return`.
+	 * @param p The start offset.
+	 * @return The function expression.
+	 */
 	function mkLambda(args, eret, p) {
 		return mk(EFunction(args, mk(EReturn(eret), pmin(eret)), ++fid), p);
 	}
 
+	/**
+	 * Parses a metadata entry's `(args)`, if present.
+	 *
+	 * @return The argument expressions, or null when there are no parentheses.
+	 */
 	function parseMetaArgs() {
 		var tk = token();
 		if (tk != TPOpen) {
@@ -606,6 +808,13 @@ class Parser {
 		return args;
 	}
 
+	/**
+	 * Builds a prefix unary operation, pushing it inside a binary/ternary operand to respect precedence.
+	 *
+	 * @param op The unary operator.
+	 * @param e The operand expression.
+	 * @return The resulting expression.
+	 */
 	function makeUnop(op, e) {
 		if (e == null && resumeErrors)
 			return null;
@@ -616,6 +825,15 @@ class Parser {
 		}
 	}
 
+	/**
+	 * Builds a binary operation, rebalancing against the right operand so operator precedence and
+	 * associativity come out correct.
+	 *
+	 * @param op The operator.
+	 * @param e1 The left operand.
+	 * @param e The right operand (already parsed).
+	 * @return The resulting expression.
+	 */
 	function makeBinop(op, e1, e) {
 		if (e == null && resumeErrors)
 			return mk(EBinop(op, e1, e), pmin(e1), pmax(e1));
@@ -632,6 +850,14 @@ class Parser {
 		}
 	}
 
+	/**
+	 * Parses a keyword-led construct (`if`, `while`, `for`, `switch`, `try`, `var`, `function`,
+	 * `return`, `import`, `using`, `cast`, `new`, and so on), dispatched by the leading keyword.
+	 *
+	 * @param id The leading keyword.
+	 * @param type An optional expected type for typed forms.
+	 * @return The parsed expression.
+	 */
 	function parseStructure(id, ?type) {
 		var p1 = tokenMin;
 
@@ -982,6 +1208,13 @@ class Parser {
 		}
 	}
 
+	/**
+	 * Parses whatever can follow an expression (field access, calls, indexing, binary operators,
+	 * ternary, etc.), extending `e1` until the expression ends.
+	 *
+	 * @param e1 The expression parsed so far.
+	 * @return The (possibly extended) expression.
+	 */
 	function parseExprNext(e1:Expr) {
 		var tk = token();
 		switch (tk) {
@@ -1033,6 +1266,12 @@ class Parser {
 		}
 	}
 
+	/**
+	 * Parses a function's parenthesized argument list (optionals, defaults, and rest).
+	 *
+	 * @param restAllowed Whether a trailing rest (`...`) argument is permitted.
+	 * @return The parsed arguments.
+	 */
 	function parseFunctionArgs(restAllowed:Bool = true) {
 		var args = new Array();
 		var hasRest = false;
@@ -1092,6 +1331,12 @@ class Parser {
 		return args;
 	}
 
+	/**
+	 * Parses a function's arguments, optional return type, and body.
+	 *
+	 * @param allowNoBody Whether a bodyless signature (interface/extern) is permitted.
+	 * @return The parsed arguments, return type, and body expression.
+	 */
 	function parseFunctionDecl(allowNoBody:Bool = false) {
 		parseParams(); // erase method type parameters, e.g. `function map<T, R>(...)`
 		ensure(TPOpen);
@@ -1109,6 +1354,11 @@ class Parser {
 		return {args: args, ret: ret, body: parseExpr()};
 	}
 
+	/**
+	 * Parses a dotted type/module path.
+	 *
+	 * @return The path segments.
+	 */
 	function parsePath() {
 		var path = [getIdent()];
 		while (true) {
@@ -1122,6 +1372,12 @@ class Parser {
 		return path;
 	}
 
+	/**
+	 * Parses a type annotation (paths with parameters, function types, anonymous structures,
+	 * parentheses, and optionals).
+	 *
+	 * @return The parsed type.
+	 */
 	function parseType():CType {
 		var t = token();
 		switch (t) {
@@ -1254,6 +1510,12 @@ class Parser {
 		}
 	}
 
+	/**
+	 * Parses whatever can follow a type, notably the `->` that turns it into a function type.
+	 *
+	 * @param t The type parsed so far.
+	 * @return The (possibly extended) type.
+	 */
 	function parseTypeNext(t:CType) {
 		var tk = token();
 		switch (tk) {
@@ -1276,6 +1538,12 @@ class Parser {
 		}
 	}
 
+	/**
+	 * Parses a comma-separated list of expressions terminated by a given closing token.
+	 *
+	 * @param etk The token that closes the list.
+	 * @return The parsed expressions.
+	 */
 	function parseExprList(etk) {
 		var args = new Array();
 		var tk = token();
@@ -1299,6 +1567,16 @@ class Parser {
 
 	// ------------------------ module -------------------------------
 
+	/**
+	 * Parses a whole module (a sequence of top-level declarations).
+	 *
+	 * @param content The source text.
+	 * @param origin The source origin for error positions.
+	 * @param position The starting byte offset.
+	 * @param pack The package to parse into.
+	 * @param importModule Whether this is an `import.hx` prelude (restricted to imports/usings).
+	 * @return The parsed declarations.
+	 */
 	public function parseModule(content:String, ?origin:String = "hscript", position:Int = 0, ?pack:Array<String>, importModule:Bool = false) {
 		this.pack = pack;
 		initParser(origin, position);
@@ -1331,6 +1609,11 @@ class Parser {
 		return decls;
 	}
 
+	/**
+	 * Parses a run of `@name`/`@:name(args)` metadata.
+	 *
+	 * @return The parsed metadata entries.
+	 */
 	function parseMetadata():Metadata {
 		var meta = [];
 		while (true) {
@@ -1348,6 +1631,12 @@ class Parser {
 
 	// Type parameters are recorded by name and erased: constraints are parsed and
 	// dropped, and every parameter resolves to Dynamic at runtime.
+
+	/**
+	 * Parses a `<...>` type-parameter list, keeping only the parameter names (constraints are erased).
+	 *
+	 * @return The type-parameter names.
+	 */
 	function parseParams():Array<String> {
 		var params:Array<String> = [];
 		if (!maybe(TOp("<")))
@@ -1393,6 +1682,17 @@ class Parser {
 		return params;
 	}
 
+	/**
+	 * Parses an `abstract` (or `enum abstract`) declaration, desugaring it into a class of static
+	 * constants tagged with the appropriate metadata.
+	 *
+	 * @param name The abstract's name.
+	 * @param meta Metadata already parsed for it.
+	 * @param params Its type-parameter names.
+	 * @param isEnum Whether it is an `enum abstract`.
+	 * @param isPrivate Whether it is `private`.
+	 * @return The resulting declaration.
+	 */
 	function parseAbstractDecl(name:String, meta:Metadata, params:Array<String>, isEnum:Bool, isPrivate:Bool):ModuleDecl {
 		// `abstract Name(Underlying) from A to B { ... }`. The underlying type and from/to casts
 		// erase (the runtime is dynamic). An enum abstract's members become static constants,
@@ -1432,6 +1732,14 @@ class Parser {
 		}), tokenMin, tokenMax);
 	}
 
+	/**
+	 * Parses one top-level declaration: `package`, `import`, `using`, `class`, `interface`, `enum`,
+	 * `typedef`, `abstract`, or a module-level field.
+	 *
+	 * @param decls The declarations parsed so far (some forms append to this directly).
+	 * @param importModule Whether only imports/usings are allowed (an `import.hx` prelude).
+	 * @return The parsed declaration.
+	 */
 	function parseModuleDecl(?decls:Array<ModuleDecl>, importModule:Bool = false):ModuleDecl {
 		var meta = parseMetadata();
 		var ident = getIdent();
@@ -1726,6 +2034,11 @@ class Parser {
 		return null;
 	}
 
+	/**
+	 * Parses one enum constructor, with its optional argument list.
+	 *
+	 * @return The parsed constructor.
+	 */
 	function parseEnumField():EnumFieldDecl {
 		var arguments:Array<Argument> = null;
 		var meta = parseMetadata();
@@ -1743,6 +2056,13 @@ class Parser {
 		};
 	}
 
+	/**
+	 * Parses one class/interface field: its metadata, access modifiers, and either a variable/property
+	 * or a function.
+	 *
+	 * @param allowNoBody Whether a bodyless member (interface/extern) is permitted.
+	 * @return The parsed field.
+	 */
 	function parseField(allowNoBody:Bool = false):FieldDecl {
 		var meta = parseMetadata();
 		var access = [];
@@ -1845,10 +2165,18 @@ class Parser {
 
 	// ------------------------ lexing -------------------------------
 
+	/** @return The next character code from the input, advancing the read position. */
 	inline function readChar() {
 		return StringTools.fastCodeAt(input, readPos++);
 	}
 
+	/**
+	 * Decodes a string escape sequence (`\n`, `\t`, `\uXXXX`, `\xXX`, etc.) into the output buffer.
+	 *
+	 * @param c The character following the backslash.
+	 * @param b The buffer to append the decoded character to.
+	 * @param old The start offset of the string, for error reporting.
+	 */
 	inline function parseEscape(c:Int, b:StringBuf, old:Int) {
 		var p1 = (currentPos - 1);
 		switch (c) {
@@ -1893,6 +2221,13 @@ class Parser {
 		}
 	}
 
+	/**
+	 * Reads a string literal up to its closing quote, decoding escapes.
+	 *
+	 * @param until The closing quote character code.
+	 * @param interpolate Whether this is a single-quoted, interpolatable string.
+	 * @return The literal's contents.
+	 */
 	function parseString(until:Int, interpolate:Bool = false) {
 		var c = 0;
 		var b = new StringBuf();
@@ -1937,6 +2272,11 @@ class Parser {
 		return TConst(CString(b.toString()));
 	}
 
+	/**
+	 * Reads a `~/.../flags` regular-expression literal.
+	 *
+	 * @return The regex token.
+	 */
 	function parseRegex() {
 		var c = 0;
 		var old = line;
@@ -1983,6 +2323,13 @@ class Parser {
 		return TConst(CReg(p.toString(), m.toString()));
 	}
 
+	/**
+	 * Reads the next token from the input (or replays a pushed-back one), skipping whitespace and
+	 * comments and handling metadata and preprocessor tokens.
+	 *
+	 * @param interpolateStrings Whether single-quoted strings should be tokenized as interpolatable.
+	 * @return The next token.
+	 */
 	function token(interpolateStrings:Bool = true) {
 		var t = tokens.pop();
 		if (t != null) {
@@ -2253,13 +2600,27 @@ class Parser {
 		return null;
 	}
 
+	/**
+	 * Looks up a preprocessor define's value.
+	 *
+	 * @param id The define name.
+	 * @return Its value, or null if undefined.
+	 */
 	function preprocValue(id:String):Dynamic {
 		return (preprocessorValues.get(id) ?? Config.preprocessorValues.get(id));
 	}
 
+	/** The stack of open `#if` branches, each recording whether it is currently active. */
 	var preprocStack:Array<{r:Bool}>;
+
+	/** Comparison/logic operators available inside `#if` conditions. */
 	var preprocessorBinops:Map<String, Dynamic->Dynamic->Bool>;
 
+	/**
+	 * Parses the condition expression of a `#if`/`#elseif`.
+	 *
+	 * @return The condition expression.
+	 */
 	function parsePreproCond() {
 		var tk = token();
 		return switch (tk) {
@@ -2276,6 +2637,12 @@ class Parser {
 		}
 	}
 
+	/**
+	 * Evaluates a `#if`/`#elseif` condition against the preprocessor defines.
+	 *
+	 * @param e The condition expression.
+	 * @return The condition's value.
+	 */
 	function evalPreproCond(e:Expr):Dynamic {
 		switch (expr(e)) {
 			case EIdent(id):
@@ -2302,6 +2669,13 @@ class Parser {
 		}
 	}
 
+	/**
+	 * Handles a preprocessor directive (`#if`/`#elseif`/`#else`/`#end`/`#error`), skipping the
+	 * inactive branches, and returns the next real token.
+	 *
+	 * @param id The directive name.
+	 * @return The next token after the directive is applied.
+	 */
 	function preprocess(id:String):Token {
 		switch (id) {
 			case "if":
@@ -2349,6 +2723,11 @@ class Parser {
 		}
 	}
 
+	/**
+	 * Skips tokens of an inactive preprocessor branch until its matching `#else`/`#elseif`/`#end`.
+	 *
+	 * @return The directive token that ended the skipped region.
+	 */
 	function skipTokens() {
 		var spos = preprocStack.length - 1;
 		var obj = preprocStack[spos];
@@ -2364,6 +2743,13 @@ class Parser {
 		}
 	}
 
+	/**
+	 * Consumes a line (`//`) or block (`/* *\/`) comment.
+	 *
+	 * @param op The comment-opening operator text read so far.
+	 * @param char The character following it.
+	 * @return The next token after the comment.
+	 */
 	function tokenComment(op:String, char:Int) {
 		var c = op.charCodeAt(1);
 		var s = input;
@@ -2410,6 +2796,12 @@ class Parser {
 		return TOp(op);
 	}
 
+	/**
+	 * Renders a constant's literal text (for error messages and token strings).
+	 *
+	 * @param c The constant.
+	 * @return Its source-like text.
+	 */
 	function constString(c) {
 		return switch (c) {
 			case CInt(v): Std.string(v);
@@ -2419,6 +2811,12 @@ class Parser {
 		}
 	}
 
+	/**
+	 * Renders a token as source-like text (for error messages).
+	 *
+	 * @param t The token.
+	 * @return Its display text.
+	 */
 	function tokenString(t) {
 		return switch (t) {
 			case TEof: "<eof>";

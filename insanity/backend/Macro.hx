@@ -25,11 +25,26 @@ package insanity.backend;
 import insanity.backend.Expr;
 import haxe.macro.Expr;
 
+/**
+ * Bridges the script AST and Haxe's own macro AST: converts a parsed script expression/type into the
+ * equivalent `haxe.macro.Expr`, and encodes a macro `ComplexType` back into a script `CType`. Used
+ * when embedding scripts at macro time.
+ */
 class Macro {
+	/** The macro position stamped onto generated nodes. */
 	var p:Position;
+
+	/** Script operator token -> Haxe `Binop`. */
 	var binops:Map<String, Binop>;
+
+	/** Script operator token -> Haxe `Unop`. */
 	var unops:Map<String, Unop>;
 
+	/**
+	 * Builds the operator lookup tables from Haxe's `Binop`/`Unop` enums.
+	 *
+	 * @param pos The macro position for generated nodes.
+	 */
 	public function new(pos) {
 		p = pos;
 		binops = new Map();
@@ -111,6 +126,13 @@ class Macro {
 		}
 	}
 
+	/**
+	 * Maps a function over an array into a new array.
+	 *
+	 * @param a The input array.
+	 * @param f The mapping function.
+	 * @return The mapped array.
+	 */
 	function map<T, R>(a:Array<T>, f:T->R):Array<R> {
 		var b = new Array();
 		for (x in a)
@@ -118,6 +140,12 @@ class Macro {
 		return b;
 	}
 
+	/**
+	 * Converts a script type into the equivalent Haxe macro `ComplexType`.
+	 *
+	 * @param t The script type.
+	 * @return The macro complex type.
+	 */
 	function convertType(t:Expr.CType):ComplexType {
 		return switch (t) {
 			case CTOpt(t): TOptional(convertType(t));
@@ -168,6 +196,12 @@ class Macro {
 		};
 	}
 
+	/**
+	 * Converts a script expression into the equivalent Haxe macro `Expr`.
+	 *
+	 * @param e The script expression.
+	 * @return The macro expression.
+	 */
 	public function convert(e:hscript.Expr):Expr {
 		return {
 			expr: switch (#if hscriptPos e.e #else e #end) {
@@ -277,6 +311,12 @@ class Macro {
 		}
 	}
 
+	/**
+	 * Encodes a Haxe macro `ComplexType` back into a script `CType`.
+	 *
+	 * @param t The macro complex type.
+	 * @return The script type.
+	 */
 	public function typeEncode(t:ComplexType):Expr.CType {
 		switch (t) {
 			case TPath(p):

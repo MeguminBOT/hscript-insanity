@@ -8,7 +8,18 @@ import haxe.macro.Type;
 using haxe.macro.ExprTools;
 using haxe.macro.TypeTools;
 
+/**
+ * Build macro used on HashLink, where `Math` (and similar) have no runtime representation and so
+ * can't be reflected on. It re-emits each static field of a source class as a real static
+ * property/method that forwards to the original, giving scripts something reflectable to call.
+ */
 class HLMacro {
+	/**
+	 * Generates forwarding statics mirroring another class's static fields.
+	 *
+	 * @param e An expression naming the source class.
+	 * @return The generated fields to add to the building class.
+	 */
 	public static macro function build(e:Expr):Array<Field> {
 		var pos = Context.currentPos();
 		var fields:Array<Field> = Context.getBuildFields();
@@ -43,10 +54,9 @@ class HLMacro {
 							expr: macro return $e.$f
 						})
 					});
-					trace(f);
 
 				case FMethod(m):
-					var args = null, ret = null; // should put all this stuff in one class instead of repeating code i think ... todo
+					var args = null, ret = null;
 
 					switch (field.type) {
 						default:

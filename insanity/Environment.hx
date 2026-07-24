@@ -3,13 +3,30 @@ package insanity;
 import insanity.backend.types.Scripted;
 import insanity.backend.TypeCollection;
 
+/**
+ * A world of modules that resolve against each other. It owns the module set, a combined
+ * `TypeCollection` index of every type they declare, and the shared variables handed to each
+ * interpreter, and it drives the staged startup (`init` -> `start` -> `startTypes`) across all
+ * modules so cross-module references line up.
+ */
 class Environment {
+	/** The modules in this world, keyed by their fully-qualified path. */
 	public var modules:Map<String, Module> = [];
+
+	/** The combined index of every type across all modules; rebuilt whenever the module set changes. */
 	public var types:TypeCollection;
 
+	/** Variables shared into every module's interpreter at `init`. */
 	public var variables:Map<String, Dynamic> = [];
+
+	/** Callbacks run once `start` finishes; returning false removes the callback. */
 	public var onInitialized:Array<Map<String, IInsanityType>->Bool> = [];
 
+	/**
+	 * Creates a world, optionally seeded with modules, and builds the initial type index.
+	 *
+	 * @param modules Modules to add up front; may be null for an empty world.
+	 */
 	public function new(?modules:Array<Module>) {
 		if (modules != null) {
 			for (module in modules)
@@ -19,18 +36,36 @@ class Environment {
 		rebuildTypes();
 	}
 
+	/**
+	 * Adds a module and rebuilds the type index.
+	 *
+	 * @param module The module to add (replaces any existing one at the same path).
+	 * @return The added module.
+	 */
 	public function addModule(module:Module):Module {
 		modules.set(module.path, module);
 		rebuildTypes();
 		return module;
 	}
 
+	/**
+	 * Removes a module and rebuilds the type index.
+	 *
+	 * @param module The module to remove.
+	 * @return The removed module.
+	 */
 	public function removeModule(module:Module):Module {
 		modules.remove(module.path);
 		rebuildTypes();
 		return module;
 	}
 
+	/**
+	 * Looks up a type by its fully-qualified path across all modules.
+	 *
+	 * @param path The type path to resolve.
+	 * @return The matching type, or null if no module declares it.
+	 */
 	public function resolve(path:String):IInsanityType {
 		for (module in modules) {
 			if (module.types.exists(path))
@@ -40,6 +75,11 @@ class Environment {
 		return null;
 	}
 
+	/**
+	 * Runs the full startup across every module in phases (`init` all, then `start` all, then
+	 * `startTypes` all) so a module can reference another before either has finished, and finally
+	 * fires the `onInitialized` callbacks with the combined type table.
+	 */
 	public function start():Void {
 		var allTypes:Map<String, IInsanityType> = [];
 
@@ -63,11 +103,18 @@ class Environment {
 		}
 	}
 
+	/** Snapshots every module's `@:snapshot` statics so a later reload can restore them. */
 	public function snapshot():Void {
 		for (module in modules)
 			module.snapshot();
 	}
 
+	/**
+	 * Rebuilds the combined `TypeCollection` from every module's declared types, indexing each by
+	 * package, module, path, and compile path.
+	 *
+	 * @return The freshly built collection (also stored in `types`).
+	 */
 	public function rebuildTypes():TypeCollection {
 		var map:TypeMap = {
 			byPackage: [],

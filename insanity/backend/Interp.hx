@@ -40,69 +40,144 @@ using insanity.tools.Tools;
 using insanity.backend.TypeCollection;
 using insanity.backend.types.Abstract;
 
+/** Internal control-flow signal thrown to unwind loops and functions. */
 enum Stop {
+	/** A `break`. */
 	SBreak;
+
+	/** A `continue`. */
 	SContinue;
+
+	/** A `return`. */
 	SReturn;
 }
 
+/** A pending field resolution, deferred until the base value is known. */
 enum Resolve {
+	/** Resolve field `f` (errors if missing). */
 	RNormal(f:String);
+
+	/** Resolve field `f` null-safely (yields null if missing). */
 	RMaybe(f:String);
+
+	/** Resolve by evaluating an expression. */
 	RExpr(e:Expr);
 }
 
+/** A variable slot: its value plus optional abstract box, finality, access flags, and accessors. */
 typedef Variable = {
+	/** The stored value. */
 	var r:Dynamic;
+
+	/** The abstract wrapper, when the value is a boxed abstract. */
 	var ?a:InsanityAbstract;
 
+	/** Whether the binding is `final`. */
 	var ?isFinal:Bool;
+
+	/** The field's access modifiers, when it is a class field. */
 	var ?access:Array<FieldAccess>;
 
+	/** The getter accessor name, when it is a property. */
 	var ?get:String;
+
+	/** The setter accessor name, when it is a property. */
 	var ?set:String;
 }
 
+/**
+ * The tree-walking interpreter: it evaluates parsed expressions against a scope of variables,
+ * imports, and `using`s. One interpreter backs each `Script`, `Module`, and scripted type; nested
+ * scopes (blocks, function calls) push and pop frames on an internal `CallStack`.
+ *
+ * Inside this class `Type`, `Reflect`, and `Std` are aliased to the `Insanity*` proxies (see the
+ * imports), so reflection transparently understands scripted types as well as native ones.
+ */
 class Interp {
+	/** Active `using` extension classes, searched for extension methods on field access. */
 	public var usings:Array<Dynamic>;
+
+	/** Imported names -> the type, value, or `Mirror` they resolve to. */
 	public var imports:Map<String, Dynamic>;
+
+	/** Top-level (module/script) variables. */
 	public var variables:Map<String, Dynamic>;
 
+	/** The owning object (script, module, or instance) bound as context. */
 	public var parent:Dynamic = null;
+
+	/** The world this interpreter resolves types against. */
 	public var environment:Environment;
 
+	/** Whether an assignment to an undeclared name defines a global (script mode) rather than erroring. */
 	public var defineGlobals:Bool = false;
+
+	/** Whether a `super(...)` call is currently permitted (only inside a constructor). */
 	public var superConstructorAllowed:Bool = false;
 
+	/** Pool of reusable local-variable maps, to avoid per-call allocation. */
 	static var localsPool:Array<Map<String, Variable>> = [];
 
+	/** The current frame's local variables. */
 	var locals(get, never):Map<String, Variable>;
+
+	/** Binary-operator implementations, keyed by operator token. */
 	var binops:Map<String, Expr->Expr->Dynamic>;
 
+	/** Maximum interpreter call depth before a stack-overflow guard trips. */
 	public var callStackDepth:Int = 200;
 
+	/** The interpreter's own call stack (frames with their locals). */
 	var stack:CallStack;
 
+	/** Whether execution is currently inside a `try`. */
 	var inTry:Bool;
+
+	/** Metadata gathered for the declaration currently being processed. */
 	var metas:Metadata = [];
+
+	/** Pending deferred field resolutions (see `Resolve`). */
 	var resolveFields:Array<Resolve> = [];
+
+	/** Captured variables for the closure currently being built. */
 	var captures:Map<String, Dynamic>;
+
+	/** Variables declared in the current scope, with their shadowed previous bindings, for restoration. */
 	var declared:Array<{n:String, old:Variable}>;
+
+	/** The value returned by the currently-returning function. */
 	var returnValue:Dynamic;
 
+	/** A unique sentinel standing for "no value" / `Void`. */
 	static var void(default, never):Dynamic = {};
+
+	/** The interpreter whose `private` access is currently being checked. */
 	static var accessingInterp:Interp = null;
 
+	/** The current source position, updated as expressions are evaluated. */
 	var position:Position = {origin: 'hscript', line: 0};
+
+	/** The current source origin. */
 	var origin(get, never):String;
+
+	/** The field name currently being accessed, used to disambiguate direct field vs property access. */
 	var curAccess:String = '';
 
+	/** Whether static initializers may defer (throw `Defer`) when a dependency isn't ready. */
 	public var canDefer:Bool = false;
+
+	/** Whether type initialization may be triggered during resolution. */
 	public var canInit:Bool = false;
 
 	/** The scripted class this interpreter runs on behalf of, used for `private` checks. */
 	public var ownerClass:InsanityScriptedClass = null;
 
+	/**
+	 * Creates an interpreter, seeding it with defaults and the operator table.
+	 *
+	 * @param environment The world to resolve types against, if any.
+	 * @param parent The owning object bound as context, if any.
+	 */
 	public function new(?environment:Environment, ?parent:Dynamic) {
 		this.environment = environment;
 		this.parent = parent;
@@ -119,6 +194,13 @@ class Interp {
 		initOps();
 	}
 
+	/**
+	 * Resets the interpreter's scope: optionally clears imports/usings/variables, seeds the global
+	 * variables and imports from `Config`, and (re)installs `trace`.
+	 *
+	 * @param wipe Whether to clear existing imports, usings, and variables first.
+	 * @param includeConfig Whether to seed the `Config` globals and imports.
+	 */
 	public function setDefaults(wipe:Bool = true, includeConfig:Bool = true) {
 		if (wipe) {
 			imports.clear();
@@ -143,22 +225,27 @@ class Interp {
 		}));
 	}
 
+	/** @return A short debug string with the parent and origin. */
 	public function toString():String {
 		return '(parent: $parent | origin: $origin)';
 	}
 
+	/** @return Haxe `PosInfos` for the current source position, for use with `trace`. */
 	public function posInfos():PosInfos {
 		return cast {fileName: position.origin, lineNumber: position.line};
 	}
 
+	/** @return The current frame's local variables. */
 	function get_locals():Map<String, Variable> {
 		return stack.first()?.locals;
 	}
 
+	/** @return The current source origin. */
 	function get_origin():String {
 		return position.origin;
 	}
 
+	/** Builds the binary- and assignment-operator tables. */
 	function initOps() {
 		binops = [
 			"=" => assign,
@@ -199,6 +286,14 @@ class Interp {
 		assignOp("??=", function(v1, v2) return v1 ?? v2);
 	}
 
+	/**
+	 * Assigns to a top-level name: writes through a property mirror, sets an existing variable, or (in
+	 * global-define mode at top level) defines a new one; otherwise errors.
+	 *
+	 * @param name The variable name.
+	 * @param v The value to assign (unwrapped if it is a boxed abstract).
+	 * @return The assigned value.
+	 */
 	function setVar(name:String, v:Dynamic):Dynamic {
 		if (AbstractTools.isAbstract(v))
 			v = v.__a;
@@ -249,6 +344,13 @@ class Interp {
 		return v;
 	}
 
+	/**
+	 * Evaluates `e1 = e2`, targeting a local, a top-level variable, a field, or a map/array element.
+	 *
+	 * @param e1 The assignment target.
+	 * @param e2 The value expression.
+	 * @return The assigned value.
+	 */
 	function assign(e1:Expr, e2:Expr):Dynamic {
 		var v = expr(e2);
 		switch (Tools.expr(e1)) {
@@ -275,10 +377,25 @@ class Interp {
 		return v;
 	}
 
+	/**
+	 * Registers a compound-assignment operator (`+=`, `*=`, ...) built from a plain combiner.
+	 *
+	 * @param op The operator token.
+	 * @param fop The function combining the current and right-hand values.
+	 */
 	function assignOp(op, fop:Dynamic->Dynamic->Dynamic) {
 		binops.set(op, function(e1, e2) return evalAssignOp(op, fop, e1, e2));
 	}
 
+	/**
+	 * Evaluates a compound assignment `e1 op= e2` against a local, variable, field, or element.
+	 *
+	 * @param op The operator token (for error reporting).
+	 * @param fop The combiner applied to the current and right-hand values.
+	 * @param e1 The assignment target.
+	 * @param e2 The right-hand expression.
+	 * @return The new value.
+	 */
 	function evalAssignOp(op, fop, e1, e2):Dynamic {
 		var v;
 		switch (Tools.expr(e1)) {
@@ -310,6 +427,14 @@ class Interp {
 		return v;
 	}
 
+	/**
+	 * Reads a local/field value, honouring its property getter and access rules (`null`/`never`/`get`/
+	 * `dynamic`/`default`).
+	 *
+	 * @param id The variable or field name.
+	 * @param map The slot map to read from; defaults to the current locals.
+	 * @return The value, or null if the slot doesn't exist.
+	 */
 	public function getLocal(id:String, ?map:Map<String, Variable>):Dynamic {
 		var map:Map<String, Variable> = (map ?? locals);
 		var l:Variable = map.get(id);
@@ -349,6 +474,15 @@ class Interp {
 		}
 	}
 
+	/**
+	 * Writes a local/field value, honouring its property setter, `final`, and method-rebind rules.
+	 *
+	 * @param id The variable or field name.
+	 * @param v The value to store.
+	 * @param map The slot map to write to; defaults to the current locals.
+	 * @return The stored value, or null if the slot doesn't exist.
+	 * @throws String On a `final` reassignment or a non-`dynamic` method rebind.
+	 */
 	public function setLocal(id:String, v:Dynamic, ?map:Map<String, Variable>):Dynamic {
 		var map:Map<String, Variable> = (map ?? locals);
 		var l:Variable = map.get(id);
@@ -394,6 +528,14 @@ class Interp {
 		}
 	}
 
+	/**
+	 * Evaluates `++`/`--` on a local, variable, field, or element.
+	 *
+	 * @param e The operand expression.
+	 * @param prefix True for the prefix form (`++x`), false for the postfix form (`x++`).
+	 * @param delta `+1` to increment or `-1` to decrement.
+	 * @return The prefix or postfix result value, matching Haxe semantics.
+	 */
 	function increment(e:Expr, prefix:Bool, delta:Int):Dynamic {
 		position = e.pos;
 		var e = e.e;
@@ -450,6 +592,13 @@ class Interp {
 		}
 	}
 
+	/**
+	 * Runs a module's top-level program: processes its `using` and `import` declarations (type
+	 * declarations themselves are initialized separately). Errors are wrapped as `InterpException`s.
+	 *
+	 * @param decls The module's declarations.
+	 * @param path The module path (used for the stack frame).
+	 */
 	public function executeModule(decls:Array<ModuleDecl>, path:String):Void {
 		try {
 			if (stack.length == 0)
@@ -477,6 +626,12 @@ class Interp {
 		}
 	}
 
+	/**
+	 * Runs a full expression program from a clean stack. Errors are wrapped as `InterpException`s.
+	 *
+	 * @param expr The program to evaluate.
+	 * @return The program's result value.
+	 */
 	public function execute(expr:Expr):Dynamic {
 		try {
 			stack.stack.resize(0);
@@ -496,6 +651,14 @@ class Interp {
 		return null;
 	}
 
+	/**
+	 * Evaluates an expression and absorbs a `return` (yielding the returned value); a stray `break`/
+	 * `continue` is an error.
+	 *
+	 * @param e The expression to evaluate.
+	 * @param t An optional expected type for the value.
+	 * @return The expression's value, or the returned value if it returned.
+	 */
 	function exprReturn(e, ?t:CType):Dynamic {
 		try {
 			return expr(e, t);
@@ -519,6 +682,12 @@ class Interp {
 		return null;
 	}
 
+	/**
+	 * Pushes a new call frame, stamping the previous frame with the current source position first.
+	 *
+	 * @param item The descriptor of the frame being entered; null just refreshes the top frame's position.
+	 * @param locals The frame's local map; defaults to a fresh duplicate of the current scope.
+	 */
 	function pushStack(?item:StackItem, ?locals:Map<String, Variable>) {
 		var last:Stack = stack.stack.shift();
 
@@ -539,6 +708,12 @@ class Interp {
 		}
 	}
 
+	/**
+	 * Pops the top call frame, optionally returning its local map to the pool for reuse.
+	 *
+	 * @param put Whether to recycle the popped frame's locals into the pool.
+	 * @return The popped frame.
+	 */
 	function shiftStack(put:Bool = true):Stack {
 		var item:Stack = stack.stack.shift();
 
@@ -548,6 +723,12 @@ class Interp {
 		return item;
 	}
 
+	/**
+	 * Gets a local map from the pool (or allocates one), optionally pre-filled from an existing map.
+	 *
+	 * @param h A map to copy entries from, if any.
+	 * @return A ready-to-use local map.
+	 */
 	inline function duplicate(?h:Map<String, Variable>):Map<String, Variable> {
 		if (localsPool.length > 0) {
 			var locals:Map<String, Variable> = localsPool.pop();
@@ -564,6 +745,11 @@ class Interp {
 		}
 	}
 
+	/**
+	 * Unwinds variable declarations made since a scope began, restoring shadowed bindings.
+	 *
+	 * @param old The `declared` length to roll back to (the scope's starting mark).
+	 */
 	function restore(old:Int) {
 		while (declared.length > old) {
 			var d = declared.pop();
@@ -576,6 +762,13 @@ class Interp {
 		}
 	}
 
+	/**
+	 * Raises an interpreter error with the current stack.
+	 *
+	 * @param e The error to raise.
+	 * @param rethrow Whether to rethrow (preserving the native trace) rather than throw fresh.
+	 * @return Never returns normally; typed `Dynamic` so it can stand in an expression.
+	 */
 	function error(e:Error, rethrow = false):Dynamic {
 		pushStack();
 
@@ -588,6 +781,11 @@ class Interp {
 		return null;
 	}
 
+	/**
+	 * Rethrows a value preserving its original stack (via the HashLink API where available).
+	 *
+	 * @param e The value to rethrow.
+	 */
 	inline function rethrow(e:Dynamic) {
 		#if hl
 		hl.Api.rethrow(e);
@@ -596,6 +794,22 @@ class Interp {
 		#end
 	}
 
+	/**
+	 * Constructs an enum value by constructor index.
+	 *
+	 * `t` and the return are typed `Dynamic`, not `Enum<Dynamic>`/`EnumValue`: a scripted enum is an
+	 * `InsanityScriptedEnum` class instance and its values are `InsanityScriptedEnumValue` instances --
+	 * neither is a native enum, so an `Enum<Dynamic>`/`EnumValue`-typed boundary makes hxcpp coerce the
+	 * argument (and result) with a native-enum cast that yields null, breaking bare enum constructors on
+	 * the C++ target. `Type` is the `InsanityType` proxy, which dispatches scripted and native enums
+	 * alike from a `Dynamic`.
+	 *
+	 * @param t The scripted or native enum.
+	 * @param i The constructor index.
+	 * @param args Constructor arguments, if any.
+	 * @return The enum value.
+	 * @throws String If construction fails.
+	 */
 	function createEnum(t:Dynamic, i:Int, ?args:Array<Dynamic>):Dynamic {
 		try {
 			return Type.createEnumIndex(t, i, args);
@@ -604,6 +818,14 @@ class Interp {
 		}
 	}
 
+	/**
+	 * Constructs an enum-abstract value by constructor index.
+	 *
+	 * @param t The enum-abstract implementation class.
+	 * @param i The constructor index.
+	 * @return The wrapped value.
+	 * @throws String If construction fails.
+	 */
 	function createAbstractEnum(t:Class<InsanityAbstract>, i:Int):InsanityAbstract {
 		try {
 			return AbstractTools.createEnumIndex(t, i);
@@ -613,22 +835,28 @@ class Interp {
 		}
 	}
 
-	// Enum equality is structural in Haxe, so `==`/`!=` compare scripted enum values by
-	// constructor + arguments rather than object identity. Everything else keeps native `==`.
+	/**
+	 * Value equality for `==`/`!=`. Enum values compare structurally (constructor + arguments), the
+	 * way Haxe does; everything else uses native `==`.
+	 *
+	 * @param a The first value.
+	 * @param b The second value.
+	 * @return True if equal.
+	 */
 	inline function eqValues(a:Dynamic, b:Dynamic):Bool {
 		if (a is ICustomEnumValueType && b is ICustomEnumValueType)
 			return cast(a, ICustomEnumValueType).eq(b);
 		return a == b;
 	}
 
-	// Whether enum `t`'s constructor at index `i` takes parameters. Scripted enums answer
-	// from their decl; native enums are probed by whether the no-arg value exists in allEnums.
-
 	/**
 	 * Returns the live instance of a scripted enum. A `Mirror.MEnumValue` can outlive the enum
 	 * instance it captured (e.g. a module reloaded under it), leaving `values`/`decl` null; the
 	 * environment always maps the enum's path to the current one, so swap to that when the held
 	 * instance looks dead. Non-scripted and healthy instances pass straight through.
+	 *
+	 * @param t The (possibly stale) enum.
+	 * @return The live enum, or `t` unchanged when it is healthy or not scripted.
 	 */
 	function liveEnum(t:Dynamic):Dynamic {
 		if (t is InsanityScriptedEnum) {
@@ -646,6 +874,10 @@ class Interp {
 	 * Whether a caught value satisfies a `catch` clause's declared type. Thrown values aren't
 	 * wrapped in `haxe.Exception` here, so `Dynamic`/`Any`/`Exception` (and any unresolvable
 	 * type) are treated as catch-all; a resolvable path is matched with `Std.isOfType`.
+	 *
+	 * @param v The caught value.
+	 * @param t The catch clause's declared type, or null for an untyped catch.
+	 * @return True if `v` should be caught by this clause.
 	 */
 	function catchMatches(v:Dynamic, t:Null<CType>):Bool {
 		if (t == null)
@@ -672,6 +904,10 @@ class Interp {
 	 * instance first (a cached import can outlive a reloaded module), so a bare `Foo` builds
 	 * against the current type exactly like qualified `Enum.Foo`. A parameterized constructor
 	 * yields a varargs builder; a parameterless one yields the value itself so it matches `case Foo`.
+	 *
+	 * @param t The enum the constructor belongs to.
+	 * @param i The constructor index.
+	 * @return The value, or a var-args builder for a parameterized constructor.
 	 */
 	function resolveEnumValue(t:Dynamic, i:Int):Dynamic {
 		t = liveEnum(t);
@@ -680,6 +916,14 @@ class Interp {
 		return createEnum(t, i);
 	}
 
+	/**
+	 * Whether enum `t`'s constructor at index `i` takes parameters. Scripted enums answer from their
+	 * declaration; native enums are probed by whether a parameterless value of that constructor exists.
+	 *
+	 * @param t The enum.
+	 * @param i The constructor index.
+	 * @return True if that constructor is parameterized.
+	 */
 	function enumConstructorHasArgs(t:Dynamic, i:Int):Bool {
 		if (t is InsanityScriptedEnum)
 			return cast(t, InsanityScriptedEnum).constructorHasArgs(i);
@@ -695,6 +939,13 @@ class Interp {
 		return true;
 	}
 
+	/**
+	 * Materializes a stored value: a `Mirror` (property, enum constructor, or enum-abstract constant)
+	 * is turned into its live value; anything else is returned unchanged.
+	 *
+	 * @param v The stored value or mirror.
+	 * @return The materialized value.
+	 */
 	inline function resolveMirror(v:Dynamic):Dynamic {
 		if (v is Mirror) {
 			switch (v) {
@@ -716,6 +967,14 @@ class Interp {
 		}
 	}
 
+	/**
+	 * Resolves a bare identifier to a value, checking imports first, then top-level variables, and
+	 * materializing any mirror it finds.
+	 *
+	 * @param id The identifier.
+	 * @return The resolved value.
+	 * @throws InterpException If the identifier is unknown.
+	 */
 	public function resolve(id:String):Dynamic {
 		if (imports.exists(id)) {
 			var v:Dynamic = imports.get(id);
@@ -732,10 +991,26 @@ class Interp {
 		return resolveMirror(variables.get(id));
 	}
 
+	/**
+	 * Whether a bare identifier can be resolved (is a known import or variable).
+	 *
+	 * @param id The identifier.
+	 * @return True if `resolve` would succeed.
+	 */
 	public function isResolvable(id:String):Bool {
 		return (imports.exists(id) || variables.exists(id));
 	}
 
+	/**
+	 * Imports a resolved type under a name, dispatching by kind: a typedef binds its alias, an enum
+	 * also exposes its constructors, an enum abstract exposes its constants, and classes/enums bind
+	 * directly. Initializes a not-yet-initialized scripted type first when allowed.
+	 *
+	 * @param name The name to bind the import under.
+	 * @param t The resolved type; null is ignored.
+	 * @param enumValueImport Whether to also expose an enum's constructors unqualified.
+	 * @throws String If `t` is not an importable kind.
+	 */
 	function importType(name:String, t:Dynamic, enumValueImport:Bool = true) {
 		if (t == null)
 			return;
@@ -774,11 +1049,23 @@ class Interp {
 		}
 	}
 
+	/**
+	 * Exposes an enum's constructors unqualified, each as a `Mirror.MEnumValue`.
+	 *
+	 * @param t The enum whose constructors to import.
+	 */
 	function importEnumValues(t:Dynamic) {
 		for (i => v in Type.getEnumConstructs(t))
 			imports.set(v, MEnumValue(t, i));
 	}
 
+	/**
+	 * Processes an `import` declaration: a wildcard import brings in a package's types, and a plain or
+	 * aliased import brings in a single type (or one of its static fields / enum constructors).
+	 *
+	 * @param path The dotted import path.
+	 * @param mode Whether it is a normal, aliased, or wildcard import.
+	 */
 	function importPath(path:Array<String>, mode:ImportMode):Void {
 		if (mode == IAll) {
 			var fullPath:String = path.join('.');
@@ -790,7 +1077,7 @@ class Interp {
 			imports.set(fullPath.substr(fullPath.lastIndexOf('.') + 1), null);
 			for (type in types) {
 				if (type.module != type.name && type.name != 'Main')
-					continue; // lol
+					continue; // only the module's main type, not its sub-types
 				if (type.name.indexOf('_Impl_') > -1 || type.name.startsWith('InsanityAbstract_'))
 					continue;
 
@@ -908,6 +1195,12 @@ class Interp {
 		error(EUnknownType(path.join('.')));
 	}
 
+	/**
+	 * Processes a `using` declaration: registers the named class as an extension provider (and imports
+	 * it) so its static methods become callable as instance methods.
+	 *
+	 * @param path The dotted path of the class to use.
+	 */
 	function usingType(path:Array<String>):Void {
 		var tf:String = null;
 
@@ -941,6 +1234,11 @@ class Interp {
 		error(EUnknownType(path.join('.')));
 	}
 
+	/**
+	 * Initializes an inline (nested) type declaration and binds it under its name.
+	 *
+	 * @param decl The declaration to start.
+	 */
 	public function startDecl(decl:ModuleDecl) {
 		position = decl.pos;
 
@@ -990,6 +1288,21 @@ class Interp {
 		}
 	}
 
+	/**
+	 * Builds a callable closure for a function declaration: it captures the enclosing scope, fills in
+	 * optional/rest parameters, pushes a call frame per invocation, and casts arguments and the result
+	 * to their declared types. A named function is additionally bound in its scope (as a self-recursive
+	 * local, or a global in define-globals mode).
+	 *
+	 * @param name The function name, or null for an anonymous function.
+	 * @param params The parameter list.
+	 * @param fexpr The body expression.
+	 * @param ret The declared return type, if any.
+	 * @param id The runtime slot id for an anonymous function, used in stack traces.
+	 * @param functionLocals A fixed locals map to run in (for methods), instead of capturing the current scope.
+	 * @param su Whether a `super(...)` call is permitted in the body (constructors).
+	 * @return The callable closure.
+	 */
 	public function buildFunction(?name:String, params:Array<Argument>, fexpr:Expr, ?ret:CType, ?id:Int, ?functionLocals:Map<String, Variable>,
 			su:Bool = false) {
 		var capturedLocals = (functionLocals == null ? duplicate(locals) : null);
@@ -1095,6 +1408,17 @@ class Interp {
 		return f;
 	}
 
+	/**
+	 * The core evaluator: computes the value of one expression, recursing into its sub-expressions and
+	 * dispatching on the expression kind. Control flow (`break`/`continue`/`return`) is signalled by
+	 * throwing `Stop`.
+	 *
+	 * @param e The expression to evaluate.
+	 * @param t An optional expected type, used to cast the result.
+	 * @param void Whether the value is unused (allows statement-only forms).
+	 * @param mapCompr Whether this is evaluated inside a map comprehension (affects `k => v` handling).
+	 * @return The expression's value.
+	 */
 	public function expr(e:Expr, ?t:CType, void:Bool = false, mapCompr:Bool = false):Dynamic {
 		Type.environment = environment;
 		accessingInterp = this;
@@ -1583,6 +1907,17 @@ class Interp {
 		return (void ? Interp.void : null);
 	}
 
+	/**
+	 * Resolves a field-access chain (`a.b.c`) as a whole, so a leading run of names can name a type
+	 * (or package path) before member access begins. The chain is queued and, once the outermost call
+	 * is reached, walked left to right: names resolve against captures/locals/imports or the type
+	 * collection, then remaining segments are field accesses.
+	 *
+	 * @param e The base expression of the chain.
+	 * @param f The field being accessed on it.
+	 * @param m Whether this is a null-safe (`?.`) access.
+	 * @return The resolved value, or null while an inner call defers to the outermost one.
+	 */
 	inline function resolveField(e:Expr, f:String, m:Bool = false):Dynamic {
 		final canResolve = (resolveFields.length == 0);
 
@@ -1663,6 +1998,12 @@ class Interp {
 		return got;
 	}
 
+	/**
+	 * Finds a metadata entry among the metas gathered for the current declaration.
+	 *
+	 * @param name The metadata name (e.g. `:bypassAccessor`).
+	 * @return The entry, or null if absent.
+	 */
 	inline function getMeta(name:String):MetadataEntry {
 		var entry:MetadataEntry = null;
 
@@ -1676,6 +2017,14 @@ class Interp {
 		return entry;
 	}
 
+	/**
+	 * Whether a value matches a `switch` pattern value, including structural enum equality (scripted
+	 * and native).
+	 *
+	 * @param v The value being switched on.
+	 * @param with The pattern value.
+	 * @return True if they match.
+	 */
 	public static function matchValues(v:Dynamic, with:Dynamic):Bool {
 		if (v == with) {
 			return true;
@@ -1688,6 +2037,15 @@ class Interp {
 		return false;
 	}
 
+	/**
+	 * Applies a type annotation to a value where it matters at runtime: wrapping into an abstract, or
+	 * converting an abstract to a `to` target. Other annotations are no-ops (the interpreter is untyped).
+	 *
+	 * @param e The value to cast.
+	 * @param type The target type annotation, if any.
+	 * @return The (possibly wrapped/converted) value.
+	 * @throws String If an abstract cannot be converted to the target.
+	 */
 	function tryCast(e:Dynamic, ?type):Dynamic {
 		switch (type) {
 			case CTPath(p, _):
@@ -1701,7 +2059,7 @@ class Interp {
 				}
 
 				if (e == null || t == null || !(t is Class))
-					return e; // throw 'Type not found: $path';
+					return e;
 
 				if (Type.getSuperClass(t) == InsanityAbstract) {
 					return Type.createInstance(t, [e]);
@@ -1719,6 +2077,12 @@ class Interp {
 		return e;
 	}
 
+	/**
+	 * Runs a `do`/`while` loop.
+	 *
+	 * @param econd The continuation condition.
+	 * @param e The body expression.
+	 */
 	function doWhileLoop(econd, e) {
 		var old = declared.length;
 		do {
@@ -1728,6 +2092,12 @@ class Interp {
 		restore(old);
 	}
 
+	/**
+	 * Runs a `while` loop.
+	 *
+	 * @param econd The continuation condition.
+	 * @param e The body expression.
+	 */
 	function whileLoop(econd, e) {
 		var old = declared.length;
 		while (expr(econd) == true) {
@@ -1737,6 +2107,13 @@ class Interp {
 		restore(old);
 	}
 
+	/**
+	 * Produces an iterator for a value, accepting arrays, iterables, and iterators.
+	 *
+	 * @param v The value to iterate.
+	 * @return An iterator over it.
+	 * @throws InterpException If the value cannot be iterated.
+	 */
 	function makeIterator(v:Dynamic):Iterator<Dynamic> {
 		if (v is Array)
 			return (v : Array<Dynamic>).iterator();
@@ -1755,6 +2132,13 @@ class Interp {
 		return v;
 	}
 
+	/**
+	 * Produces a key-value iterator for a value, accepting maps, arrays, and key-value iterables.
+	 *
+	 * @param v The value to iterate.
+	 * @return A key-value iterator over it.
+	 * @throws InterpException If the value cannot be key-value iterated.
+	 */
 	function makeKeyValueIterator(v:Dynamic):KeyValueIterator<Dynamic, Dynamic> {
 		if ((v is haxe.ds.IntMap) || (v is haxe.ds.StringMap) || (v is haxe.ds.ObjectMap) || (v is haxe.ds.EnumValueMap)) {
 			return (v : IMap<Dynamic, Dynamic>).keyValueIterator();
@@ -1776,6 +2160,13 @@ class Interp {
 		return v;
 	}
 
+	/**
+	 * Runs a `for (n in it)` loop, binding the loop variable each iteration.
+	 *
+	 * @param n The loop variable name.
+	 * @param it The iterable expression.
+	 * @param ef The body callback.
+	 */
 	function forLoop(n, it, ef:Dynamic) {
 		var old = declared.length;
 		declared.push({n: n, old: locals.get(n)});
@@ -1794,6 +2185,14 @@ class Interp {
 		restore(old);
 	}
 
+	/**
+	 * Runs a `for (k => v in it)` loop, binding both key and value each iteration.
+	 *
+	 * @param vk The key variable name.
+	 * @param vv The value variable name.
+	 * @param it The key-value iterable expression.
+	 * @param ef The body callback.
+	 */
 	function forKeyValueLoop(vk, vv, it, ef:Dynamic) {
 		var old = declared.length;
 		declared.push({n: vk, old: locals.get(vk)});
@@ -1821,6 +2220,12 @@ class Interp {
 		restore(old);
 	}
 
+	/**
+	 * Runs one loop-body iteration, absorbing `break`/`continue` (a `return` still propagates).
+	 *
+	 * @param f The body to run.
+	 * @return True to continue looping, false if the body broke.
+	 */
 	inline function loopRun(f:Void->Void) {
 		var cont = true;
 		try {
@@ -1837,18 +2242,29 @@ class Interp {
 		return cont;
 	}
 
+	/** @param o A value. @return Whether it is a map. */
 	inline function isMap(o:Dynamic):Bool {
 		return (o is IMap);
 	}
 
+	/** @param map A map. @param key The key. @return The mapped value. */
 	inline function getMapValue(map:Dynamic, key:Dynamic):Dynamic {
 		return cast(map, haxe.Constraints.IMap<Dynamic, Dynamic>).get(key);
 	}
 
+	/** @param map A map. @param key The key. @param value The value to store. */
 	inline function setMapValue(map:Dynamic, key:Dynamic, value:Dynamic):Void {
 		cast(map, haxe.Constraints.IMap<Dynamic, Dynamic>).set(key, value);
 	}
 
+	/**
+	 * Builds the right kind of map for an object literal used as a map, picking the implementation
+	 * from the key types (int, string, enum, or object).
+	 *
+	 * @param keys The keys.
+	 * @param values The values, positionally matched to keys.
+	 * @return The constructed map.
+	 */
 	function makeMap(keys:Array<Dynamic>, values:Array<Dynamic>):Dynamic {
 		var isAllString:Bool = true;
 		var isAllInt:Bool = true;
@@ -1913,6 +2329,10 @@ class Interp {
 	 * Rejects reads/writes of a script-declared `private` member from outside the
 	 * declaring class. No-op unless `Config.strictAccess` is on; native fields carry
 	 * no access information at runtime and are never checked.
+	 *
+	 * @param o The object being accessed.
+	 * @param f The field name.
+	 * @throws InterpException If the field is private and the caller isn't in the declaring class.
 	 */
 	inline function checkAccess(o:Dynamic, f:String):Void {
 		if (!Config.strictAccess)
@@ -1930,6 +2350,15 @@ class Interp {
 			error(ECustom('Cannot access private field $f of ${declaring.path}'));
 	}
 
+	/**
+	 * Reads field `f` of `o`, honouring properties, `super` mirrors, `:bypassAccessor`, and static
+	 * `_Fields_` hosts. Defers if the target is an uninitialized scripted type.
+	 *
+	 * @param o The object to read from.
+	 * @param f The field name.
+	 * @param maybe Whether this is a null-safe (`?.`) access (returns null instead of erroring on a null object).
+	 * @return The field value.
+	 */
 	function get(o:Dynamic, f:String, maybe:Bool = false):Dynamic {
 		if (canDefer && o is IInsanityType && !o.initialized)
 			throw DDefer;
@@ -1983,6 +2412,15 @@ class Interp {
 		return prop;
 	}
 
+	/**
+	 * Writes field `f` of `o`, honouring properties, `:bypassAccessor`, and static `_Fields_` hosts.
+	 * Unwraps a boxed abstract value, and defers if the target is an uninitialized scripted type.
+	 *
+	 * @param o The object to write to.
+	 * @param f The field name.
+	 * @param v The value to store.
+	 * @return The stored value.
+	 */
 	function set(o:Dynamic, f:String, v:Dynamic):Dynamic {
 		if (o == null)
 			error(EInvalidAccess(f));
@@ -2010,6 +2448,13 @@ class Interp {
 		return v;
 	}
 
+	/**
+	 * Whether a class/enum value has a static field or constructor named `f`.
+	 *
+	 * @param o A class or enum value.
+	 * @param f The field/constructor name.
+	 * @return True/false for classes and enums, or null when `o` is neither.
+	 */
 	inline function hasField(o:Dynamic, f:String):Null<Bool> {
 		if (o is Class || o is InsanityScriptedClass) {
 			return Type.getClassFields(o).contains(f);
@@ -2020,6 +2465,12 @@ class Interp {
 		}
 	}
 
+	/**
+	 * Resolves the generated `_Fields_` host class that holds a module's top-level fields.
+	 *
+	 * @param path The owning type's name.
+	 * @return The `_Fields_` host class, or null if there isn't one.
+	 */
 	inline function getFieldsClass(path:String):Dynamic {
 		if (path.endsWith('_Fields_'))
 			return null;
@@ -2033,9 +2484,15 @@ class Interp {
 		return Tools.resolve('${pack}_$name.${name}_Fields_', environment);
 	}
 
-	// Finds an emulation shim (Config.callShims) for method `f` on `o`, walking up `o`'s
-	// superclass chain so a shim registered on a base class covers subclasses too. Handles
-	// `o` being a class value (static-method shims) or an instance.
+	/**
+	 * Finds an emulation shim (`Config.callShims`) for method `f` on `o`, walking up `o`'s superclass
+	 * chain so a shim registered on a base class covers subclasses too. Handles `o` being a class value
+	 * (static-method shims) or an instance.
+	 *
+	 * @param o The receiver (class value or instance).
+	 * @param f The method name.
+	 * @return The shim closure, or null if none is registered.
+	 */
 	function resolveCallShim(o:Dynamic, f:String):(Dynamic, Array<Dynamic>) -> Dynamic {
 		if (o == null)
 			return null;
@@ -2053,10 +2510,21 @@ class Interp {
 		return null;
 	}
 
+	/**
+	 * Calls method `f` on `o`: reads the method and invokes it, falling back to a `using` extension
+	 * method and then to a registered call shim (for inline-extern methods with no runtime form).
+	 *
+	 * @param o The receiver.
+	 * @param f The method name.
+	 * @param args The call arguments (boxed abstracts are unwrapped first).
+	 * @return The call result.
+	 * @throws InterpException If no method, extension, or shim can be found.
+	 */
 	function fcall(o:Dynamic, f:String, args:Array<Dynamic>):Dynamic {
 		var fun:Dynamic = get(o, f);
 
-		if (o != Std || f != 'string') { // dirty solution but Yeah what ever
+		// Std.string must keep abstract wrappers so their custom toString runs; unwrap for everything else.
+		if (o != Std || f != 'string') {
 			for (i => arg in args)
 				args[i] = (AbstractTools.isAbstract(arg) ? arg.__a : arg);
 		}
@@ -2072,9 +2540,9 @@ class Interp {
 				}
 			}
 
-			// A method with no runtime representation (an `inline extern` overload like
-			// flixel's playMusic) reflects to null. Fall back to a registered emulation shim
-			// keyed by the receiver's class before failing, so such calls still work.
+			// A method with no runtime representation (an `inline extern` overload) reflects to null.
+			// Fall back to a registered emulation shim keyed by the receiver's class before failing,
+			// so such calls still work.
 			var shim = resolveCallShim(o, f);
 			if (shim != null)
 				return shim(o, args);
@@ -2085,6 +2553,16 @@ class Interp {
 		return call(o, fun, args);
 	}
 
+	/**
+	 * Invokes a function value with a receiver, resolving a `super` mirror to the base constructor
+	 * (only inside a constructor).
+	 *
+	 * @param o The receiver (`this`).
+	 * @param f The function value or `super` mirror.
+	 * @param args The call arguments (boxed abstracts are unwrapped first).
+	 * @return The call result.
+	 * @throws InterpException If a `super` call is made where none is valid.
+	 */
 	function call(o:Dynamic, f:Dynamic, args:Array<Dynamic>):Dynamic {
 		if (f is Mirror) {
 			switch (cast(f, Mirror)) {
@@ -2108,6 +2586,14 @@ class Interp {
 		return Reflect.callMethod(o, f, args);
 	}
 
+	/**
+	 * Evaluates `new cl(args)`: resolves the class (scripted or native) and constructs an instance,
+	 * deferring if the class is an uninitialized scripted type.
+	 *
+	 * @param cl The class name/path.
+	 * @param args Constructor arguments.
+	 * @return The new instance.
+	 */
 	function cnew(cl:String, args:Array<Dynamic>):Dynamic {
 		var c = Tools.resolve(cl, environment);
 		c ??= resolve(cl);
