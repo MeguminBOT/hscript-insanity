@@ -596,7 +596,7 @@ class Interp {
 		#end
 	}
 
-	function createEnum(t:Enum<Dynamic>, i:Int, ?args:Array<Dynamic>):EnumValue {
+	function createEnum(t:Dynamic, i:Int, ?args:Array<Dynamic>):Dynamic {
 		try {
 			return Type.createEnumIndex(t, i, args);
 		} catch (e:haxe.Exception) {
