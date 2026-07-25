@@ -385,7 +385,7 @@ It represents my dwindling mental state as I figure how to modify this library!!
 	
 - typedefs
 	- [X] type alias import
-	- [ ] ~~anonymous structure~~
+	- [X] anonymous structure (shape / field-presence check for `is` / `cast`, not field types)
 
 - module level fields
 	- [X] import
@@ -403,7 +403,7 @@ It represents my dwindling mental state as I figure how to modify this library!!
       		- [X] scripted toString
   			- [X] iterables and iterators
 	- [X] enums
-	- [X] typedefs (type alias only)
+	- [X] typedefs (type alias + structural shape check)
 	- [X] module level fields
 	- [ ] abstracts
 		- [ ] abstract class

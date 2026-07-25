@@ -913,9 +913,15 @@ class InsanityScriptedTypedef implements IInsanityType {
 	/** The resolved aliased type, for a non-structural typedef. */
 	public var alias:Dynamic;
 
-	/** True for structural (anonymous-structure or function) typedefs, which have no runtime
-		class and erase to Dynamic -- annotations using them are simply not enforced. */
+	/** True for structural (anonymous-structure or function) typedefs, which have no runtime class;
+		they are matched by shape (see `structFields`) rather than by identity. */
 	public var structural:Bool = false;
+
+	/**
+	 * For an anonymous-structure typedef, the names of the fields it requires; null for a function
+	 * typedef (which has no matchable shape). Used by `matchesStructure` for `is`/`cast`.
+	 */
+	public var structFields:Array<String> = null;
 
 	/** The parsed typedef declaration. */
 	var decl:TypeDecl;
@@ -1004,12 +1010,32 @@ class InsanityScriptedTypedef implements IInsanityType {
 				if (alias == null)
 					throw Printer.errorToString(EUnknownType(fullPath));
 
+			case CTAnon(fields):
+				// Anonymous-structure typedef: no runtime class, matched by field shape.
+				structural = true;
+				structFields = [for (f in fields) f.name];
+
 			default:
-				// Anonymous-structure / function typedefs have no runtime class; they erase
-				// to Dynamic. Annotations that use them are not enforced (the interpreter is
-				// untyped), which is enough for `typedef Foo = {x:Int}` to be usable.
+				// Function (and other) structural typedefs have no matchable shape; they erase.
 				structural = true;
 		}
+	}
+
+	/**
+	 * Whether a value satisfies this typedef's structure: it has every required field. Only meaningful
+	 * for an anonymous-structure typedef (`structFields` non-null); field types are not checked
+	 * (structural presence only).
+	 *
+	 * @param value The value to test.
+	 * @return True if `value` has all required fields.
+	 */
+	public function matchesStructure(value:Dynamic):Bool {
+		if (value == null || structFields == null)
+			return false;
+		for (f in structFields)
+			if (!InsanityReflect.hasField(value, f))
+				return false;
+		return true;
 	}
 
 	/** No-op: a typedef has no state to snapshot. */

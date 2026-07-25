@@ -3,6 +3,7 @@ package insanity.custom;
 import insanity.backend.types.Scripted.InsanityScriptedClass;
 import insanity.backend.types.Scripted.InsanityScriptedInterface;
 import insanity.backend.types.Scripted.InsanityScriptedEnum;
+import insanity.backend.types.Scripted.InsanityScriptedTypedef;
 import insanity.custom.InsanityType.ICustomEnumValueType;
 
 /**
@@ -77,6 +78,8 @@ class InsanityStd {
 				return false;
 			var e:Dynamic = cast(v, ICustomEnumValueType).typeGetEnum();
 			return e == t || (e is InsanityScriptedEnum && (cast(e, InsanityScriptedEnum).path == cast(t, InsanityScriptedEnum).path));
+		} else if (t is InsanityScriptedTypedef) {
+			return cast(t, InsanityScriptedTypedef).matchesStructure(v);
 		} else {
 			return Std.isOfType(v, t);
 		}
@@ -94,6 +97,8 @@ class InsanityStd {
 			return (isOfType(value, c) ? value : null);
 		if (c is InsanityScriptedClass || c is InsanityScriptedInterface) {
 			return (matchesScripted(value, c) ? value : null);
+		} else if (c is InsanityScriptedEnum || c is InsanityScriptedTypedef) {
+			return (isOfType(value, c) ? value : null);
 		} else {
 			return Std.downcast(value, c);
 		}

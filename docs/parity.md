@@ -18,7 +18,7 @@ script here cannot (or does differently).
 | Works with parity | Erases / weakened | Not available |
 | --- | --- | --- |
 | classes, `extends`, `override` | type parameters (erased) | macros / `@:build` / reification |
-| scripted + native interfaces | anonymous & function typedefs | `@:op` operator overloading |
+| scripted + native interfaces | structural typedefs (shape, not field types) | `@:op` operator overloading |
 | enums (+ params, `switch` extraction, guards, `\|`) | scripted abstracts (underlying/`from`/`to`) | `@:structInit`, `@:forward`, `@:multiType` |
 | typedef aliases | custom metadata (mostly inert) | compile-time type errors / inference |
 | static / instance / `private` / getters-setters | `private` enforcement (opt-in, explicit only) | overload resolution |
@@ -69,11 +69,12 @@ annotations are ignored and only abstract `from`/`to` casts apply.
   *constraints are dropped*; every `T` resolves to `Dynamic`. See the note on
   `params:Array<String>` in [`insanity/backend/Expr.hx`](../insanity/backend/Expr.hx). There is no
   generic type safety.
-- **Anonymous-structure and function typedefs erase to `Dynamic`.** `typedef Foo = {x:Int}` is usable
-  as a name but never enforced, structural checks and structural pattern typing don't happen
-  (`InsanityScriptedTypedef.structural` in
-  [`insanity/backend/types/Scripted.hx`](../insanity/backend/types/Scripted.hx)). Type *aliases* to a
-  named type do work.
+- **Anonymous-structure typedefs are checked by shape, not by field type.** `typedef Foo = {x:Int}`
+  (named or inline `{x:Int}`) works for `is`, `cast`, and variable/argument annotations, matching any
+  value that has all the required *field names* (`InsanityScriptedTypedef.matchesStructure` in
+  [`insanity/backend/types/Scripted.hx`](../insanity/backend/types/Scripted.hx)). Field *types* are
+  not verified, so `{x: "str"}` still satisfies `{x:Int}`. **Function typedefs** (`typedef F = Int->Void`)
+  have no matchable shape and erase.
 
 ## 3. Scripted abstracts are hollow
 

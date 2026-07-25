@@ -1090,10 +1090,12 @@ class Interp {
 			t.module.startType(environment, t);
 
 		if (t is InsanityScriptedTypedef) {
-			var alias:Dynamic = cast(t, InsanityScriptedTypedef).alias;
+			var td:InsanityScriptedTypedef = cast t;
 
-			if (alias != null)
-				imports.set(name, alias);
+			if (td.alias != null)
+				imports.set(name, td.alias);
+			else if (td.structural)
+				imports.set(name, td); // structural: keep the typedef so `is`/`cast` can check its shape
 		} else if (t is InsanityScriptedEnum) {
 			imports.set(name, t);
 
@@ -1348,12 +1350,14 @@ class Interp {
 				if (variables.exists(m.name))
 					return;
 
-				var cls = new InsanityScriptedTypedef(m);
-				cls.init(environment, this);
-				cls.initialized = true;
+				var td = new InsanityScriptedTypedef(m);
+				td.init(environment, this);
+				td.initialized = true;
 
-				if (cls.alias != null)
-					imports.set(m.name, cls.alias);
+				if (td.alias != null)
+					imports.set(m.name, td.alias);
+				else if (td.structural)
+					imports.set(m.name, td); // structural: keep the typedef so `is`/`cast` can check its shape
 
 			default:
 		}
@@ -2179,14 +2183,28 @@ class Interp {
 							return e;
 						return error(ECustom('${AbstractTools.resolveName(e)} should be String'));
 					default:
-						// Type parameters and structural typedefs resolve to null here; they erase, so pass through.
+						// Type parameters resolve to null here; they erase, so pass through.
 						if (t == null)
 							return e;
+						if (t is InsanityScriptedTypedef) {
+							var td:InsanityScriptedTypedef = cast t;
+							if (td.structural && td.structFields != null && !td.matchesStructure(e))
+								return error(ECustom('${AbstractTools.resolveName(e)} should be $path'));
+							return e;
+						}
 						if ((t is Class || t is InsanityScriptedClass || t is InsanityScriptedInterface || t is Enum || t is InsanityScriptedEnum)
 							&& !Std.isOfType(e, t))
 							return error(ECustom('${AbstractTools.resolveName(e)} should be $path'));
 						return e;
 				}
+			case CTAnon(fields):
+				// An inline anonymous-structure annotation (`var p:{x:Int}`): require every field.
+				if (!Config.typedMode || e == null)
+					return e;
+				for (f in fields)
+					if (!Reflect.hasField(e, f.name))
+						return error(ECustom('${AbstractTools.resolveName(e)} should have field ${f.name}'));
+				return e;
 			default:
 				return e;
 		}
