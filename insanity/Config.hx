@@ -24,6 +24,17 @@ class Config {
 	public static var strictAccess:Bool = false;
 
 	/**
+	 * Runtime type enforcement. When on, declared types on variables, function parameters, function
+	 * returns, and `cast(x, T)` are checked against the value: assignable ones pass (with `Int`->`Float`
+	 * widening), and an incompatible value throws, the way typed Haxe would reject it. When off, type
+	 * annotations are ignored and everything stays dynamic (only abstract `from`/`to` casts apply).
+	 *
+	 * Defaults to on; `-D insanity_dynamic` flips the default off, and a host may set it per script world
+	 * at runtime. Numeric result typing (`Int` vs `Float`) is unconditional and not gated by this flag.
+	 */
+	public static var typedMode:Bool = #if insanity_dynamic false #else true #end;
+
+	/**
 	 * Emulation shims for methods that have NO runtime representation and so can't be reflected on --
 	 * notably `inline extern` overloads, which compiled Haxe inlines at the call site but a script can
 	 * only reach reflectively (and gets null). A shim is a real compiled closure that performs the
@@ -37,8 +48,19 @@ class Config {
 	/** Preprocessor values visible to `#if`/`#elseif` in scripts, seeded from the host compiler defines plus `insanity`. */
 	public static var preprocessorValues:Map<String, Dynamic> = Defines.appendCompilerDefines(['insanity' => '1']);
 
-	/** Variables defined in every interpreter by default (the literals `null`/`true`/`false`). */
-	public static var globalVariables:Map<String, Dynamic> = ['null' => null, 'true' => true, 'false' => false];
+	/**
+	 * Variables defined in every interpreter by default: the literals `null`/`true`/`false`, and the
+	 * `Int`/`Float`/`Bool` type tokens (see `InsanityCoreType`) so those primitives are usable as
+	 * values in `is`/`Std.isOfType`/`cast`.
+	 */
+	public static var globalVariables:Map<String, Dynamic> = [
+		'null' => null,
+		'true' => true,
+		'false' => false,
+		'Int' => InsanityCoreType.CTInt,
+		'Float' => InsanityCoreType.CTFloat,
+		'Bool' => InsanityCoreType.CTBool
+	];
 
 	/** Imports applied to every interpreter by default (the root package, wildcard-imported). */
 	public static var globalImports:Map<String, ImportMode> = ['' => IAll];

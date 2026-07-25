@@ -245,21 +245,92 @@ class Interp {
 		return position.origin;
 	}
 
-	/** Builds the binary- and assignment-operator tables. */
+	/**
+	 * Adds two values with Haxe semantics: String concatenation when either side is a String,
+	 * otherwise numeric addition promoted like `numArith` (`Int + Int` stays `Int`).
+	 *
+	 * @param a The left operand.
+	 * @param b The right operand.
+	 * @return The concatenated string or the promoted numeric sum.
+	 */
+	inline function numAdd(a:Dynamic, b:Dynamic):Dynamic {
+		if (a is String || b is String)
+			return Std.string(a) + Std.string(b);
+		if (a is Int && b is Int)
+			return (a : Int) + (b : Int);
+		return (a : Float) + (b : Float);
+	}
+
+	/**
+	 * Subtracts with Haxe numeric promotion.
+	 *
+	 * @param a The left operand.
+	 * @param b The right operand.
+	 * @return `Int` when both operands are `Int`, otherwise `Float`.
+	 */
+	inline function numSub(a:Dynamic, b:Dynamic):Dynamic {
+		if (a is Int && b is Int)
+			return (a : Int) - (b : Int);
+		return (a : Float) - (b : Float);
+	}
+
+	/**
+	 * Multiplies with Haxe numeric promotion.
+	 *
+	 * @param a The left operand.
+	 * @param b The right operand.
+	 * @return `Int` when both operands are `Int`, otherwise `Float`.
+	 */
+	inline function numMul(a:Dynamic, b:Dynamic):Dynamic {
+		if (a is Int && b is Int)
+			return (a : Int) * (b : Int);
+		return (a : Float) * (b : Float);
+	}
+
+	/**
+	 * Modulo with Haxe numeric promotion.
+	 *
+	 * @param a The left operand.
+	 * @param b The right operand.
+	 * @return `Int` when both operands are `Int`, otherwise `Float`.
+	 */
+	inline function numMod(a:Dynamic, b:Dynamic):Dynamic {
+		if (a is Int && b is Int)
+			return (a : Int) % (b : Int);
+		return (a : Float) % (b : Float);
+	}
+
+	/**
+	 * Divides. Division is always `Float` in Haxe, even for two `Int`s.
+	 *
+	 * @param a The dividend.
+	 * @param b The divisor.
+	 * @return The `Float` quotient.
+	 */
+	inline function numDiv(a:Dynamic, b:Dynamic):Dynamic {
+		return (a : Float) / (b : Float);
+	}
+
+	/**
+	 * Builds the binary- and assignment-operator tables.
+	 *
+	 * Arithmetic routes through the `num*` helpers so results keep Haxe's numeric type (an `Int`
+	 * operation stays an `Int`) instead of decaying to `Float` through untyped `Dynamic` math.
+	 */
 	function initOps() {
 		binops = [
 			"=" => assign,
-			"+" => function(e1, e2) return expr(e1) + expr(e2),
-			"-" => function(e1, e2) return expr(e1) - expr(e2),
-			"*" => function(e1, e2) return expr(e1) * expr(e2),
-			"/" => function(e1, e2) return expr(e1) / expr(e2),
-			"%" => function(e1, e2) return expr(e1) % expr(e2),
-			"&" => function(e1, e2) return expr(e1) & expr(e2),
-			"|" => function(e1, e2) return expr(e1) | expr(e2),
-			"^" => function(e1, e2) return expr(e1) ^ expr(e2),
-			"<<" => function(e1, e2) return expr(e1) << expr(e2),
-			">>" => function(e1, e2) return expr(e1) >> expr(e2),
-			">>>" => function(e1, e2) return expr(e1) >>> expr(e2),
+			"+" => function(e1, e2) return numAdd(expr(e1), expr(e2)),
+			"-" => function(e1, e2) return numSub(expr(e1), expr(e2)),
+			"*" => function(e1, e2) return numMul(expr(e1), expr(e2)),
+			"/" => function(e1, e2) return numDiv(expr(e1), expr(e2)),
+			"%" => function(e1, e2) return numMod(expr(e1), expr(e2)),
+			"&" => function(e1, e2) return (expr(e1) : Int) & (expr(e2) : Int),
+			"|" => function(e1, e2) return (expr(e1) : Int) | (expr(e2) : Int),
+			"^" => function(e1, e2) return (expr(e1) : Int) ^ (expr(e2) : Int),
+			"<<" => function(e1, e2) return (expr(e1) : Int) << (expr(e2) : Int),
+			">>" => function(e1, e2) return (expr(e1) : Int) >> (expr(e2) : Int),
+			">>>" => function(e1, e2) return (expr(e1) : Int) >>> (expr(e2) : Int),
 			"==" => function(e1, e2) return eqValues(expr(e1), expr(e2)),
 			"!=" => function(e1, e2) return !eqValues(expr(e1), expr(e2)),
 			">=" => function(e1, e2) return expr(e1) >= expr(e2),
@@ -272,17 +343,17 @@ class Interp {
 			"is" => function(e1, e2) return #if (haxe_ver >= 4.2) Std.isOfType #else Std.is #end (expr(e1), expr(e2)),
 			"??" => function(e1, e2) return expr(e1) ?? expr(e2)
 		];
-		assignOp("+=", function(v1:Dynamic, v2:Dynamic) return v1 + v2);
-		assignOp("-=", function(v1:Float, v2:Float) return v1 - v2);
-		assignOp("*=", function(v1:Float, v2:Float) return v1 * v2);
-		assignOp("/=", function(v1:Float, v2:Float) return v1 / v2);
-		assignOp("%=", function(v1:Float, v2:Float) return v1 % v2);
-		assignOp("&=", function(v1, v2) return v1 & v2);
-		assignOp("|=", function(v1, v2) return v1 | v2);
-		assignOp("^=", function(v1, v2) return v1 ^ v2);
-		assignOp("<<=", function(v1, v2) return v1 << v2);
-		assignOp(">>=", function(v1, v2) return v1 >> v2);
-		assignOp(">>>=", function(v1, v2) return v1 >>> v2);
+		assignOp("+=", function(v1, v2) return numAdd(v1, v2));
+		assignOp("-=", function(v1, v2) return numSub(v1, v2));
+		assignOp("*=", function(v1, v2) return numMul(v1, v2));
+		assignOp("/=", function(v1, v2) return numDiv(v1, v2));
+		assignOp("%=", function(v1, v2) return numMod(v1, v2));
+		assignOp("&=", function(v1, v2) return (v1 : Int) & (v2 : Int));
+		assignOp("|=", function(v1, v2) return (v1 : Int) | (v2 : Int));
+		assignOp("^=", function(v1, v2) return (v1 : Int) ^ (v2 : Int));
+		assignOp("<<=", function(v1, v2) return (v1 : Int) << (v2 : Int));
+		assignOp(">>=", function(v1, v2) return (v1 : Int) >> (v2 : Int));
+		assignOp(">>>=", function(v1, v2) return (v1 : Int) >>> (v2 : Int));
 		assignOp("??=", function(v1, v2) return v1 ?? v2);
 	}
 
@@ -545,26 +616,26 @@ class Interp {
 				var l = locals.get(id);
 				var v:Dynamic = (locals.exists(id) ? getLocal(id) : resolve(id));
 				if (prefix) {
-					v += delta;
+					v = numAdd(v, delta);
 					if (locals.exists(id))
 						setLocal(id, v)
 					else
 						setVar(id, v);
 				} else {
 					if (locals.exists(id))
-						setLocal(id, v + delta)
+						setLocal(id, numAdd(v, delta))
 					else
-						setVar(id, v + delta);
+						setVar(id, numAdd(v, delta));
 				}
 				return v;
 			case EField(e, f, _):
 				var obj = expr(e);
 				var v:Dynamic = get(obj, f);
 				if (prefix) {
-					v += delta;
+					v = numAdd(v, delta);
 					set(obj, f, v);
 				} else
-					set(obj, f, v + delta);
+					set(obj, f, numAdd(v, delta));
 				return v;
 			case EArray(e, index):
 				var arr:Dynamic = expr(e);
@@ -572,19 +643,19 @@ class Interp {
 				if (isMap(arr)) {
 					var v = getMapValue(arr, index);
 					if (prefix) {
-						v += delta;
+						v = numAdd(v, delta);
 						setMapValue(arr, index, v);
 					} else {
-						setMapValue(arr, index, v + delta);
+						setMapValue(arr, index, numAdd(v, delta));
 					}
 					return v;
 				} else {
 					var v = arr[index];
 					if (prefix) {
-						v += delta;
+						v = numAdd(v, delta);
 						arr[index] = v;
 					} else
-						arr[index] = v + delta;
+						arr[index] = numAdd(v, delta);
 					return v;
 				}
 			default:
@@ -1452,6 +1523,8 @@ class Interp {
 				declared.push({n: n, old: locals.get(n)});
 
 				var v:Dynamic = (e == null ? null : expr(e, t));
+				if (t != null)
+					v = tryCast(v, t);
 				var l:Variable = (AbstractTools.isAbstract(v) ? {r: v.__a, a: v} : {r: v});
 
 				if (get != null)
@@ -1487,13 +1560,14 @@ class Interp {
 					case "!":
 						return expr(e) != true;
 					case "-":
-						return -expr(e);
+						var v:Dynamic = expr(e);
+						return (v is Int) ? -(v : Int) : -(v : Float);
 					case "++":
 						return increment(e, prefix, 1);
 					case "--":
 						return increment(e, prefix, -1);
 					case "~":
-						return ~expr(e);
+						return ~(expr(e) : Int);
 					default:
 						error(EInvalidOp(op));
 				}
@@ -1901,8 +1975,8 @@ class Interp {
 				return r;
 			case ECast(e, t):
 				return tryCast(expr(e), t);
-			case ECheckType(e, _):
-				return expr(e);
+			case ECheckType(e, t):
+				return tryCast(expr(e), t);
 		}
 		return (void ? Interp.void : null);
 	}
@@ -2038,16 +2112,27 @@ class Interp {
 	}
 
 	/**
-	 * Applies a type annotation to a value where it matters at runtime: wrapping into an abstract, or
-	 * converting an abstract to a `to` target. Other annotations are no-ops (the interpreter is untyped).
+	 * Applies a type annotation to a value. Abstract `from`/`to` conversions always apply. When
+	 * `Config.typedMode` is on, the value is additionally checked against the declared type: it is
+	 * coerced where Haxe allows an implicit conversion (`Int`->`Float`), passed when already
+	 * assignable, and otherwise rejected with an error -- so a wrong-typed variable, argument, return,
+	 * or `cast(x, T)` throws the way typed Haxe would. When off, non-abstract annotations are ignored.
 	 *
 	 * @param e The value to cast.
 	 * @param type The target type annotation, if any.
-	 * @return The (possibly wrapped/converted) value.
-	 * @throws String If an abstract cannot be converted to the target.
+	 * @return The value, coerced to the target where applicable.
+	 * @throws InterpException If typed mode rejects the value, or an abstract can't convert.
 	 */
 	function tryCast(e:Dynamic, ?type):Dynamic {
 		switch (type) {
+			case null:
+				return e;
+			case CTParent(inner):
+				return tryCast(e, inner);
+			case CTOpt(inner):
+				return (e == null) ? e : tryCast(e, inner);
+			case CTPath(['Null'], params) if (params != null && params.length > 0):
+				return (e == null) ? e : tryCast(e, params[0]);
 			case CTPath(p, _):
 				var path = p.join('.');
 				var t = imports.get(path);
@@ -2058,23 +2143,53 @@ class Interp {
 						t = info[0].compilePath().resolve();
 				}
 
-				if (e == null || t == null || !(t is Class))
-					return e;
-
-				if (Type.getSuperClass(t) == InsanityAbstract) {
-					return Type.createInstance(t, [e]);
-				} else if (e is InsanityAbstract) {
-					var r = e.resolveTo(Type.getClassName(t));
-					if (r == null)
-						throw 'Can\'t cast ${e.impl} to $path';
-					else
+				if (e != null && t != null && (t is Class)) {
+					if (Type.getSuperClass(t) == InsanityAbstract)
+						return Type.createInstance(t, [e]);
+					if (e is InsanityAbstract) {
+						var r = e.resolveTo(Type.getClassName(t));
+						if (r == null)
+							throw 'Can\'t cast ${e.impl} to $path';
 						return r;
+					}
 				}
 
-			default:
-		}
+				if (!Config.typedMode || e == null)
+					return e;
 
-		return e;
+				switch (path) {
+					case 'Dynamic' | 'Any' | 'Void' | 'Class' | 'Enum':
+						return e;
+					case 'Int':
+						if (Std.isOfType(e, Int))
+							return e;
+						return error(ECustom('${AbstractTools.resolveName(e)} should be Int'));
+					case 'Float':
+						if (Std.isOfType(e, Int))
+							return (e : Int) + 0.0; // widen to a real Float value (retagging via `(e : Float)` is a no-op on eval)
+						if (Std.isOfType(e, Float))
+							return e;
+						return error(ECustom('${AbstractTools.resolveName(e)} should be Float'));
+					case 'Bool':
+						if (Std.isOfType(e, Bool))
+							return e;
+						return error(ECustom('${AbstractTools.resolveName(e)} should be Bool'));
+					case 'String':
+						if (Std.isOfType(e, String))
+							return e;
+						return error(ECustom('${AbstractTools.resolveName(e)} should be String'));
+					default:
+						// Type parameters and structural typedefs resolve to null here; they erase, so pass through.
+						if (t == null)
+							return e;
+						if ((t is Class || t is InsanityScriptedClass || t is InsanityScriptedInterface || t is Enum || t is InsanityScriptedEnum)
+							&& !Std.isOfType(e, t))
+							return error(ECustom('${AbstractTools.resolveName(e)} should be $path'));
+						return e;
+				}
+			default:
+				return e;
+		}
 	}
 
 	/**

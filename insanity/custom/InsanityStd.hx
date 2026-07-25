@@ -2,6 +2,8 @@ package insanity.custom;
 
 import insanity.backend.types.Scripted.InsanityScriptedClass;
 import insanity.backend.types.Scripted.InsanityScriptedInterface;
+import insanity.backend.types.Scripted.InsanityScriptedEnum;
+import insanity.custom.InsanityType.ICustomEnumValueType;
 
 /**
  * A drop-in replacement for `Std`, aliased as `Std` inside the interpreter. It adds scripted-type
@@ -59,8 +61,22 @@ class InsanityStd {
 	 * @return True if `v` is of type `t`.
 	 */
 	public static inline function isOfType(v:Dynamic, t:Dynamic):Bool {
+		if (t is InsanityCoreType) {
+			return switch (cast(t, InsanityCoreType)) {
+				case CTInt: Std.isOfType(v, Int);
+				case CTFloat: Std.isOfType(v, Float);
+				case CTBool: Std.isOfType(v, Bool);
+			};
+		}
 		if (t is InsanityScriptedClass || t is InsanityScriptedInterface) {
 			return matchesScripted(v, t);
+		} else if (t is InsanityScriptedEnum) {
+			// A scripted enum value belongs to `t` when its enum is `t` (compared by path so a
+			// reloaded enum still matches).
+			if (!(v is ICustomEnumValueType))
+				return false;
+			var e:Dynamic = cast(v, ICustomEnumValueType).typeGetEnum();
+			return e == t || (e is InsanityScriptedEnum && (cast(e, InsanityScriptedEnum).path == cast(t, InsanityScriptedEnum).path));
 		} else {
 			return Std.isOfType(v, t);
 		}
@@ -74,6 +90,8 @@ class InsanityStd {
 	 * @return `value` if it is of type `c`, otherwise null.
 	 */
 	public static inline function downcast(value:Dynamic, c:Dynamic):Dynamic {
+		if (c is InsanityCoreType)
+			return (isOfType(value, c) ? value : null);
 		if (c is InsanityScriptedClass || c is InsanityScriptedInterface) {
 			return (matchesScripted(value, c) ? value : null);
 		} else {

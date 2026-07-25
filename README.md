@@ -116,6 +116,26 @@ Scripted abstracts are currently unsupported, but support may be introduced in t
 These behaviors will be applied globally, to all scripts.
 
 
+### Typed mode & numeric correctness
+
+Scripts run **typed by default**. Declared types on variables, function arguments, function returns, and `cast(x, T)` are enforced at runtime: an incompatible value throws (surfaced through the script error funnel), the way typed Haxe would reject it. `is` / `Std.isOfType` / `cast` also work on the `Int`, `Float`, and `Bool` primitives, not just on classes.
+
+```hx
+var x:Int = 5;        // ok
+var y:Int = 3.5;      // throws: 3.5 should be Int
+var f:Float = 5;      // ok, widened to Float
+trace(cast(5, Int));  // 5
+trace(5 is Int);      // true
+```
+
+Numeric arithmetic is corrected too: integer math keeps the `Int` type (so `is Int`, integer map keys, and array indices behave), while `/` is always `Float`, matching Haxe.
+
+Enforcement is controlled by [`Config.typedMode`](insanity/Config.hx), which defaults on. Set it to `false` (or compile with `-D insanity_dynamic`) to fall back to fully dynamic behavior, where type annotations are ignored.
+
+> [!NOTE]
+> On the hxcpp target, a whole-number `Float` stored in a `Dynamic` reads back as `Int` (for example `Type.typeof(10 / 2)` is `TInt`). This is a platform trait and is harmless.
+
+
 ### Abstracts
 
 > [!WARNING]
@@ -394,6 +414,15 @@ It represents my dwindling mental state as I figure how to modify this library!!
 	- [X] fix compile errors in HashLink (for now)
 	- [ ] fix module exception call stack (can merge?)
 	- [ ] abstract type fields (currently untested)
+
+### typed mode
+
+- [X] runtime type enforcement (variable / argument / return / `cast`)
+- [X] `Int` / `Float` / `Bool` as `is` / `cast` targets
+- [X] `Int` / `Float` numeric correctness
+- [X] `Config.typedMode` toggle (`-D insanity_dynamic`)
+- [ ] `private` access enforcement default (with typed mode)
+- [ ] static checking via `Checker`
 
 ### other
 
