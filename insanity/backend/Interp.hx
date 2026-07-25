@@ -2182,6 +2182,11 @@ class Interp {
 						if (Std.isOfType(e, String))
 							return e;
 						return error(ECustom('${AbstractTools.resolveName(e)} should be String'));
+					case 'Map' | 'IMap':
+						// `Map` is an abstract over `IMap`, so it never resolves to a checkable class above.
+						if (e is IMap)
+							return e;
+						return error(ECustom('${AbstractTools.resolveName(e)} should be Map'));
 					default:
 						// Type parameters resolve to null here; they erase, so pass through.
 						if (t == null)
