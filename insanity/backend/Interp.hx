@@ -2210,6 +2210,12 @@ class Interp {
 					if (!Reflect.hasField(e, f.name))
 						return error(ECustom('${AbstractTools.resolveName(e)} should have field ${f.name}'));
 				return e;
+			case CTFun(_, _):
+				// A function-type annotation (`f:Int->Void`): the signature can't be checked at runtime,
+				// only that the value is callable.
+				if (!Config.typedMode || e == null || Reflect.isFunction(e))
+					return e;
+				return error(ECustom('${AbstractTools.resolveName(e)} should be a function'));
 			default:
 				return e;
 		}
@@ -2464,16 +2470,16 @@ class Interp {
 	}
 
 	/**
-	 * Rejects reads/writes of a script-declared `private` member from outside the
-	 * declaring class. No-op unless `Config.strictAccess` is on; native fields carry
-	 * no access information at runtime and are never checked.
+	 * Rejects reads/writes of a script-declared `private` member from outside the declaring class.
+	 * Active when either `Config.strictAccess` or `Config.typedMode` is on (typed mode enforces access
+	 * the way Haxe does); native fields carry no access information at runtime and are never checked.
 	 *
 	 * @param o The object being accessed.
 	 * @param f The field name.
 	 * @throws InterpException If the field is private and the caller isn't in the declaring class.
 	 */
 	inline function checkAccess(o:Dynamic, f:String):Void {
-		if (!Config.strictAccess)
+		if (!Config.strictAccess && !Config.typedMode)
 			return;
 
 		var owner:InsanityScriptedClass = ScriptedAccess.declaringClass(o);

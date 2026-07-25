@@ -421,7 +421,9 @@ It represents my dwindling mental state as I figure how to modify this library!!
 - [X] `Int` / `Float` / `Bool` as `is` / `cast` targets
 - [X] `Int` / `Float` numeric correctness
 - [X] `Config.typedMode` toggle (`-D insanity_dynamic`)
-- [ ] `private` access enforcement default (with typed mode)
+- [X] container (`Array` / `Map`) and function-type checking
+- [X] structural typedef shape checking
+- [X] `private` access enforcement (with typed mode)
 - [ ] static checking via `Checker`
 
 ### other

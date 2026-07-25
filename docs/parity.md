@@ -44,7 +44,9 @@ function arguments, function returns, `(e : T)`, and `cast(x, T)`:
   the primitives.
 - **Assignments are checked, Haxe-strict.** `var x:Int = aFloat`, a wrong-typed argument, or a return
   that doesn't match its declared type throws (surfaced through the script-error funnel). `Int`
-  widens to `Float` where Haxe allows it.
+  widens to `Float` where Haxe allows it. Containers (`Array`, `Map`) and function types (a callable
+  is required for `f:Int->Void`) are checked; structural typedefs are checked by field presence, and
+  `private` members are access-checked.
 - **`Int` and `Float` are correct.** Integer arithmetic stays `Int` (so `is Int`, integer map keys,
   and array indices behave), and `/` is always `Float`. One platform caveat: on hxcpp a
   whole-number `Float` boxed in a `Dynamic` reads back as `Int` (`Type.typeof(10/2)` is `TInt`).
@@ -111,9 +113,10 @@ and never reaches that stage.
 
 ## 6. Smaller semantic differences
 
-- **Access control is weaker.** `private` is enforced only when `Config.strictAccess` is enabled, and
-  only for members marked `private` explicitly. **Unmarked members are public**, unlike Haxe. See
-  `checkAccess` in [`insanity/backend/Interp.hx`](../insanity/backend/Interp.hx).
+- **Access control is partial.** `private` is enforced in typed mode (or when `Config.strictAccess` is
+  set), but only for members marked `private` *explicitly*. **Unmarked members are public**, unlike
+  Haxe, where the default is stricter. See `checkAccess` in
+  [`insanity/backend/Interp.hx`](../insanity/backend/Interp.hx).
 - **Custom metadata is inert.** Only a handful are honored: `@:bypassAccessor`, `@:snapshot`,
   `@:safe`, `@:enumAbstract`, `@:enum`, `@:keep`, `@:coreType`. Anything else parses and does nothing.
 - **Interfaces carry no default implementations**, signatures only.
