@@ -110,7 +110,7 @@ Three separate issues, measured together (not same-session controlled, so treat 
   `args?.length ?? (0 != params.length)` because `??` binds looser than `!=`, so the condition was
   `args.length` itself and every call passing arguments ran the argument-fixup path.
 
-### Decomposition (`b837263`, `9e41a35`)
+### Decomposition (`b837263`, `8d9924f`)
 
 Behaviour-preserving refactors, both verified performance-neutral: splitting `Parser` into `Lexer`
 plus `Parser`, and lifting the two largest arms of `Interp.expr()` (the comprehension machinery and
