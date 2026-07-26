@@ -106,6 +106,13 @@ class Interp {
 	/** The value returned by the currently-returning function. */
 	var returnValue:Dynamic;
 
+	/**
+	 * Set by `return` and cleared by `exprReturn` once the value has been collected. `return`
+	 * propagates by unwinding statement sequences on this flag rather than by throwing, because a
+	 * thrown `Stop` costs microseconds on static targets and dominated every script call.
+	 */
+	var returning:Bool = false;
+
 	/** A unique sentinel standing for "no value" / `Void`. */
 	static var void(default, never):Dynamic = {};
 
@@ -690,7 +697,13 @@ class Interp {
 	 */
 	function exprReturn(e, ?t:CType):Dynamic {
 		try {
-			return expr(e, t);
+			var v:Dynamic = expr(e, t);
+			if (returning) {
+				returning = false;
+				v = returnValue;
+				returnValue = null;
+			}
+			return v;
 		} catch (e:Stop) {
 			#if cpp
 			if (!(e is Stop))
@@ -1504,8 +1517,11 @@ class Interp {
 				var hadLocals = locals.keys().hasNext();
 				var old = declared.length;
 				var v = null;
-				for (e in exprs)
+				for (e in exprs) {
 					v = expr(e, void, mapCompr);
+					if (returning)
+						break;
+				}
 				if (hadLocals)
 					restore(old);
 				return v;
@@ -1578,7 +1594,8 @@ class Interp {
 				throw SContinue;
 			case EReturn(e):
 				returnValue = e == null ? null : expr(e, void, mapCompr);
-				throw SReturn;
+				returning = true;
+				return null;
 			case EFunction(params, fexpr, name, ret, id):
 				return buildFunction(name, params, fexpr, ret, id);
 			case EArrayDecl(arr):
@@ -2342,6 +2359,8 @@ class Interp {
 					throw err;
 			}
 		}
+		if (returning) // a `return` inside the body unwinds the loop as well
+			cont = false;
 		return cont;
 	}
 
