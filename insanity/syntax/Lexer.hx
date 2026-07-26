@@ -353,7 +353,7 @@ class Lexer {
 				break;
 			} else if (interpolate && c == '$'.code) {
 				var next = readChar();
-				if (idents[next] || next == '{'.code) {
+				if (idents[next] == true || next == '{'.code) {
 					readPos--;
 					return TConst(CString(b.toString(), true));
 				} else if (next == '$'.code) {
@@ -631,11 +631,13 @@ class Lexer {
 					return TOp("=");
 				case '@'.code:
 					char = readChar();
-					if (idents[char] || char == ':'.code) {
+					if (idents[char] == true || char == ':'.code) {
 						var id = String.fromCharCode(char);
 						while (true) {
 							char = readChar();
-							if (!idents[char]) {
+							if (StringTools.isEof(char))
+								char = 0;
+							if (idents[char] != true) {
 								this.char = char;
 								this.columnOffset = colOffset;
 								return TMeta(id);
@@ -646,11 +648,13 @@ class Lexer {
 					invalidChar(char);
 				case '#'.code:
 					char = readChar();
-					if (idents[char]) {
+					if (idents[char] == true) {
 						var id = String.fromCharCode(char);
 						while (true) {
 							char = readChar();
-							if (!idents[char]) {
+							if (StringTools.isEof(char))
+								char = 0;
+							if (idents[char] != true) {
 								this.char = char;
 								this.columnOffset = colOffset;
 								return preprocess(id);
@@ -660,13 +664,13 @@ class Lexer {
 					}
 					invalidChar(char);
 				default:
-					if (ops[char]) {
+					if (ops[char] == true) {
 						var op = String.fromCharCode(char);
 						while (true) {
 							char = readChar();
 							if (StringTools.isEof(char))
 								char = 0;
-							if (!ops[char]) {
+							if (ops[char] != true) {
 								this.char = char;
 								return TOp(op);
 							}
@@ -681,13 +685,13 @@ class Lexer {
 							}
 						}
 					}
-					if (idents[char]) {
+					if (idents[char] == true) {
 						var id = String.fromCharCode(char);
 						while (true) {
 							char = readChar();
 							if (StringTools.isEof(char))
 								char = 0;
-							if (!idents[char]) {
+							if (idents[char] != true) {
 								this.char = char;
 								return TId(id);
 							}

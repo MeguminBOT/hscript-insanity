@@ -125,7 +125,20 @@ and never reaches that stage.
   There is no constant folding, inlining, or dead-code elimination; expect interpreter-level
   performance.
 
-## 7. Interop subtlety worth knowing
+## 7. Scripts can only reach what survives DCE
+
+A script calls native code by reflection, which the compiler cannot see. With dead code elimination
+on (Haxe defaults to `-dce std`), a std or library method that the **host** never calls statically
+can be stripped, and the script's call then fails at runtime with "Cannot call null".
+
+This is easy to mistake for a library bug. A standalone test program that never touches `EReg`
+compiles without `EReg.replace`, so `~/a+/g.replace(...)` fails there while working under `-dce no`.
+
+Mitigations, in order of preference: call the API somewhere in the host, add an `include()` for the
+type in the build, or register a `Config.callShims` entry. The same reasoning covers `inline`
+methods, which have no runtime form at all to reflect on regardless of DCE (see section 8).
+
+## 8. Interop subtlety worth knowing
 
 Scripted types are ordinary **class instances**, not native `Class<T>` / `Enum<T>` / `EnumValue`
 runtime objects. Any interop path that hard-types a parameter or return as one of those will coerce a
