@@ -113,6 +113,18 @@ class Interp {
 	 */
 	var returning:Bool = false;
 
+	/** Set by `break`; consumed by the innermost loop. Same reasoning as `returning`. */
+	var breaking:Bool = false;
+
+	/** Set by `continue`; consumed by the innermost loop. Same reasoning as `returning`. */
+	var continuing:Bool = false;
+
+	/** Whether any of `return` / `break` / `continue` is pending, so statement sequences must stop. */
+	var unwinding(get, never):Bool;
+
+	inline function get_unwinding():Bool
+		return returning || breaking || continuing;
+
 	/** A unique sentinel standing for "no value" / `Void`. */
 	static var void(default, never):Dynamic = {};
 
@@ -702,6 +714,12 @@ class Interp {
 				returning = false;
 				v = returnValue;
 				returnValue = null;
+			} else if (breaking) {
+				breaking = false;
+				throw "Invalid break";
+			} else if (continuing) {
+				continuing = false;
+				throw "Invalid continue";
 			}
 			return v;
 		} catch (e:Stop) {
@@ -1519,7 +1537,7 @@ class Interp {
 				var v = null;
 				for (e in exprs) {
 					v = expr(e, void, mapCompr);
-					if (returning)
+					if (unwinding)
 						break;
 				}
 				if (hadLocals)
@@ -1589,9 +1607,11 @@ class Interp {
 				});
 				return null;
 			case EBreak:
-				throw SBreak;
+				breaking = true;
+				return null;
 			case EContinue:
-				throw SContinue;
+				continuing = true;
+				return null;
 			case EReturn(e):
 				returnValue = e == null ? null : expr(e, void, mapCompr);
 				returning = true;
@@ -1627,7 +1647,7 @@ class Interp {
 						}
 					}
 
-					if (v != Interp.void) {
+					if (v != Interp.void && !unwinding) {
 						compr ??= new Array();
 
 						compr.push(v);
@@ -1639,8 +1659,11 @@ class Interp {
 						case EBlock(e):
 							var v = Interp.void;
 
-							for (e in e)
+							for (e in e) {
 								v = exprCompr(e, inFor);
+								if (unwinding)
+									break;
+							}
 
 							v;
 
@@ -2359,7 +2382,13 @@ class Interp {
 					throw err;
 			}
 		}
-		if (returning) // a `return` inside the body unwinds the loop as well
+		if (continuing) // consumed here: `continue` only affects the innermost loop
+			continuing = false;
+		if (breaking) {
+			breaking = false;
+			cont = false;
+		}
+		if (returning) // a `return` keeps unwinding past this loop
 			cont = false;
 		return cont;
 	}
