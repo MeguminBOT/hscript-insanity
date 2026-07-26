@@ -97,6 +97,15 @@ class AbstractTest {
 		// so the boxed value is what the fallback combines.
 		ok("abstract + Int falls back", eval("{ var x:OpBare = cast 2; x + 3; }") == "5");
 
+		// An abstract on the *right*. Haxe needs `@:commutative` to accept these at all, but getting
+		// them wrong here is not a compile error, it is a silently wrong number: before the operands
+		// were both checked, hxcpp coerced the wrapper through `(b : Float)` and `1 * vec` gave 0.
+		ok("Int + abstract dispatches", eval("{ var y:OpVec = cast 2; (1 + y).raw; }") == "12");
+		ok("Int * abstract dispatches", eval("{ var y:OpVec = cast 2; (1 * y).raw; }") == "3");
+		ok("Int - abstract falls back", eval("{ var y:OpVec = cast 2; 1 - y; }") == "-1");
+		ok("Int < abstract falls back", eval("{ var y:OpVec = cast 2; 1 < y; }") == "true");
+		ok("Int == abstract compares values", eval("{ var y:OpVec = cast 1; 1 == y; }") == "true");
+
 		trace("-- " + pass + " passed, " + fail + " failed --");
 	}
 }

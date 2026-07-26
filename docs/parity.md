@@ -98,9 +98,10 @@ compiled code does. Three limits remain:
 
 - **Only binary operators.** `@:op(A + B)` and friends dispatch, including `==` and the ordering
   operators. Unary (`-a`, `!a`, `a++`) and array access (`a[i]`) do not; call the method by name.
-- **Only the left operand is consulted.** `vec + 1` dispatches, `1 + vec` does not, so
-  `@:commutative` has no effect. Dispatching on the right operand would apply a non-commutative
-  operator the wrong way round.
+- **The left operand is tried first**, and the right one only for `+` and `*`, so `1 + vec`
+  dispatches (as `@:commutative` does in Haxe) while `1 - vec` falls back to the boxed values rather
+  than applying a non-commutative operator the wrong way round. The `@:commutative` metadata itself
+  is not required, or read.
 - **`!=` is derived from `==`**, so an `@:op(A != B)` that is not the negation of `@:op(A == B)` is
   ignored.
 

@@ -223,15 +223,15 @@ class Interp {
 	}
 
 	/**
-	 * Evaluates `a op b` where the left operand is a wrapped abstract: through the abstract's `@:op`
-	 * method when it declares one for this operator, otherwise on the value it boxes, which matches
+	 * Evaluates `a op b` where an operand is a wrapped abstract: through the abstract's `@:op` method
+	 * when it declares one for this operator, otherwise on the values the operands box, which matches
 	 * what an abstract with an implicit cast to its underlying type does in Haxe.
 	 *
-	 * Only the left operand is consulted for an `@:op` method, so a non-commutative operator can
-	 * never be applied the wrong way round.
+	 * The left operand is tried first, and the right one only for commutative operators, so a
+	 * non-commutative operator can never be applied the wrong way round.
 	 *
 	 * @param op The operator symbol.
-	 * @param a The left operand, a wrapped abstract.
+	 * @param a The left operand.
 	 * @param b The right operand.
 	 * @return The operator's result.
 	 */
@@ -239,6 +239,14 @@ class Interp {
 		var m:String = AbstractTools.opMethod(a, op);
 		if (m != null)
 			return fcall(a, m, [b]);
+
+		// `1 + vec`: for a commutative operator the method may be declared on the right-hand operand
+		// instead. Doing this for `-`, `/` or `%` would apply them the wrong way round.
+		if (op == "+" || op == "*") {
+			m = AbstractTools.opMethod(b, op);
+			if (m != null)
+				return fcall(b, m, [a]);
+		}
 
 		var l:Dynamic = AbstractTools.underlying(a);
 		var r:Dynamic = AbstractTools.underlying(b);
@@ -305,7 +313,7 @@ class Interp {
 			return Std.string(a) + Std.string(b);
 		if (a is Int && b is Int)
 			return (a : Int) + (b : Int);
-		if (a is AbstractValue)
+		if (a is AbstractValue || b is AbstractValue)
 			return abstractArith("+", a, b);
 		return (a : Float) + (b : Float);
 	}
@@ -320,7 +328,7 @@ class Interp {
 	inline function numSub(a:Dynamic, b:Dynamic):Dynamic {
 		if (a is Int && b is Int)
 			return (a : Int) - (b : Int);
-		if (a is AbstractValue)
+		if (a is AbstractValue || b is AbstractValue)
 			return abstractArith("-", a, b);
 		return (a : Float) - (b : Float);
 	}
@@ -335,7 +343,7 @@ class Interp {
 	inline function numMul(a:Dynamic, b:Dynamic):Dynamic {
 		if (a is Int && b is Int)
 			return (a : Int) * (b : Int);
-		if (a is AbstractValue)
+		if (a is AbstractValue || b is AbstractValue)
 			return abstractArith("*", a, b);
 		return (a : Float) * (b : Float);
 	}
@@ -350,7 +358,7 @@ class Interp {
 	inline function numMod(a:Dynamic, b:Dynamic):Dynamic {
 		if (a is Int && b is Int)
 			return (a : Int) % (b : Int);
-		if (a is AbstractValue)
+		if (a is AbstractValue || b is AbstractValue)
 			return abstractArith("%", a, b);
 		return (a : Float) % (b : Float);
 	}
@@ -363,7 +371,7 @@ class Interp {
 	 * @return The `Float` quotient.
 	 */
 	inline function numDiv(a:Dynamic, b:Dynamic):Dynamic {
-		if (a is AbstractValue)
+		if (a is AbstractValue || b is AbstractValue)
 			return abstractArith("/", a, b);
 		return (a : Float) / (b : Float);
 	}
