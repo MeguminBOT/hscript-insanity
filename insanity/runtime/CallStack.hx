@@ -1,7 +1,5 @@
 package insanity.runtime;
 
-import insanity.runtime.Interp;
-
 /** One interpreter stack frame: its local variables and the call-site descriptor. */
 typedef StackFrame = {
 	/** The frame's local variables. */

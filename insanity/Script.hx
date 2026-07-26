@@ -1,6 +1,5 @@
 package insanity;
 
-import insanity.runtime.InterpException;
 import insanity.syntax.Parser;
 import insanity.runtime.Interp;
 import insanity.syntax.Expr;

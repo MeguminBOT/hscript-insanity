@@ -2,7 +2,6 @@ package insanity.runtime;
 
 import haxe.Exception;
 import insanity.runtime.CallStack;
-import insanity.syntax.Printer;
 
 /** A runtime error raised while interpreting, carrying the interpreter's own call stack. */
 class InterpException extends Exception {
