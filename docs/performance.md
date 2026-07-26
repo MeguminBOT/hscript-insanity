@@ -110,6 +110,13 @@ Three separate issues, measured together (not same-session controlled, so treat 
   `args?.length ?? (0 != params.length)` because `??` binds looser than `!=`, so the condition was
   `args.length` itself and every call passing arguments ran the argument-fixup path.
 
+### Decomposition (`b837263`, `9e41a35`)
+
+Behaviour-preserving refactors, both verified performance-neutral: splitting `Parser` into `Lexer`
+plus `Parser`, and lifting the two largest arms of `Interp.expr()` (the comprehension machinery and
+the `switch` evaluator) into their own methods. `Interp` deliberately stays a single class; extracting
+collaborator objects would add a cross-object indirection to operations that run on every AST node.
+
 ### Restructure (`ad39d36`)
 
 Package reorganization, verified **performance-neutral** against a same-session control (442/384/314/
@@ -120,6 +127,11 @@ Package reorganization, verified **performance-neutral** against a same-session 
 A script call is roughly 1.1us, against about 0.6us for an empty loop iteration, so call overhead is
 now in the same order as ordinary interpreter work rather than 15x it. Per-parameter cost is about
 0.3us.
+
+Standing numbers at the time of writing (hxcpp, best of 3; useful only as a shape, since absolute
+values drift with the machine):
+
+    arith 266   locals 222   blocks 186   call 165   field 183   method 104   loopCont 85
 
 Remaining known costs, none currently urgent:
 

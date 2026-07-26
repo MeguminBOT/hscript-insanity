@@ -1472,6 +1472,307 @@ class Interp {
 	}
 
 	/**
+	 * Evaluates an array literal, or an array/map comprehension when the body is a `for`/`while`.
+	 *
+	 * @param arr The literal's elements, or the single comprehension expression.
+	 * @param t The declared type, used to pick the map implementation for an empty `Map` literal.
+	 * @return The array or map.
+	 */
+	function evalArrayDecl(arr:Array<Expr>, t:Null<CType>):Dynamic {
+		var compr:Dynamic = null;
+
+		var exprCompr:(e:Expr, ?inFor:Bool) -> Dynamic = null;
+
+		function forExpr(e:Expr) {
+			var v:Dynamic = exprCompr(e, true);
+
+			if (v is ExprDef) {
+				switch (v) {
+					default:
+					case EBinop('=>', e1, e2):
+						var key:Dynamic = expr(e1);
+
+						if (key is String) {
+							compr ??= new haxe.ds.StringMap();
+						} else if (key is Int) {
+							compr ??= new haxe.ds.IntMap();
+						} else if (HaxeReflect.isEnumValue(key)) {
+							compr ??= new haxe.ds.EnumValueMap();
+						} else {
+							compr ??= new haxe.ds.ObjectMap();
+						}
+
+						compr.set(key, expr(e2));
+						return;
+				}
+			}
+
+			if (v != Interp.void && !unwinding) {
+				compr ??= new Array();
+
+				compr.push(v);
+			}
+		}
+
+		exprCompr = function(e:Expr, inFor:Bool = false):Dynamic {
+			return switch (Tools.expr(e)) {
+				case EBlock(e):
+					var v = Interp.void;
+
+					for (e in e) {
+						v = exprCompr(e, inFor);
+						if (unwinding)
+							break;
+					}
+
+					v;
+
+				case EParent(e):
+					exprCompr(e, inFor);
+
+				case EFor(n, it, e):
+					forLoop(n, it, forExpr.bind(e));
+
+					Interp.void;
+
+				case EForGen(it, e):
+					Tools.getKeyIterator(it, function(vk, vv, it) {
+						if (vk == null) {
+							position = it.pos;
+							error(ECustom('Invalid for expression'));
+							return;
+						}
+
+						forKeyValueLoop(vk, vv, it, forExpr.bind(e));
+					});
+
+					Interp.void;
+
+				default:
+					expr(e, inFor, inFor);
+			}
+		}
+
+		if (arr.length > 0 && Tools.expr(arr[0]).match(EBinop("=>", _))) { // infer from keys ...
+			var keys = [];
+			var values = [];
+			for (e in arr) {
+				switch (Tools.expr(e)) {
+					case EBinop("=>", eKey, eValue):
+						keys.push(expr(eKey));
+						values.push(expr(eValue));
+					default:
+						position = e.pos;
+						error(ECustom("Invalid map key=>value expression"));
+				}
+			}
+			return makeMap(keys, values);
+		} else { // infer from type declaration ... (empty map)
+			if (arr.length == 1) {
+				exprCompr(arr[0]);
+
+				if (compr != null)
+					return compr;
+			}
+
+			switch (t) {
+				case CTPath(path, params): // hell
+					var fullPath:String = path.join('.');
+
+					if (fullPath == 'Map') { // infer from parameters
+						if (params == null || params.length < 2)
+							error(ECustom('Not enough type parameters for Map')); // we dont really care about the value type , but whatever
+						else if (params.length > 2)
+							error(ECustom('Too many type parameters for Map'));
+
+						switch (params[0]) {
+							case CTAnon(_):
+								return new haxe.ds.ObjectMap<Dynamic, Dynamic>();
+							case CTPath(path, _):
+								var fullPath:String = path.join('.');
+
+								if (fullPath == 'String') {
+									return new Map<String, Dynamic>();
+								} else if (fullPath == 'Int') {
+									return new Map<Int, Dynamic>();
+								} else {
+									var type:TypeInfo = null;
+									var r = (Tools.resolve(fullPath, environment) ?? imports.get(fullPath));
+									if (r is Class) {
+										type = TypeCollection.main.fromCompilePath(Type.getClassName(r))[0];
+									} else if (r == null) {
+										error(EUnknownType(fullPath));
+									}
+
+									if (/*Reflect.isEnumValue(r)*/ false) { // todo resolve enum values??
+										return new haxe.ds.EnumValueMap<Dynamic, Dynamic>();
+									} else if (type?.kind == 'class') {
+										return new haxe.ds.ObjectMap<Dynamic, Dynamic>();
+									}
+								}
+							default:
+						}
+
+						var p = new Printer();
+						error(ECustom('Map of type <${p.typeToString(params[0])}, ${p.typeToString(params[1])}> is not accepted'));
+					} else {
+						var t:Dynamic = resolve(fullPath); // alias stuff
+
+						if (t is haxe.ds.IntMap || t is haxe.ds.StringMap || t is haxe.ds.ObjectMap || t is haxe.ds.EnumValueMap)
+							return Type.createInstance(t, []);
+					}
+				default:
+			}
+
+			var a = new Array();
+			for (e in arr)
+				a.push(expr(e));
+			return a;
+		}
+	}
+
+	/**
+	 * Evaluates a `switch`, including capture variables, extractors, guards and `|` alternatives.
+	 */
+	function evalSwitch(e:Expr, cases:Array<{values:Array<Expr>, expr:Expr, ?guard:Expr}>, def:Null<Expr>, void:Bool, mapCompr:Bool):Dynamic {
+		var hasCapture:Bool = false;
+
+		function iterCapture(e:Expr) {
+			switch (e.e) {
+				case EIdent('_') | EIdent(_.isTypeIdentifier() => false):
+					hasCapture = true;
+
+				case EIdent(id):
+
+				case EVar(_):
+					hasCapture = true;
+
+				default:
+					e.iter(iterCapture);
+			}
+		}
+
+		function checkCapture(e:Expr) {
+			hasCapture = false;
+			e.iter(iterCapture);
+			return hasCapture;
+		}
+
+		function testCase(e:Expr, match:Dynamic, deep:Bool = true) {
+			return switch (e.e) {
+				case EIdent(id):
+					if (imports.exists(id) || variables.exists(id))
+						return matchValues(resolve(id), match);
+
+					if (id != '_' && id.isTypeIdentifier())
+						throw 'Unknown identifier: $id, pattern variables must be lower-case or with \'var \' prefix';
+
+					captures.set(id, match);
+					return true;
+
+				case EField(ve, f, m):
+					testCase(ve, match);
+					matchValues(get(expr(ve), f, m), match);
+
+				case EVar(id):
+					captures.set(id, match);
+					true;
+
+				case EConst(_):
+					(expr(e) == match);
+
+				case EParent(exr):
+					testCase(exr, match);
+
+				case EBinop('=>', e1, e2):
+					captures.set('_', match);
+
+					var a:Dynamic = expr(e1);
+					testCase(e2, a);
+
+					matchValues(a, expr(e2));
+
+				case EBinop('|', e1, e2):
+					testCase(e1, match);
+					testCase(e2, match);
+					(matchValues(match, expr(e1)) || matchValues(match, expr(e2)));
+
+				case EObject(f):
+					if (!Reflect.isObject(match))
+						return false;
+					for (f in f) {
+						if (!Reflect.hasField(match, f.name) || !testCase(f.e, Reflect.field(match, f.name)))
+							return false;
+					}
+					true;
+
+				case EArrayDecl(a):
+					if (!(match is Array))
+						return false;
+					if (a.length != match.length)
+						return false;
+					for (i => e in a) {
+						if (!testCase(e, match[i]))
+							return false;
+					}
+					true;
+
+				case ECall(ce, params):
+					if (checkCapture(ce)) {
+						testCase(ce, match);
+					} else {
+						var v = expr(ce);
+
+						var ev = Reflect.callMethod(null, v, [for (_ in params) null]);
+						if (Type.getEnum(ev) == Type.getEnum(match) && Type.enumConstructor(ev) == Type.enumConstructor(match)) {
+							var matchParams = Type.enumParameters(match);
+
+							for (i => param in params) {
+								if (!testCase(param, matchParams[i]))
+									return false;
+							}
+						} else {
+							return false;
+						}
+					}
+					true;
+
+				default:
+					error(EUnrecognizedPattern(e));
+			}
+		}
+
+		var val:Dynamic = expr(e);
+		var match = false;
+		for (c in cases) {
+			for (exr in c.values) {
+				captures.clear();
+
+				match = testCase(exr, val);
+
+				captures.remove('_');
+
+				if (c.guard != null && !expr(c.guard))
+					match = false;
+
+				if (match)
+					break;
+			}
+			if (match) {
+				val = expr(c.expr, void, mapCompr);
+				break;
+			}
+		}
+
+		if (!match)
+			val = def == null ? null : expr(def, void, mapCompr);
+
+		captures.clear();
+
+		return val;
+	}
+
+	/**
 	 * The core evaluator: computes the value of one expression, recursing into its sub-expressions and
 	 * dispatching on the expression kind. Control flow (`break`/`continue`/`return`) is signalled by
 	 * throwing `Stop`.
@@ -1619,156 +1920,7 @@ class Interp {
 			case EFunction(params, fexpr, name, ret, id):
 				return buildFunction(name, params, fexpr, ret, id);
 			case EArrayDecl(arr):
-				var compr:Dynamic = null;
-
-				var exprCompr:(e:Expr, ?inFor:Bool) -> Dynamic = null;
-
-				function forExpr(e:Expr) {
-					var v:Dynamic = exprCompr(e, true);
-
-					if (v is ExprDef) {
-						switch (v) {
-							default:
-							case EBinop('=>', e1, e2):
-								var key:Dynamic = expr(e1);
-
-								if (key is String) {
-									compr ??= new haxe.ds.StringMap();
-								} else if (key is Int) {
-									compr ??= new haxe.ds.IntMap();
-								} else if (HaxeReflect.isEnumValue(key)) {
-									compr ??= new haxe.ds.EnumValueMap();
-								} else {
-									compr ??= new haxe.ds.ObjectMap();
-								}
-
-								compr.set(key, expr(e2));
-								return;
-						}
-					}
-
-					if (v != Interp.void && !unwinding) {
-						compr ??= new Array();
-
-						compr.push(v);
-					}
-				}
-
-				exprCompr = function(e:Expr, inFor:Bool = false):Dynamic {
-					return switch (Tools.expr(e)) {
-						case EBlock(e):
-							var v = Interp.void;
-
-							for (e in e) {
-								v = exprCompr(e, inFor);
-								if (unwinding)
-									break;
-							}
-
-							v;
-
-						case EParent(e):
-							exprCompr(e, inFor);
-
-						case EFor(n, it, e):
-							forLoop(n, it, forExpr.bind(e));
-
-							Interp.void;
-
-						case EForGen(it, e):
-							Tools.getKeyIterator(it, function(vk, vv, it) {
-								if (vk == null) {
-									position = it.pos;
-									error(ECustom('Invalid for expression'));
-									return;
-								}
-
-								forKeyValueLoop(vk, vv, it, forExpr.bind(e));
-							});
-
-							Interp.void;
-
-						default:
-							expr(e, inFor, inFor);
-					}
-				}
-
-				if (arr.length > 0 && Tools.expr(arr[0]).match(EBinop("=>", _))) { // infer from keys ...
-					var keys = [];
-					var values = [];
-					for (e in arr) {
-						switch (Tools.expr(e)) {
-							case EBinop("=>", eKey, eValue):
-								keys.push(expr(eKey));
-								values.push(expr(eValue));
-							default:
-								position = e.pos;
-								error(ECustom("Invalid map key=>value expression"));
-						}
-					}
-					return makeMap(keys, values);
-				} else { // infer from type declaration ... (empty map)
-					if (arr.length == 1) {
-						exprCompr(arr[0]);
-
-						if (compr != null)
-							return compr;
-					}
-
-					switch (t) {
-						case CTPath(path, params): // hell
-							var fullPath:String = path.join('.');
-
-							if (fullPath == 'Map') { // infer from parameters
-								if (params == null || params.length < 2)
-									error(ECustom('Not enough type parameters for Map')); // we dont really care about the value type , but whatever
-								else if (params.length > 2)
-									error(ECustom('Too many type parameters for Map'));
-
-								switch (params[0]) {
-									case CTAnon(_):
-										return new haxe.ds.ObjectMap<Dynamic, Dynamic>();
-									case CTPath(path, _):
-										var fullPath:String = path.join('.');
-
-										if (fullPath == 'String') {
-											return new Map<String, Dynamic>();
-										} else if (fullPath == 'Int') {
-											return new Map<Int, Dynamic>();
-										} else {
-											var type:TypeInfo = null;
-											var r = (Tools.resolve(fullPath, environment) ?? imports.get(fullPath));
-											if (r is Class) {
-												type = TypeCollection.main.fromCompilePath(Type.getClassName(r))[0];
-											} else if (r == null) {
-												error(EUnknownType(fullPath));
-											}
-
-											if (/*Reflect.isEnumValue(r)*/ false) { // todo resolve enum values??
-												return new haxe.ds.EnumValueMap<Dynamic, Dynamic>();
-											} else if (type?.kind == 'class') {
-												return new haxe.ds.ObjectMap<Dynamic, Dynamic>();
-											}
-										}
-									default:
-								}
-
-								var p = new Printer();
-								error(ECustom('Map of type <${p.typeToString(params[0])}, ${p.typeToString(params[1])}> is not accepted'));
-							} else {
-								var t:Dynamic = resolve(fullPath); // alias stuff
-
-								if (t is haxe.ds.IntMap || t is haxe.ds.StringMap || t is haxe.ds.ObjectMap || t is haxe.ds.EnumValueMap)
-									return Type.createInstance(t, []);
-							}
-						default:
-					}
-
-					var a = new Array();
-					for (e in arr)
-						a.push(expr(e));
-					return a;
-				}
+				return evalArrayDecl(arr, t);
 			case EArray(e, index):
 				var arr:Dynamic = expr(e);
 				var index:Dynamic = expr(index);
@@ -1828,141 +1980,7 @@ class Interp {
 			case ETernary(econd, e1, e2):
 				return if (expr(econd) == true) expr(e1) else expr(e2);
 			case ESwitch(e, cases, def):
-				var hasCapture:Bool = false;
-
-				function iterCapture(e:Expr) {
-					switch (e.e) {
-						case EIdent('_') | EIdent(_.isTypeIdentifier() => false):
-							hasCapture = true;
-
-						case EIdent(id):
-
-						case EVar(_):
-							hasCapture = true;
-
-						default:
-							e.iter(iterCapture);
-					}
-				}
-
-				function checkCapture(e:Expr) {
-					hasCapture = false;
-					e.iter(iterCapture);
-					return hasCapture;
-				}
-
-				function testCase(e:Expr, match:Dynamic, deep:Bool = true) {
-					return switch (e.e) {
-						case EIdent(id):
-							if (imports.exists(id) || variables.exists(id))
-								return matchValues(resolve(id), match);
-
-							if (id != '_' && id.isTypeIdentifier())
-								throw 'Unknown identifier: $id, pattern variables must be lower-case or with \'var \' prefix';
-
-							captures.set(id, match);
-							return true;
-
-						case EField(ve, f, m):
-							testCase(ve, match);
-							matchValues(get(expr(ve), f, m), match);
-
-						case EVar(id):
-							captures.set(id, match);
-							true;
-
-						case EConst(_):
-							(expr(e) == match);
-
-						case EParent(exr):
-							testCase(exr, match);
-
-						case EBinop('=>', e1, e2):
-							captures.set('_', match);
-
-							var a:Dynamic = expr(e1);
-							testCase(e2, a);
-
-							matchValues(a, expr(e2));
-
-						case EBinop('|', e1, e2):
-							testCase(e1, match);
-							testCase(e2, match);
-							(matchValues(match, expr(e1)) || matchValues(match, expr(e2)));
-
-						case EObject(f):
-							if (!Reflect.isObject(match))
-								return false;
-							for (f in f) {
-								if (!Reflect.hasField(match, f.name) || !testCase(f.e, Reflect.field(match, f.name)))
-									return false;
-							}
-							true;
-
-						case EArrayDecl(a):
-							if (!(match is Array))
-								return false;
-							if (a.length != match.length)
-								return false;
-							for (i => e in a) {
-								if (!testCase(e, match[i]))
-									return false;
-							}
-							true;
-
-						case ECall(ce, params):
-							if (checkCapture(ce)) {
-								testCase(ce, match);
-							} else {
-								var v = expr(ce);
-
-								var ev = Reflect.callMethod(null, v, [for (_ in params) null]);
-								if (Type.getEnum(ev) == Type.getEnum(match) && Type.enumConstructor(ev) == Type.enumConstructor(match)) {
-									var matchParams = Type.enumParameters(match);
-
-									for (i => param in params) {
-										if (!testCase(param, matchParams[i]))
-											return false;
-									}
-								} else {
-									return false;
-								}
-							}
-							true;
-
-						default:
-							error(EUnrecognizedPattern(e));
-					}
-				}
-
-				var val:Dynamic = expr(e);
-				var match = false;
-				for (c in cases) {
-					for (exr in c.values) {
-						captures.clear();
-
-						match = testCase(exr, val);
-
-						captures.remove('_');
-
-						if (c.guard != null && !expr(c.guard))
-							match = false;
-
-						if (match)
-							break;
-					}
-					if (match) {
-						val = expr(c.expr, void, mapCompr);
-						break;
-					}
-				}
-
-				if (!match)
-					val = def == null ? null : expr(def, void, mapCompr);
-
-				captures.clear();
-
-				return val;
+				return evalSwitch(e, cases, def, void, mapCompr);
 			case EMeta(meta, args, e):
 				var r:Dynamic, old = metas.length;
 				metas.push({name: meta, params: args});
