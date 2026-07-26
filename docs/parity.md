@@ -119,14 +119,15 @@ Limits worth knowing:
   value is unchanged.
 - **A missing `from` is not an error.** Haxe requires a matching `from` for an implicit conversion;
   a value with no matching `@:from` is boxed directly instead of being rejected.
-- **No `@:multiType`**, and type parameters erase as everywhere else. `@:forward` does work, bare
-  (every field of the boxed value) or with a list of names.
+- **No `@:multiType`**, and type parameters erase as everywhere else. `@:forward` does work on a
+  scripted abstract, bare (every field of the boxed value) or with a list of names.
 
 Native (compiled) abstracts *are* bridged via
 [`insanity/macro/AbstractMacro.hx`](../insanity/macro/AbstractMacro.hx): static and instance fields,
 `from`/`to` casts, and operator overloading all work. The build macro records which method serves
 each operator and the interpreter dispatches `a + b` to it, so scripts get the same results the
-compiled code does. Three limits remain:
+compiled code does. `@:forward` is the exception: it is honoured on a scripted abstract but not on a
+compiled one, so a forwarded field of a native abstract is not reachable. Three further limits:
 
 - **Binary, unary and array-access operators dispatch.** `@:op(A + B)` and friends, including `==`
   and the ordering operators; `@:op(-A)`, `@:op(!A)` and `@:op(~A)`; and `@:arrayAccess` getters and
