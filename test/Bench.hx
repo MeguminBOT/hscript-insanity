@@ -57,7 +57,7 @@ class Bench {
 		bench("callNoRet", "function f() { 1; } var i = 0; var s = 0; while (i < 100000) { s = f(); i++; } s;");
 		// break / continue still unwind by throwing Stop; continue can fire every iteration.
 		bench("loopPlain", "var i = 0; var s = 0; while (i < 100000) { i++; s += i; } s;");
-		bench("loopCont",  "var i = 0; var s = 0; while (i < 100000) { i++; if (i % 2 == 0) continue; s += i; } s;");
+		bench("loopCont", "var i = 0; var s = 0; while (i < 100000) { i++; if (i % 2 == 0) continue; s += i; } s;");
 		bench("noCall", "var i = 0; var s = 0; while (i < 100000) { s = s; i++; } s;");
 
 		// Diagnostic: same call count, but the function is declared in a scope holding 20 locals.

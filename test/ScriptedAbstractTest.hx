@@ -125,8 +125,7 @@ abstract Meters(Float) from Float to Float {
 ";
 		ok("ctor body runs", evalWith(box, "new Box(4).raw()") == "40");
 		ok("ctor with no args runs", evalWith("abstract E(Array<Int>) { public function new() this = [1, 2, 3]; public function n():Int return this.length; }
-",
-			"new E().n()") == "3");
+", "new E().n()") == "3");
 
 		trace("-- @:forward --");
 		var listed = "@:forward(length) abstract Stack(Array<Int>) from Array<Int> { public function new() this = []; }

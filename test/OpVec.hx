@@ -66,6 +66,13 @@ abstract OpVec(Int) from Int to Int {
 	}
 
 	/**
+	 * @return A form of its own, so a declared `toString` is visibly preferred over the boxed value.
+	 */
+	public function toString():String {
+		return 'V' + this;
+	}
+
+	/**
 	 * @return The negation, offset so it cannot be confused with plain `Int` negation.
 	 */
 	@:op(-A) public function neg():OpVec {

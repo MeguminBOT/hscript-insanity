@@ -4,10 +4,17 @@ import insanity.Config;
 class TypedTest {
 	static var pass = 0;
 	static var fail = 0;
+
 	static function ok(name:String, cond:Bool) {
-		if (cond) { pass++; trace("  ok   " + name); }
-		else { fail++; trace("  FAIL " + name); }
+		if (cond) {
+			pass++;
+			trace("  ok   " + name);
+		} else {
+			fail++;
+			trace("  FAIL " + name);
+		}
 	}
+
 	static function main() {
 		// ---- numeric (unconditional) ----
 		var s = new Script('
@@ -23,7 +30,8 @@ results.push("cat="   + (5 + " x"));                    // "5 x"
 ', "num");
 		s.start();
 		var r:Array<Dynamic> = s.variables.get("results");
-		function has(v:String) return Lambda.has(r, v);
+		function has(v:String)
+			return Lambda.has(r, v);
 		ok("mul stays Int", has("mul=TInt"));
 		ok("div is Float", has("div=TFloat"));
 		ok("mod stays Int", has("mod=TInt"));
@@ -51,11 +59,13 @@ results.push("cat="   + (5 + " x"));                    // "5 x"
 
 		trace("== " + pass + " passed, " + fail + " failed ==");
 	}
+
 	static function eval(body:String):Dynamic {
 		var s = new Script("result = (" + body + ");", "e");
 		s.start();
 		return s.variables.get("result");
 	}
+
 	static function throws(body:String):Bool {
 		var threw = false;
 		var s = new Script("threw = false; try { " + body + " } catch (e:Dynamic) { threw = true; }", "t");

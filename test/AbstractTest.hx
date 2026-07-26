@@ -40,6 +40,20 @@ class AbstractTest {
 	}
 
 	/**
+	 * Asserts that a script expression evaluates to an expected string.
+	 *
+	 * @param name What is being checked.
+	 * @param body The script expression.
+	 * @param want The expected result.
+	 */
+	static function is(name:String, body:String, want:String):Void {
+		var got:String = eval(body);
+		if (got != want)
+			trace("       got " + got + ", wanted " + want);
+		ok(name, got == want);
+	}
+
+	/**
 	 * Asserts that a script expression produces what native Haxe produced for the same expression.
 	 *
 	 * @param name What is being checked.
@@ -116,6 +130,24 @@ class AbstractTest {
 		ok("-a falls back", eval("{ var x:OpBare = cast 5; -x; }") == "-5");
 		ok("!a falls back", eval("{ var x:OpBare = cast 5; !x; }") == "true");
 		ok("a[i] falls back", eval("{ var x:OpBare = cast 5; x[3]; }") == "null");
+
+		// A fixture shaped like flixel's FlxColor, which is what a host actually opts in. Inline
+		// statics are the interesting part: they have no runtime form, so only the generated wrapper
+		// can expose them.
+		trace("-- abstract shaped like FlxColor --");
+		var keep:OpColor = OpColor.RED;
+		is("inline static constant", "OpColor.RED.toHexString()", OpColor.RED.toHexString());
+		is("channel property", "OpColor.RED.red", Std.string(OpColor.RED.red));
+		is("read-only property", "OpColor.RED.alpha", Std.string(OpColor.RED.alpha));
+		is("operator on constants", "(OpColor.RED + OpColor.BLUE).toHexString()", (OpColor.RED + OpColor.BLUE).toHexString());
+		is("from Int", "{ var c:OpColor = 16711680; c.red; }", Std.string(((16711680 : OpColor)).red));
+		ok("property write", eval("{ var c:OpColor = OpColor.BLUE; c.red = 255; c.red; }") == "255");
+
+		// A box the script never asked for should not leak into output. Without this, every
+		// `trace(someColor)` in a script prints the wrapper's class name instead of the value.
+		is("prints as its value", "OpColor.RED", Std.string(OpColor.RED));
+		is("concatenates as its value", "'c=' + OpColor.RED", "c=" + Std.string(OpColor.RED));
+		is("a declared toString still wins", "{ var v:OpVec = cast 5; Std.string(v); }", "V5");
 
 		trace("-- " + pass + " passed, " + fail + " failed --");
 	}

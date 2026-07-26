@@ -4,6 +4,8 @@ import insanity.types.ScriptedClass;
 import insanity.types.ScriptedInterface;
 import insanity.types.ScriptedEnum;
 import insanity.types.ScriptedTypedef;
+import insanity.types.AbstractValue;
+import insanity.types.AbstractTools;
 import insanity.types.ScriptedAbstract;
 import insanity.types.ScriptedAbstractValue;
 import insanity.proxy.TypeProxy.ICustomEnumValueType;
@@ -130,7 +132,17 @@ class StdProxy {
 	 * @param s The value.
 	 * @return Its string form.
 	 */
-	public static inline function string(s:Dynamic):String {
+	public static function string(s:Dynamic):String {
+		// A wrapped abstract is a box the script never asked for: print what it holds, the way
+		// compiled Haxe does, unless the abstract defines a `toString` of its own.
+		if (s is AbstractValue) {
+			var custom:Dynamic = Reflect.field(s, 'toString');
+			if (custom != null && Reflect.isFunction(custom))
+				return Std.string(Reflect.callMethod(s, custom, []));
+
+			return Std.string(AbstractTools.underlying(s));
+		}
+
 		return Std.string(s);
 	}
 
