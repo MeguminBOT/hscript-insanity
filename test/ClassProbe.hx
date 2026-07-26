@@ -27,6 +27,14 @@ class ClassProbe {
 			"interface I { public function m():String; }\nclass H implements I { public function new() {} public function m() return 'hi'; }\n",
 			"{ var h = new H(); (h is I) + ':' + h.m(); }", "true:hi");
 		p("scripted enum", "enum Col { Red; Blue(shade:Int); }\n", "{ var c = Blue(3); switch(c) { case Red: 'r'; case Blue(s): 'b'+s; } }", "b3");
+		// A guard must not run when its pattern did not match: the capture variables are unbound
+		// there, so evaluating it errors on a name that was never set.
+		var guards = "enum G { A(x:Int); B(y:Int); C; }
+";
+		p("guard taken", guards, "switch (A(9)) { case A(x) if (x > 5): 'big'+x; case A(x): 'small'+x; case B(y): 'b'; case C: 'c'; }", "big9");
+		p("guard rejected", guards, "switch (A(1)) { case A(x) if (x > 5): 'big'+x; case A(x): 'small'+x; case B(y): 'b'; case C: 'c'; }", "small1");
+		p("guard skipped, other ctor", guards, "switch (B(2)) { case A(x) if (x > 5): 'big'; case A(x): 'small'; case B(y): 'b'+y; case C: 'c'; }", "b2");
+		p("guard skipped, no-arg ctor", guards, "switch (C) { case A(x) if (x > 5): 'big'; case A(x): 'small'; case B(y): 'b'; case C: 'c'; }", "c");
 		p("enum equality", "enum Col2 { X; Y; }\n", "{ (X == X) + ',' + (X == Y); }", "true,false");
 		p("static in method", "class J { static var s = 2; public function new() {} public function m() return s * 3; }\n", "new J().m()", "6");
 		p("field default", "class K { public var arr:Array<Int> = [1,2]; public function new() {} }\n", "new K().arr.length", "2");

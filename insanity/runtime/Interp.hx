@@ -2004,7 +2004,9 @@ class Interp {
 
 				captures.remove('_');
 
-				if (c.guard != null && !expr(c.guard))
+				// Only a pattern that matched has its capture variables bound, so a guard on a case that
+				// did not match must not run: it would resolve names that were never set.
+				if (match && c.guard != null && !expr(c.guard))
 					match = false;
 
 				if (match)
