@@ -3,23 +3,31 @@ package insanity.runtime;
 import insanity.syntax.Expr;
 import insanity.types.AbstractValue;
 
-/** A variable slot: its value plus optional abstract box, finality, access flags, and accessors. */
-typedef Variable = {
+/**
+ * A variable slot: its value plus optional abstract box, finality, access flags, and accessors.
+ *
+ * Declared as a `@:structInit` class rather than an anonymous structure so its fields compile to
+ * direct member access. Anonymous structures are looked up by field name at runtime on static
+ * targets, and this type is read on every variable access, so that cost lands in the interpreter's
+ * hottest path. `@:structInit` keeps the `{r: value}` construction syntax used throughout.
+ */
+@:structInit
+class Variable {
 	/** The stored value. */
-	var r:Dynamic;
+	public var r:Dynamic;
 
 	/** The abstract wrapper, when the value is a boxed abstract. */
-	var ?a:AbstractValue;
+	public var a:AbstractValue = null;
 
 	/** Whether the binding is `final`. */
-	var ?isFinal:Bool;
+	public var isFinal:Bool = false;
 
 	/** The field's access modifiers, when it is a class field. */
-	var ?access:Array<FieldAccess>;
+	public var access:Array<FieldAccess> = null;
 
 	/** The getter accessor name, when it is a property. */
-	var ?get:String;
+	public var get:String = null;
 
 	/** The setter accessor name, when it is a property. */
-	var ?set:String;
+	public var set:String = null;
 }

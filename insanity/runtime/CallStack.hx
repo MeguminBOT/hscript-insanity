@@ -1,12 +1,19 @@
 package insanity.runtime;
 
-/** One interpreter stack frame: its local variables and the call-site descriptor. */
-typedef StackFrame = {
+/**
+ * One interpreter stack frame: its local variables and the call-site descriptor.
+ *
+ * A `@:structInit` class rather than an anonymous structure, for the same reason as `Variable`: a
+ * frame is allocated and its fields read on every call, and anonymous structures resolve fields by
+ * name at runtime on static targets. `@:structInit` keeps the `{locals: ..., item: ...}` syntax.
+ */
+@:structInit
+class StackFrame {
 	/** The frame's local variables. */
-	var locals:Map<String, Variable>;
+	public var locals:Map<String, Variable>;
 
 	/** What the frame represents (script, module, method, ...). */
-	var item:StackItem;
+	public var item:StackItem;
 }
 
 /** The interpreter's own call stack, used for scoping locals and rendering script traces. */

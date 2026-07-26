@@ -38,30 +38,32 @@ enum Const {
 }
 
 /** A source position: the origin and line always present, byte/column offsets optional. */
-typedef Position = {
+@:structInit
+class Position {
 	/** The source origin (usually a file path or script name). */
-	var origin:String;
+	public var origin:String;
 
 	/** The 1-based line number. */
-	var line:Int;
+	public var line:Int;
 
 	/** The inclusive start byte offset. */
-	var ?pmin:Int;
+	public var pmin:Int = 0;
 
 	/** The exclusive end byte offset. */
-	var ?pmax:Int;
+	public var pmax:Int = 0;
 
 	/** The 1-based column. */
-	var ?column:Int;
+	public var column:Int = 0;
 }
 
 /** An expression: its definition plus source position. */
-typedef Expr = {
+@:structInit
+class Expr {
 	/** The expression definition. */
-	var e:ExprDef;
+	public var e:ExprDef;
 
 	/** Where it appears in source. */
-	var pos:Position;
+	public var pos:Position;
 }
 
 /** The shape of every expression the interpreter can evaluate. */

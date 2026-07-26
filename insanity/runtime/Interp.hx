@@ -1425,7 +1425,7 @@ class Interp {
 		if (name != null) {
 			if (stack.length > 1) { // function-in-function is a local function
 				declared.push({n: name, old: locals.get(name)});
-				var ref = {r: f};
+				var ref:Variable = {r: f};
 				locals.set(name, ref);
 				capturedLocals.set(name, ref); // allow self-recursion
 			} else { // global function
