@@ -760,16 +760,15 @@ class Interp {
 	 * @param locals The frame's local map; defaults to a fresh duplicate of the current scope.
 	 */
 	function pushStack(?item:StackItem, ?locals:Map<String, Variable>) {
-		var last:Stack = stack.stack.shift();
+		// Stamp the caller's frame in place: rebuilding it (shift + new frame + unshift) allocated
+		// twice and shifted the whole stack on every call.
+		var last:Stack = stack.stack[0];
 
 		if (last != null) {
-			stack.stack.unshift({
-				locals: last.locals,
-				item: switch (last.item) {
-					case SFilePos(item, _, _): SFilePos(item, position.origin, position.line, position.column);
-					default: SFilePos(last.item, position.origin, position.line, position.column);
-				}
-			});
+			last.item = switch (last.item) {
+				case SFilePos(inner, _, _): SFilePos(inner, position.origin, position.line, position.column);
+				default: SFilePos(last.item, position.origin, position.line, position.column);
+			}
 		}
 		if (item != null) {
 			stack.stack.unshift({locals: locals ?? duplicate(), item: item});
@@ -1397,7 +1396,7 @@ class Interp {
 		var f = Reflect.makeVarArgs(function(args:Array<Dynamic>) {
 			superConstructorAllowed = su;
 
-			if (args?.length ?? 0 != params.length) {
+			if ((args?.length ?? 0) != params.length) {
 				if (args.length < minParams) {
 					var str = "Invalid number of parameters. Got " + args.length + ", required " + minParams;
 					if (name != null)
@@ -1542,12 +1541,14 @@ class Interp {
 			case EParent(e):
 				return expr(e, void, mapCompr);
 			case EBlock(exprs):
-				var loc = Lambda.count(locals);
+				// Only whether the scope had any locals matters, so test for one entry instead of
+				// counting them all (this runs on entry to every block).
+				var hadLocals = locals.keys().hasNext();
 				var old = declared.length;
 				var v = null;
 				for (e in exprs)
 					v = expr(e, void, mapCompr);
-				if (loc > 0)
+				if (hadLocals)
 					restore(old);
 				return v;
 			case EField(e, f, m):
