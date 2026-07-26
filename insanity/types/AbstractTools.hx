@@ -140,6 +140,31 @@ class AbstractTools {
 	}
 
 	/**
+	 * Whether an abstract forwards a field to the value it boxes, per its `@:forward` metadata.
+	 *
+	 * @param v The value, which may or may not be an abstract.
+	 * @param field The field name.
+	 * @return True if reading `field` should fall through to the boxed value.
+	 */
+	public static function forwards(v:Dynamic, field:String):Bool {
+		if (!(v is AbstractValue))
+			return false;
+
+		if (v is ScriptedAbstractValue)
+			return (cast v : ScriptedAbstractValue).owner.forwards(field);
+
+		var cls:Dynamic = Type.getClass(v);
+		if (cls == null)
+			return false;
+
+		if (Reflect.field(cls, '_forwardAll') == true)
+			return true;
+
+		var list:Array<String> = Reflect.field(cls, '_forwards');
+		return list != null && list.indexOf(field) >= 0;
+	}
+
+	/**
 	 * Unwraps a wrapped abstract to the value it boxes; anything else passes through.
 	 *
 	 * @param v The value.

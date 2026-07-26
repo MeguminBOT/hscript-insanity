@@ -2953,6 +2953,19 @@ class Interp {
 		// An abstract's statics live on its implementation class, which reflection cannot see from the
 		// abstract itself. Guarded by the null test that is already computed, so ordinary field access
 		// never reaches the type check.
+		// `@:forward` on a compiled abstract: the field lives on the value the wrapper boxes.
+		if (prop == null && o is AbstractValue && AbstractTools.forwards(o, f)) {
+			var boxed:Dynamic = AbstractTools.underlying(o);
+			var forwarded:Dynamic = Reflect.getProperty(boxed, f);
+
+			// A method has to be bound to the boxed value: the caller invokes it with the wrapper as
+			// the receiver, which on hxcpp runs it against the wrapper instead of what it holds.
+			if (Reflect.isFunction(forwarded))
+				return Reflect.makeVarArgs(function(args:Array<Dynamic>):Dynamic return Reflect.callMethod(boxed, forwarded, args));
+
+			return forwarded;
+		}
+
 		if (prop == null && o is ScriptedAbstract)
 			return (cast o : ScriptedAbstract).impl.reflectGetField(f);
 

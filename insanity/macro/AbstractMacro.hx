@@ -551,6 +551,38 @@ class AbstractMacro {
 			})
 		});
 
+		// `@:forward` on the abstract itself: the fields of the boxed value that should be reachable
+		// through it. Recorded rather than generated, so the interpreter can fall back to the value.
+		var forwardAll:Bool = false;
+		var forwards:Array<String> = [];
+
+		for (m in ab.meta.extract(':forward')) {
+			if (m.params == null || m.params.length == 0) {
+				forwardAll = true;
+				continue;
+			}
+
+			for (param in m.params)
+				switch (param.expr) {
+					case EConst(CIdent(n)):
+						forwards.push(n);
+					default:
+				}
+		}
+
+		cls.fields.push({
+			name: '_forwardAll',
+			pos: pos,
+			access: [APublic, AStatic],
+			kind: FVar(macro :Bool, macro $v{forwardAll})
+		});
+		cls.fields.push({
+			name: '_forwards',
+			pos: pos,
+			access: [APublic, AStatic],
+			kind: FVar(macro :Array<String>, macro $v{forwards})
+		});
+
 		var opEntries:Array<Expr> = [];
 		for (op => m in opMap)
 			opEntries.push({pos: pos, expr: EBinop(OpArrow, macro $v{op}, macro $v{m})});

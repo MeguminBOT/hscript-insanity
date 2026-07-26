@@ -149,6 +149,14 @@ class AbstractTest {
 		is("concatenates as its value", "'c=' + OpColor.RED", "c=" + Std.string(OpColor.RED));
 		is("a declared toString still wins", "{ var v:OpVec = cast 5; Std.string(v); }", "V5");
 
+		// `@:forward` on a compiled abstract: fields of the boxed value, reachable through it.
+		trace("-- @:forward on a compiled abstract --");
+		var keepName:OpName = 'ada';
+		is("forwarded property", "{ var n:OpName = 'ada'; n.length; }", Std.string(('ada' : OpName).length));
+		is("forwarded method", "{ var n:OpName = 'ada'; n.toUpperCase(); }", ('ada' : OpName).toUpperCase());
+		is("own method still wins", "{ var n:OpName = 'ada'; n.shout(); }", ('ada' : OpName).shout());
+		ok("unlisted field does not forward", eval("{ var n:OpName = 'ada'; n.charAt(0); }").indexOf("threw") == 0);
+
 		trace("-- " + pass + " passed, " + fail + " failed --");
 	}
 }

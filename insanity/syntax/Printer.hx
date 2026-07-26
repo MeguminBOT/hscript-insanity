@@ -164,8 +164,12 @@ class Printer {
 			case CFloat(f):
 				add(f);
 			case CString(s):
+				// Backslashes first: escaping them after the others would also escape the backslashes
+				// those introduced, and the printed string would stop parsing back to what it holds.
 				add('"');
-				add(s.split('"')
+				add(s.split("\\")
+					.join("\\\\")
+					.split('"')
 					.join('\\"')
 					.split("\n")
 					.join("\\n")

@@ -353,7 +353,10 @@ class Lexer {
 				break;
 			} else if (interpolate && c == '$'.code) {
 				var next = readChar();
-				if (idents[next] == true || next == '{'.code) {
+				// `identChars` includes digits, but an identifier cannot start with one: `$5` is a
+				// literal dollar followed by a five, as it is in Haxe, not an interpolation.
+				var startsIdent:Bool = (idents[next] == true && !(next >= '0'.code && next <= '9'.code));
+				if (startsIdent || next == '{'.code) {
 					readPos--;
 					return TConst(CString(b.toString(), true));
 				} else if (next == '$'.code) {
