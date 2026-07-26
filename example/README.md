@@ -13,6 +13,19 @@ or compiled:
 haxe -cp . -cp example -main Main --macro include('bridges') --macro macros.BridgeMacro.generate() -cpp bin && ./bin/Main.exe
 ```
 
+or as a Lime/OpenFL application, which is the shape a game actually builds in. The same battle, with
+the log drawn into a window:
+
+```
+cd example && lime test windows
+```
+
+`Project.xml` is the point of that third one: it shows the wiring in the form a real project uses,
+rather than as compiler flags. Everything a host has to declare is on one page -- the haxelib, the
+two macro flags that keep the scripting bridges in the build, and the scripts shipped as assets so
+they land next to the executable. It needs `lime` and `openfl` installed; the console forms need
+nothing but the compiler.
+
 ## What is where
 
 | | |
@@ -24,6 +37,7 @@ haxe -cp . -cp example -main Main --macro include('bridges') --macro macros.Brid
 | `game/Mods.hx` | **the embedding layer**: the entire integration, four steps and a discovery helper |
 | `bridges/` | the manual form of a scripting bridge: one empty class, hand-written, for `Entity` |
 | `macros/BridgeMacro.hx` | the generated form of the same thing, used here for `Component` |
+| `Project.xml` | the Lime/OpenFL build, showing the same wiring as a game project declares it |
 | `scripts/` | the content: three party members, four enemies, two components, and a module of shared types |
 
 `game/Mods.hx` is the file to read first. It is short, and it is the whole job.

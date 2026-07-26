@@ -44,7 +44,7 @@ class Battle {
 	 * @param message The line to write.
 	 */
 	public function log(message:String):Void {
-		Sys.println(message);
+		Output.write(message);
 	}
 
 	/**

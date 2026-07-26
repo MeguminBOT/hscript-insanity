@@ -23,6 +23,20 @@ Then add the library to your build (`-lib hscript-insanity` in an hxml, or
 `<haxelib name="hscript-insanity" />` in a Project.xml). Nothing else is required to start: the table
 of compiled types that scripts resolve names against builds itself the first time it is used.
 
+In a Lime or OpenFL project that is three lines, and they are the only build-level requirement the
+library has:
+
+```xml
+<haxelib name="hscript-insanity" />
+
+<!-- keeps the scripting bridges in the build; see section 6 -->
+<haxeflag name="--macro" value="include('bridges')" />
+<haxeflag name="--macro" value="macros.BridgeMacro.generate()" />
+```
+
+[`example/Project.xml`](../example/Project.xml) is a complete one, including shipping the scripts as
+assets so they sit beside the executable.
+
 ## 2. Run a script
 
 ```haxe

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<project>
+	<!--
+		The same example, built the way a game is built. Everything the library needs from a host
+		project is on this page: the haxelib, the two macro flags that keep the scripting bridges in
+		the build, and the scripts shipped as assets so they sit next to the executable.
+
+			lime test windows
+
+		The console form needs none of this and is in the README; this file exists to show the wiring
+		in the shape a real project uses.
+	-->
+
+	<meta title="Scriptable Battle" package="dev.hscriptinsanity.battle" version="1.0.0" company="hscript-insanity" />
+	<app main="Main" path="export" file="ScriptableBattle" />
+
+	<source path="." />
+
+	<haxelib name="lime" />
+	<haxelib name="openfl" />
+	<haxelib name="hscript-insanity" />
+
+	<!--
+		Bridges are what let a script write `class Slime extends Entity`, and nothing in the program
+		references one, so each has to be kept in the build deliberately. `bridges` is the hand-written
+		one; BridgeMacro generates the rest and references them itself.
+	-->
+	<haxeflag name="--macro" value="include('bridges')" />
+	<haxeflag name="--macro" value="macros.BridgeMacro.generate()" />
+
+	<!-- The scripts are content, not code: they are read at runtime, so they ship beside the app. -->
+	<assets path="scripts" rename="scripts" />
+
+	<window width="900" height="700" background="#1b1b1f" resizable="true" vsync="true" />
+</project>

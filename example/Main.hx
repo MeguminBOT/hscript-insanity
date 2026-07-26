@@ -1,6 +1,12 @@
 import game.Battle;
 import game.Entity;
 import game.Mods;
+import game.Output;
+#if openfl
+import openfl.display.Sprite;
+import openfl.text.TextField;
+import openfl.text.TextFormat;
+#end
 
 /**
  * The app the library is embedded into: a tiny turn-based battle.
@@ -10,13 +16,50 @@ import game.Mods;
  * which side each one put itself on. Dropping a new file into `scripts/` puts a new creature in the
  * fight without changing a line here.
  *
- * Run it:
+ * Runs either way. As a console program, with nothing but the compiler:
  *
  *     haxe -cp . -cp example -main Main --macro include('bridges') --macro macros.BridgeMacro.generate() --interp
+ *
+ * or as a Lime/OpenFL application, which is the shape a game actually builds in, and where the same
+ * log is drawn into a window:
+ *
+ *     cd example && lime test windows
  */
-class Main {
+class Main #if openfl extends Sprite #end {
 	static function main():Void {
-		Mods.setup('example/scripts');
+		#if openfl
+		openfl.Lib.current.addChild(new Main());
+		#else
+		play();
+		#end
+	}
+
+	#if openfl
+	/** Builds the window's log view, then fights the battle into it. */
+	public function new() {
+		super();
+
+		var view:TextField = new TextField();
+		view.width = 900;
+		view.height = 700;
+		view.multiline = true;
+		view.wordWrap = true;
+		view.selectable = false;
+		view.defaultTextFormat = new TextFormat('_typewriter', 12, 0xE6E6E6);
+		addChild(view);
+
+		Output.onLine = function(line:String):Void {
+			view.appendText(line + '\n');
+			view.scrollV = view.maxScrollV;
+		};
+
+		play();
+	}
+	#end
+
+	/** Loads the scripts, builds the encounter out of what they declared, and runs it. */
+	static function play():Void {
+		Mods.setup(scriptFolder());
 
 		var battle:Battle = new Battle(20260726);
 
@@ -28,10 +71,24 @@ class Main {
 		for (e in Mods.roster('enemy'))
 			battle.add(e);
 
-		Sys.println('a fight breaks out');
+		Output.write('a fight breaks out');
 		for (e in battle.entities)
-			Sys.println('  ${e.friendly ? "party" : "enemy"}  ${e.name} (${e.health} hp)');
+			Output.write('  ${e.friendly ? "party" : "enemy"}  ${e.name} (${e.health} hp)');
 
 		battle.run(20);
+	}
+
+	/**
+	 * Finds the scripts. A Lime build copies them next to the executable, while running straight from
+	 * the compiler leaves them where they are in the repository.
+	 *
+	 * @return The folder to load scripts from.
+	 */
+	static function scriptFolder():String {
+		for (dir in ['scripts', 'example/scripts'])
+			if (sys.FileSystem.exists(dir))
+				return dir;
+
+		return 'scripts';
 	}
 }
