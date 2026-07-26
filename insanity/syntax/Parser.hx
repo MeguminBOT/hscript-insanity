@@ -643,6 +643,7 @@ class Parser extends Lexer {
 				mk(EWhile(econd, e), p1, pmax(e));
 			case "do":
 				var e = parseExpr();
+				maybe(TSemicolon); // a brace-less body ends in `;` before `while`; a braced one does not
 				var tk = token();
 				switch (tk) {
 					case TId("while"): // Valid

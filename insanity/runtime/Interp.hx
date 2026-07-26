@@ -2279,6 +2279,14 @@ class Interp {
 		if (v is Array)
 			return (v : Array<Dynamic>).iterator();
 
+		// `a...b` builds an IntIterator, whose hasNext/next are `inline` and so have no runtime
+		// representation to reflect on. Bind it through its static type instead, which gives a real
+		// iterator object.
+		if (v is IntIterator) {
+			var range:Iterator<Int> = (v : IntIterator);
+			return cast range;
+		}
+
 		var iter = Reflect.field(v, 'iterator');
 		#if hl
 		if (iter != null)
