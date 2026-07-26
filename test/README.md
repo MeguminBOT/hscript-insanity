@@ -22,7 +22,7 @@ haxe -cp test -cp . -main ReturnTest -cpp bin && ./bin/ReturnTest.exe
 | `RangeTest` | `a...b` integer ranges, including with `break`, `continue`, `return` and comprehensions |
 | `ArgsTest` | argument binding: exact, optional, default and rest parameters |
 | `TypedTest` | typed mode: enforcement, coercion, and that dynamic mode disables it |
-| `StructTest` | structural typedefs via `is`, `cast` and annotations |
+| `StructTest` | structural typedefs via `is`, `cast` and annotations: field presence, field types, optional fields |
 | `ClassProbe` | scripted classes: inheritance, `super`, statics, properties, interfaces, enums, closures |
 | `AbstractTest` | native abstracts: construction, fields, statics, and `@:op` operator dispatch |
 | `SweepProbe` | numeric edges, the `#if` preprocessor, string and regex handling, error handling, imports and `using` |

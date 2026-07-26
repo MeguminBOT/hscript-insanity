@@ -226,6 +226,23 @@ class Tools {
 	}
 
 	/**
+	 * Whether an anonymous-structure field may be absent: either written `?x:Int`, which the parser
+	 * desugars to `@:optional`, or annotated with a type that is itself optional.
+	 *
+	 * @param f The field descriptor.
+	 * @return True if the field is optional.
+	 */
+	public static function isOptionalField(f:{name:String, t:CType, ?meta:Metadata}):Bool {
+		if (f.t != null && f.t.match(CTOpt(_)))
+			return true;
+		if (f.meta != null)
+			for (m in f.meta)
+				if (m.name == ':optional')
+					return true;
+		return false;
+	}
+
+	/**
 	 * Joins a package and name into a dotted path.
 	 *
 	 * @param name The type or field name.

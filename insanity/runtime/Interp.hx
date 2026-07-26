@@ -2346,6 +2346,88 @@ class Interp {
 	}
 
 	/**
+	 * Whether a value satisfies a type annotation, without coercing it or raising an error.
+	 *
+	 * This is the test `tryCast` makes, separated out so a structural shape can be checked field by
+	 * field: `tryCast` reports which field is wrong and throws, while a plain `is` only needs the
+	 * yes or no. Outside typed mode nothing is checked, matching `tryCast`.
+	 *
+	 * @param v The value to test.
+	 * @param t The annotation to test it against.
+	 * @return True if the value satisfies the annotation.
+	 */
+	public function matchesType(v:Dynamic, t:CType):Bool {
+		switch (t) {
+			case null:
+				return true;
+			case CTParent(inner):
+				return matchesType(v, inner);
+			case CTOpt(inner):
+				return v == null || matchesType(v, inner);
+			case CTPath(['Null'], params) if (params != null && params.length > 0):
+				return v == null || matchesType(v, params[0]);
+			case CTAnon(fields):
+				if (!Config.typedMode || v == null)
+					return true;
+				for (f in fields) {
+					if (!Reflect.hasField(v, f.name)) {
+						if (Tools.isOptionalField(f))
+							continue;
+						return false;
+					}
+					if (!matchesType(Reflect.field(v, f.name), f.t))
+						return false;
+				}
+				return true;
+			case CTFun(_, _):
+				return !Config.typedMode || v == null || Reflect.isFunction(v);
+			case CTPath(p, _):
+				if (!Config.typedMode || v == null)
+					return true;
+
+				var path:String = p.join('.');
+				switch (path) {
+					case 'Dynamic' | 'Any' | 'Void' | 'Class' | 'Enum':
+						return true;
+					case 'Int':
+						return Std.isOfType(v, Int);
+					case 'Float':
+						return Std.isOfType(v, Float);
+					case 'Bool':
+						return Std.isOfType(v, Bool);
+					case 'String':
+						return Std.isOfType(v, String);
+					case 'Map' | 'IMap':
+						return v is IMap;
+					default:
+				}
+
+				var rt:Dynamic = imports.get(path);
+				if (rt == null) {
+					var info = TypeCollection.main.fromPath(path);
+					if (info != null)
+						rt = info[0].compilePath().resolve();
+				}
+
+				// Type parameters resolve to nothing; they erase, so anything satisfies them.
+				if (rt == null)
+					return true;
+
+				if (rt is ScriptedTypedef) {
+					var td:ScriptedTypedef = cast rt;
+					return !td.structural || td.structFields == null || td.matchesStructure(v);
+				}
+
+				if (rt is Class || rt is ScriptedClass || rt is ScriptedInterface || rt is Enum || rt is ScriptedEnum)
+					return Std.isOfType(v, rt);
+
+				return true;
+			default:
+				return true;
+		}
+	}
+
+	/**
 	 * Applies a type annotation to a value. Abstract `from`/`to` conversions always apply. When
 	 * `Config.typedMode` is on, the value is additionally checked against the declared type: it is
 	 * coerced where Haxe allows an implicit conversion (`Int`->`Float`), passed when already
@@ -2433,12 +2515,19 @@ class Interp {
 						return e;
 				}
 			case CTAnon(fields):
-				// An inline anonymous-structure annotation (`var p:{x:Int}`): require every field.
+				// An inline anonymous-structure annotation (`var p:{x:Int}`): require every field that
+				// is not optional, and require each one present to match its own annotation.
 				if (!Config.typedMode || e == null)
 					return e;
-				for (f in fields)
-					if (!Reflect.hasField(e, f.name))
+				for (f in fields) {
+					if (!Reflect.hasField(e, f.name)) {
+						if (Tools.isOptionalField(f))
+							continue;
 						return error(ECustom('${AbstractTools.resolveName(e)} should have field ${f.name}'));
+					}
+					if (!matchesType(Reflect.field(e, f.name), f.t))
+						return error(ECustom('field ${f.name} of ${AbstractTools.resolveName(e)} should be ${new Printer().typeToString(f.t)}'));
+				}
 				return e;
 			case CTFun(_, _):
 				// A function-type annotation (`f:Int->Void`): the signature can't be checked at runtime,

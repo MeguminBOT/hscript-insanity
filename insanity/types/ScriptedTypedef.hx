@@ -41,6 +41,12 @@ class ScriptedTypedef implements IScriptedType {
 	 */
 	public var structFields:Array<String> = null;
 
+	/** The same fields with their annotations, so `matchesStructure` can check field types too. */
+	public var structFieldTypes:Array<{name:String, t:CType, ?meta:Metadata}> = null;
+
+	/** The interpreter that resolved this typedef, used to check field types against its imports. */
+	var checker:Interp = null;
+
 	/** The parsed typedef declaration. */
 	var decl:TypeDecl;
 
@@ -132,6 +138,8 @@ class ScriptedTypedef implements IScriptedType {
 				// Anonymous-structure typedef: no runtime class, matched by field shape.
 				structural = true;
 				structFields = [for (f in fields) f.name];
+				structFieldTypes = fields;
+				checker = baseInterp;
 
 			default:
 				// Function (and other) structural typedefs have no matchable shape; they erase.
@@ -140,19 +148,36 @@ class ScriptedTypedef implements IScriptedType {
 	}
 
 	/**
-	 * Whether a value satisfies this typedef's structure: it has every required field. Only meaningful
-	 * for an anonymous-structure typedef (`structFields` non-null); field types are not checked
-	 * (structural presence only).
+	 * Whether a value satisfies this typedef's structure: it has every field the typedef requires,
+	 * each one matching its annotation. Optional fields (`?x:Int` or `@:optional`) may be absent.
+	 * Only meaningful for an anonymous-structure typedef (`structFields` non-null).
+	 *
+	 * Without the interpreter that resolved this typedef there is nothing to resolve field types
+	 * against, so the check falls back to field presence alone.
 	 *
 	 * @param value The value to test.
-	 * @return True if `value` has all required fields.
+	 * @return True if `value` satisfies the structure.
 	 */
 	public function matchesStructure(value:Dynamic):Bool {
 		if (value == null || structFields == null)
 			return false;
-		for (f in structFields)
-			if (!ReflectProxy.hasField(value, f))
+
+		if (checker == null || structFieldTypes == null) {
+			for (f in structFields)
+				if (!ReflectProxy.hasField(value, f))
+					return false;
+			return true;
+		}
+
+		for (f in structFieldTypes) {
+			if (!ReflectProxy.hasField(value, f.name)) {
+				if (Tools.isOptionalField(f))
+					continue;
 				return false;
+			}
+			if (!checker.matchesType(ReflectProxy.field(value, f.name), f.t))
+				return false;
+		}
 		return true;
 	}
 

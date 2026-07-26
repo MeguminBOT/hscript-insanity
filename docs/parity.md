@@ -18,7 +18,7 @@ script here cannot (or does differently).
 | Works with parity | Erases / weakened | Not available |
 | --- | --- | --- |
 | classes, `extends`, `override` | type parameters (erased) | macros / `@:build` / reification |
-| scripted + native interfaces | structural typedefs (shape, not field types) | `@:op` on a *scripted* abstract |
+| scripted + native interfaces | structural typedefs (values, not literals) | `@:op` on a *scripted* abstract |
 | enums (+ params, `switch` extraction, guards, `\|`) | scripted abstracts (underlying/`from`/`to`) | `@:structInit`, `@:forward`, `@:multiType` |
 | `@:op` and `@:arrayAccess` on native abstracts | | |
 | typedef aliases | custom metadata (mostly inert) | compile-time type errors / inference |
@@ -74,12 +74,20 @@ annotations are ignored and only abstract `from`/`to` casts apply.
   *constraints are dropped*; every `T` resolves to `Dynamic`. See the note on
   `params:Array<String>` in [`insanity/syntax/Expr.hx`](../insanity/syntax/Expr.hx). There is no
   generic type safety.
-- **Anonymous-structure typedefs are checked by shape, not by field type.** `typedef Foo = {x:Int}`
-  (named or inline `{x:Int}`) works for `is`, `cast`, and variable/argument annotations, matching any
-  value that has all the required *field names* (`ScriptedTypedef.matchesStructure` in
-  [`insanity/types/ScriptedTypedef.hx`](../insanity/types/ScriptedTypedef.hx)). Field *types* are
-  not verified, so `{x: "str"}` still satisfies `{x:Int}`. **Function typedefs** (`typedef F = Int->Void`)
-  have no matchable shape and erase.
+- **Anonymous-structure typedefs are checked by shape *and* by field type.** `typedef Foo = {x:Int}`
+  (named or inline `{x:Int}`) works for `is`, `cast`, and variable/argument annotations. A value has
+  to carry every field the structure declares, and each field has to satisfy its own annotation,
+  recursively for nested structures (`ScriptedTypedef.matchesStructure` and `Interp.matchesType`).
+  Optional fields are supported in both spellings, `?x:Int` and `@:optional x:Int`, and may be
+  absent; when present they are still type-checked.
+
+  Two differences from Haxe remain. **Extra fields are accepted**: Haxe rejects a *literal* carrying
+  fields the expected type does not declare, but this is a check on a runtime value, and a value with
+  more fields than required still satisfies the structure. And **generic field types erase with
+  everything else**, so `{items:Array<Int>}` only checks that the field is an `Array`.
+
+  **Function typedefs** (`typedef F = Int->Void`) have no matchable shape; a value only has to be
+  callable.
 
 ## 3. Scripted abstracts are hollow
 

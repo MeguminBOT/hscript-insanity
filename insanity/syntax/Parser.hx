@@ -1116,6 +1116,11 @@ class Parser extends Lexer {
 					t = token();
 					switch (t) {
 						case TBrClose: break;
+						case TQuestion:
+							// `?x:Int` is how Haxe spells an optional field; it means `@:optional x:Int`.
+							if (meta == null)
+								meta = [];
+							meta.push({name: ":optional", params: []});
 						case TId("var"), TId("final"):
 							var name = getIdent();
 							ensure(TDoubleDot);
