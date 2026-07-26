@@ -5,10 +5,19 @@
 > Give these projects a look as well!
 
 > [!TIP]
-> This is my first time messing with / writing code this complex so I apologize in advance for any bad code!! (feel free to [open a pull request](https://github.com/inky03/hscript-insanity/pulls) if you can improve this project) <br>
+> This is my first time messing with / writing code this complex so I apologize in advance for any bad code!! (feel free to [open a pull request](https://github.com/MeguminBOT/hscript-insanity/pulls) if you can improve this project) <br>
 > This project is also still a heavy work in progress... see the [TO-DO](#to-do) for all implemented / missing features!
 
 Experimental fork of [Hscript](https://github.com/HaxeFoundation/hscript) (Parse and evaluate Haxe expressions dynamically).
+
+## Documentation
+
+- **[Embedding guide](docs/embedding.md)** -- putting the library in your own game: running scripts,
+  exposing your API, letting scripts subclass your classes, and the things that will bite you.
+  Worked end to end in [`example/`](example), a scriptable RPG battle you can run.
+- [Parity with Haxe](docs/parity.md) -- what scripts can and cannot do compared to real Haxe.
+- [Performance](docs/performance.md) -- what has been optimized, and how to measure without fooling yourself.
+- [Tests](test) -- the suites, which double as executable documentation of behaviour.
 
 
 ## Features & Amendments

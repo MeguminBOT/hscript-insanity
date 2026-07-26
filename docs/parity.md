@@ -13,6 +13,9 @@ script here cannot (or does differently).
 > feature completion; this page explains the *boundaries* and *why* they exist, with pointers into
 > the source.
 
+For putting the library into a project in the first place, see the
+[embedding guide](embedding.md).
+
 ## At a glance
 
 | Works with parity | Erases / weakened | Not available |
