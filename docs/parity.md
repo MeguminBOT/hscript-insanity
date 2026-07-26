@@ -19,7 +19,7 @@ script here cannot (or does differently).
 | --- | --- | --- |
 | classes, `extends`, `override` | type parameters (erased) | macros / `@:build` / reification |
 | scripted + native interfaces | structural typedefs (values, not literals) | |
-| enums (+ params, `switch` extraction, guards, `\|`) | | `@:structInit`, `@:forward`, `@:multiType` |
+| enums (+ params, `switch` extraction, guards, `\|`) | | `@:structInit`, `@:multiType` |
 | abstracts, scripted and native: `@:op`, `@:arrayAccess`, `from`/`to` | | |
 | typedef aliases | custom metadata (mostly inert) | compile-time type errors / inference |
 | static / instance / `private` / getters-setters | `private` enforcement (opt-in, explicit only) | overload resolution |
@@ -116,7 +116,8 @@ Limits worth knowing:
   value is unchanged.
 - **A missing `from` is not an error.** Haxe requires a matching `from` for an implicit conversion;
   a value with no matching `@:from` is boxed directly instead of being rejected.
-- **No `@:forward`, no `@:multiType`**, and type parameters erase as everywhere else.
+- **No `@:multiType`**, and type parameters erase as everywhere else. `@:forward` does work, bare
+  (every field of the boxed value) or with a list of names.
 
 Native (compiled) abstracts *are* bridged via
 [`insanity/macro/AbstractMacro.hx`](../insanity/macro/AbstractMacro.hx): static and instance fields,
@@ -169,7 +170,7 @@ and never reaches that stage.
 - **Custom metadata is inert.** Only a handful are honored: `@:bypassAccessor`, `@:snapshot`,
   `@:safe`, `@:enumAbstract`, `@:enum`, `@:keep`, `@:coreType`. Anything else parses and does nothing.
 - **Interfaces carry no default implementations**, signatures only.
-- **No `@:structInit`, `@:forward`, or `@:multiType`.** `Map` is the one special-cased multi-type
+- **No `@:structInit` or `@:multiType`.** `Map` is the one special-cased multi-type
   (its implementation is picked from the key type). `@:op` and `@:arrayAccess` are honored on native
   abstracts only; see section 3.
 - **`inline` / `final` have no optimization effect**, they parse, but everything is interpreted.

@@ -76,6 +76,20 @@ abstract Meters(Float) from Float to Float {
 		ok(name, got == want);
 	}
 
+	/**
+	 * Evaluates an expression against a declaration given for the case, rather than the shared one.
+	 *
+	 * @param decl The declaration to run against.
+	 * @param body The expression to evaluate.
+	 * @return The result as a string, or `threw: <error>`.
+	 */
+	static function evalWith(decl:String, body:String):String {
+		var s = new Script(decl + "res = 'no result'; try { res = Std.string(" + body + "); } catch (e:Dynamic) { res = 'threw: ' + e; }", "sa");
+		s.onProgramError = function(e:haxe.Exception) {};
+		s.start();
+		return s.variables.get("res");
+	}
+
 	static function main():Void {
 		trace("-- construction and members --");
 		is("new + method", "new Meters(2.5).describe()", "2.5m");
@@ -103,6 +117,27 @@ abstract Meters(Float) from Float to Float {
 		is("@:to conversion", "{ var a:Meters = 2; cast(a, String); }", "M2");
 		is("is Meters", "{ var a:Meters = 2; a is Meters; }", "true");
 		is("is not Meters", "2.5 is Meters", "false");
+
+		trace("-- the constructor actually runs --");
+		// A constructor that is not the identity: if it were skipped and the argument boxed directly,
+		// every one of these would still look plausible, which is exactly how it slipped through once.
+		var box = "abstract Box(Int) { public function new(v:Int) this = v * 10; public function raw():Int return this; }
+";
+		ok("ctor body runs", evalWith(box, "new Box(4).raw()") == "40");
+		ok("ctor with no args runs", evalWith("abstract E(Array<Int>) { public function new() this = [1, 2, 3]; public function n():Int return this.length; }
+",
+			"new E().n()") == "3");
+
+		trace("-- @:forward --");
+		var listed = "@:forward(length) abstract Stack(Array<Int>) from Array<Int> { public function new() this = []; }
+";
+		var all = "@:forward abstract Bag(Array<Int>) from Array<Int> { public function new() this = []; }
+";
+		ok("listed field forwards", evalWith(listed, "{ var s:Stack = [1, 2]; s.length; }") == "2");
+		ok("unlisted field does not", evalWith(listed, "{ var s:Stack = [1, 2]; s.indexOf(2); }").indexOf("threw") == 0);
+		ok("bare forwards everything", evalWith(all, "{ var b:Bag = [7, 8]; b.indexOf(8); }") == "1");
+		ok("forwarded method mutates", evalWith(all, "{ var b = new Bag(); b.push(1); b.push(2); b.length; }") == "2");
+		ok("own members still win", evalWith(all, "{ var b = new Bag(); Std.string(b); }") == "[]");
 
 		trace("-- enum abstract still works --");
 		is("enum abstract constant", "{ enum abstract Col(Int) { var Red = 3; var Blue = 4; } Col.Red; }", "3");

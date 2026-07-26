@@ -411,7 +411,7 @@ It represents my dwindling mental state as I figure how to modify this library!!
 		- [X] `from` / `to` conversions
 		- [X] operators (`@:op`, `@:arrayAccess`)
 		- [X] enum abstract (constants, qualified and bare)
-		- [ ] `@:forward`
+		- [X] `@:forward` (bare or with a field list)
 
 - general
 	- [X] fix compile errors in HashLink (for now)

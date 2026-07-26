@@ -1495,6 +1495,31 @@ class Interp {
 	}
 
 	/**
+	 * Adds metadata to a declaration, unless it is already there. Re-running a declaration (a reloaded
+	 * script, a module started twice) would otherwise accumulate duplicates of the same entry.
+	 *
+	 * @param decl The declaration to annotate.
+	 * @param entry The metadata entry.
+	 */
+	function attachMeta(decl:ModuleDecl, entry:MetadataEntry):Void {
+		var meta:Metadata = switch (decl.d) {
+			case DClass(m) | DInterface(m): m.meta;
+			case DAbstract(m): m.meta;
+			case DEnum(m): m.meta;
+			case DTypedef(m): m.meta;
+			default: null;
+		}
+		if (meta == null)
+			return;
+
+		for (m in meta)
+			if (m.name == entry.name)
+				return;
+
+		meta.push(entry);
+	}
+
+	/**
 	 * Initializes an inline (nested) type declaration and binds it under its name.
 	 *
 	 * @param decl The declaration to start.
@@ -2217,6 +2242,15 @@ class Interp {
 			case ESwitch(e, cases, def):
 				return evalSwitch(e, cases, def, void, mapCompr);
 			case EMeta(meta, args, e):
+				// A script-level declaration carries its metadata as a wrapper, since the expression
+				// parser reaches the `@` before the keyword. Hand it to the declaration, which is where
+				// `@:forward`, `@:keep` and the rest are read from.
+				switch (Tools.expr(e)) {
+					case EDecl(decl):
+						attachMeta(decl, {name: meta, params: args});
+					default:
+				}
+
 				var r:Dynamic, old = metas.length;
 				metas.push({name: meta, params: args});
 

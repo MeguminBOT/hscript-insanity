@@ -49,8 +49,21 @@ class ScriptedAbstract implements IScriptedType {
 	/** For each `@:from` method, the name of the type it converts from. */
 	public var fromSources:Map<String, String> = [];
 
+	/** Whether `@:forward` was declared without a field list, forwarding everything. */
+	public var forwardsAll:Bool = false;
+
+	/** The field names `@:forward` lists, when it lists any. */
+	public var forwarded:Array<String> = [];
+
 	/** The statics the abstract's fields compile to, including its methods. */
 	public var impl:ScriptedClass;
+
+	/**
+	 * The name the rewritten constructor is stored under. A class skips any field called `new`,
+	 * since that is its constructor, and an abstract's is an ordinary static like the rest. The `@`
+	 * keeps it out of reach of a script, which cannot write that name.
+	 */
+	static inline var CTOR:String = '@new';
 
 	/** The parsed abstract declaration. */
 	var decl:AbstractDecl;
@@ -94,6 +107,9 @@ class ScriptedAbstract implements IScriptedType {
 		ops = [];
 		toTargets = [];
 		fromSources = [];
+		forwardsAll = false;
+		forwarded = [];
+		readForwards();
 
 		var printer = new Printer();
 		var fields:Array<FieldDecl> = [];
@@ -120,6 +136,42 @@ class ScriptedAbstract implements IScriptedType {
 		// body that defines it. The implementation class is a separate type under the same name.
 		if (impl.interp != null)
 			impl.interp.imports.set(name, this);
+	}
+
+	/**
+	 * Reads the abstract's `@:forward` metadata: bare it forwards every field of the underlying value,
+	 * with arguments it forwards only those named.
+	 */
+	function readForwards():Void {
+		if (decl.meta == null)
+			return;
+
+		for (m in decl.meta) {
+			if (m.name != ':forward')
+				continue;
+
+			if (m.params == null || m.params.length == 0) {
+				forwardsAll = true;
+				continue;
+			}
+
+			for (p in m.params)
+				switch (Tools.expr(p)) {
+					case EIdent(n):
+						forwarded.push(n);
+					default:
+				}
+		}
+	}
+
+	/**
+	 * Whether a field the abstract does not declare should be read from the value it boxes.
+	 *
+	 * @param field The field name.
+	 * @return True if `@:forward` covers it.
+	 */
+	public inline function forwards(field:String):Bool {
+		return forwardsAll || forwarded.contains(field);
 	}
 
 	/**
@@ -241,7 +293,7 @@ class ScriptedAbstract implements IScriptedType {
 		}
 
 		return {
-			name: f.name,
+			name: (f.name == 'new') ? CTOR : f.name,
 			meta: f.meta,
 			kind: kind,
 			access: f.access.concat([AStatic])
@@ -271,7 +323,7 @@ class ScriptedAbstract implements IScriptedType {
 	 * @return The boxed value.
 	 */
 	public function create(args:Array<Dynamic>):ScriptedAbstractValue {
-		var ctor:Dynamic = impl.reflectGetField('new');
+		var ctor:Dynamic = impl.reflectGetField(CTOR);
 		if (ctor == null)
 			return new ScriptedAbstractValue(args[0], this);
 
@@ -320,6 +372,10 @@ class ScriptedAbstract implements IScriptedType {
 		if (f != null && ReflectProxy.isFunction(f))
 			return ReflectProxy.makeVarArgs(function(args:Array<Dynamic>):Dynamic return callField(value, field, args));
 
+		// `@:forward` exposes the underlying value's own fields through the abstract.
+		if (f == null && !impl.reflectHasField(field) && forwards(field))
+			return ReflectProxy.getProperty(value, field);
+
 		return f;
 	}
 
@@ -334,6 +390,12 @@ class ScriptedAbstract implements IScriptedType {
 	public function setField(value:Dynamic, field:String, v:Dynamic):Dynamic {
 		if (impl.reflectHasField('set_$field'))
 			return callField(value, 'set_$field', [v]);
+
+		if (!impl.reflectHasField(field) && forwards(field)) {
+			ReflectProxy.setProperty(value, field, v);
+			return v;
+		}
+
 		return impl.reflectSetField(field, v);
 	}
 
