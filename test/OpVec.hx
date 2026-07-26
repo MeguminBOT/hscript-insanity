@@ -1,0 +1,67 @@
+/**
+ * Fixture abstract for `AbstractTest`. Each operator deliberately returns something the underlying
+ * `Int` arithmetic would not, so a test can tell an `@:op` dispatch apart from a fallback to the
+ * boxed value.
+ */
+@:build(insanity.macro.AbstractMacro.build())
+abstract OpVec(Int) from Int to Int {
+	/**
+	 * Wraps an underlying value.
+	 *
+	 * @param v The value to box.
+	 */
+	public inline function new(v:Int) {
+		this = v;
+	}
+
+	/** The zero vector, a static of the abstract's own type. */
+	public static var ZERO:OpVec = 0;
+
+	/** The boxed value. */
+	public var raw(get, never):Int;
+
+	inline function get_raw():Int {
+		return this;
+	}
+
+	/**
+	 * @param rhs The right operand.
+	 * @return The sum, scaled so it cannot be confused with plain `Int` addition.
+	 */
+	@:op(A + B) public function add(rhs:OpVec):OpVec {
+		return new OpVec(this + (rhs : Int) * 10);
+	}
+
+	/**
+	 * @param rhs The right operand.
+	 * @return The difference, scaled so it cannot be confused with plain `Int` subtraction.
+	 */
+	@:op(A - B) public function sub(rhs:OpVec):OpVec {
+		return new OpVec(this - (rhs : Int) * 10);
+	}
+
+	/**
+	 * @param rhs The right operand.
+	 * @return The product, offset so it cannot be confused with plain `Int` multiplication.
+	 */
+	@:op(A * B) public function mul(rhs:OpVec):OpVec {
+		return new OpVec(this * (rhs : Int) + 1);
+	}
+
+	/**
+	 * @param rhs The right operand.
+	 * @return Whether the boxed values differ by no more than one, so equality is not identity.
+	 */
+	@:op(A == B) public function eq(rhs:OpVec):Bool {
+		var d:Int = this - (rhs : Int);
+		return d >= -1 && d <= 1;
+	}
+
+	/**
+	 * @param rhs The right operand.
+	 * @return The reverse of the natural ordering, so a fallback is visible.
+	 */
+	@:op(A > B) public function gt(rhs:OpVec):Bool {
+		return this < (rhs : Int);
+	}
+}

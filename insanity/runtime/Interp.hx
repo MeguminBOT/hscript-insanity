@@ -223,6 +223,76 @@ class Interp {
 	}
 
 	/**
+	 * Evaluates `a op b` where the left operand is a wrapped abstract: through the abstract's `@:op`
+	 * method when it declares one for this operator, otherwise on the value it boxes, which matches
+	 * what an abstract with an implicit cast to its underlying type does in Haxe.
+	 *
+	 * Only the left operand is consulted for an `@:op` method, so a non-commutative operator can
+	 * never be applied the wrong way round.
+	 *
+	 * @param op The operator symbol.
+	 * @param a The left operand, a wrapped abstract.
+	 * @param b The right operand.
+	 * @return The operator's result.
+	 */
+	function abstractArith(op:String, a:Dynamic, b:Dynamic):Dynamic {
+		var m:String = AbstractTools.opMethod(a, op);
+		if (m != null)
+			return fcall(a, m, [b]);
+
+		var l:Dynamic = AbstractTools.underlying(a);
+		var r:Dynamic = AbstractTools.underlying(b);
+		return switch (op) {
+			case "+": numAdd(l, r);
+			case "-": numSub(l, r);
+			case "*": numMul(l, r);
+			case "/": numDiv(l, r);
+			default: numMod(l, r);
+		}
+	}
+
+	/**
+	 * Orders a wrapped abstract against another value, through the abstract's `@:op` method when it
+	 * declares one for this operator and otherwise on the values the operands box. Comparing the
+	 * wrappers themselves would order them by identity.
+	 *
+	 * @param op The operator symbol.
+	 * @param a The left operand.
+	 * @param b The right operand.
+	 * @return The comparison's result.
+	 */
+	function abstractCmp(op:String, a:Dynamic, b:Dynamic):Bool {
+		var m:String = AbstractTools.opMethod(a, op);
+		if (m != null)
+			return fcall(a, m, [b]) == true;
+
+		var l:Dynamic = AbstractTools.underlying(a);
+		var r:Dynamic = AbstractTools.underlying(b);
+		return switch (op) {
+			case ">": l > r;
+			case "<": l < r;
+			case ">=": l >= r;
+			default: l <= r;
+		}
+	}
+
+	/**
+	 * Compares a wrapped abstract for equality, through its `@:op(A == B)` method when it declares
+	 * one and otherwise on the values the operands box. Comparing the wrappers themselves would
+	 * compare identity, which reports equal values as different.
+	 *
+	 * @param a The left operand.
+	 * @param b The right operand.
+	 * @return Whether the operands are equal.
+	 */
+	function abstractEq(a:Dynamic, b:Dynamic):Bool {
+		var m:String = AbstractTools.opMethod(a, "==");
+		if (m != null)
+			return fcall(a, m, [b]) == true;
+		return AbstractTools.underlying(a) == AbstractTools.underlying(b);
+	}
+
+	/**
 	 * Adds two values with Haxe semantics: String concatenation when either side is a String,
 	 * otherwise numeric addition promoted like `numArith` (`Int + Int` stays `Int`).
 	 *
@@ -235,6 +305,8 @@ class Interp {
 			return Std.string(a) + Std.string(b);
 		if (a is Int && b is Int)
 			return (a : Int) + (b : Int);
+		if (a is AbstractValue)
+			return abstractArith("+", a, b);
 		return (a : Float) + (b : Float);
 	}
 
@@ -248,6 +320,8 @@ class Interp {
 	inline function numSub(a:Dynamic, b:Dynamic):Dynamic {
 		if (a is Int && b is Int)
 			return (a : Int) - (b : Int);
+		if (a is AbstractValue)
+			return abstractArith("-", a, b);
 		return (a : Float) - (b : Float);
 	}
 
@@ -261,6 +335,8 @@ class Interp {
 	inline function numMul(a:Dynamic, b:Dynamic):Dynamic {
 		if (a is Int && b is Int)
 			return (a : Int) * (b : Int);
+		if (a is AbstractValue)
+			return abstractArith("*", a, b);
 		return (a : Float) * (b : Float);
 	}
 
@@ -274,6 +350,8 @@ class Interp {
 	inline function numMod(a:Dynamic, b:Dynamic):Dynamic {
 		if (a is Int && b is Int)
 			return (a : Int) % (b : Int);
+		if (a is AbstractValue)
+			return abstractArith("%", a, b);
 		return (a : Float) % (b : Float);
 	}
 
@@ -285,6 +363,8 @@ class Interp {
 	 * @return The `Float` quotient.
 	 */
 	inline function numDiv(a:Dynamic, b:Dynamic):Dynamic {
+		if (a is AbstractValue)
+			return abstractArith("/", a, b);
 		return (a : Float) / (b : Float);
 	}
 
@@ -310,10 +390,22 @@ class Interp {
 			">>>" => function(e1, e2) return (expr(e1) : Int) >>> (expr(e2) : Int),
 			"==" => function(e1, e2) return eqValues(expr(e1), expr(e2)),
 			"!=" => function(e1, e2) return !eqValues(expr(e1), expr(e2)),
-			">=" => function(e1, e2) return expr(e1) >= expr(e2),
-			"<=" => function(e1, e2) return expr(e1) <= expr(e2),
-			">" => function(e1, e2) return expr(e1) > expr(e2),
-			"<" => function(e1, e2) return expr(e1) < expr(e2),
+			">=" => function(e1, e2) {
+				var a:Dynamic = expr(e1), b:Dynamic = expr(e2);
+				return (a is AbstractValue || b is AbstractValue) ? abstractCmp(">=", a, b) : a >= b;
+			},
+			"<=" => function(e1, e2) {
+				var a:Dynamic = expr(e1), b:Dynamic = expr(e2);
+				return (a is AbstractValue || b is AbstractValue) ? abstractCmp("<=", a, b) : a <= b;
+			},
+			">" => function(e1, e2) {
+				var a:Dynamic = expr(e1), b:Dynamic = expr(e2);
+				return (a is AbstractValue || b is AbstractValue) ? abstractCmp(">", a, b) : a > b;
+			},
+			"<" => function(e1, e2) {
+				var a:Dynamic = expr(e1), b:Dynamic = expr(e2);
+				return (a is AbstractValue || b is AbstractValue) ? abstractCmp("<", a, b) : a < b;
+			},
 			"||" => function(e1, e2) return expr(e1) == true || expr(e2) == true,
 			"&&" => function(e1, e2) return expr(e1) == true && expr(e2) == true,
 			"..." => function(e1, e2) return new IntIterator(expr(e1), expr(e2)),
@@ -523,6 +615,48 @@ class Interp {
 	}
 
 	/**
+	 * Writes a value into a variable slot: checks the value against the slot's declared type, then
+	 * keeps the abstract box in step with the stored value.
+	 *
+	 * A slot holding an abstract keeps the wrapper in `a` and the boxed value in `r`, and reads
+	 * prefer `a`, so a write that left `a` alone would keep handing back the replaced value.
+	 *
+	 * @param l The slot to write.
+	 * @param v The new value.
+	 * @return The assigned value.
+	 */
+	inline function store(l:Variable, v:Dynamic):Dynamic {
+		if (l.t != null)
+			v = tryCast(v, l.t);
+
+		// Only a slot that already holds an abstract needs the box kept in step, and testing the slot
+		// is a field read where testing the value would be a type check on every single write.
+		if (l.a != null)
+			return storeBoxed(l, v);
+
+		l.r = v;
+		return v;
+	}
+
+	/**
+	 * Writes into a slot holding an abstract, replacing or clearing its box.
+	 *
+	 * @param l The slot to write.
+	 * @param v The new value.
+	 * @return The assigned value.
+	 */
+	function storeBoxed(l:Variable, v:Dynamic):Dynamic {
+		if (v is AbstractValue) {
+			l.a = v;
+			l.r = v.__a;
+		} else {
+			l.a = null;
+			l.r = v;
+		}
+		return v;
+	}
+
+	/**
 	 * Writes a local/field value, honouring its property setter, `final`, and method-rebind rules.
 	 *
 	 * @param id The variable or field name.
@@ -547,15 +681,15 @@ class Interp {
 			case 'null':
 				if (accessingInterp != this)
 					throw 'This expression cannot be accessed for writing';
-				return l.r = v;
+				return store(l, v);
 			case 'never':
 				throw 'This expression cannot be accessed for writing';
 				return null;
 			case 'set' | 'dynamic' if (getMeta(':bypassAccessor') != null):
-				return l.r = v;
+				return store(l, v);
 			case 'set' | 'dynamic':
 				if (curAccess == id)
-					return l.r = v;
+					return store(l, v);
 
 				var hasLocal:Bool = locals.exists('set_$id');
 				if (hasLocal || variables.exists('set_$id')) {
@@ -569,7 +703,7 @@ class Interp {
 				error(ECustom('Method set_$id required by property $id is missing'));
 				return null;
 			case 'default' | null:
-				return l.r = v;
+				return store(l, v);
 			default:
 				error(ECustom('Invalid property accessor ${l.set}'));
 				return null;
@@ -905,6 +1039,9 @@ class Interp {
 	inline function eqValues(a:Dynamic, b:Dynamic):Bool {
 		if (a is ICustomEnumValueType && b is ICustomEnumValueType)
 			return cast(a, ICustomEnumValueType).eq(b);
+
+		if (a is AbstractValue || b is AbstractValue)
+			return abstractEq(a, b);
 		return a == b;
 	}
 
@@ -1431,7 +1568,7 @@ class Interp {
 				if (i == params.length - 1 && hasRest) {
 					locals.set(name, {r: args.slice(params.length - 1)});
 				} else {
-					locals.set(name, {r: tryCast(args[i], params[i].t)});
+					locals.set(name, {r: tryCast(args[i], params[i].t), t: params[i].t});
 				}
 			}
 
@@ -1826,6 +1963,8 @@ class Interp {
 					v = tryCast(v, t);
 				var l:Variable = (AbstractTools.isAbstract(v) ? {r: v.__a, a: v} : {r: v});
 
+				if (t != null)
+					l.t = t;
 				if (get != null)
 					l.get = get;
 				if (set != null)

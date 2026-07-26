@@ -249,6 +249,11 @@ class AbstractMacro {
 			}
 		}
 
+		// `@:op(A + B)` methods are reachable by name already; record which operator each one serves so
+		// the interpreter can dispatch `a + b` to it.
+		var opMap:Map<String, String> = [];
+		var opPrinter = new haxe.macro.Printer();
+
 		for (field in fields) {
 			var name = field.name;
 			if (name == '__init__')
@@ -280,10 +285,6 @@ class AbstractMacro {
 								var fc = macro return Reflect.getProperty(Type.resolveClass($implStr), $v{name})(v);
 								fromExpr.unshift(macro if (AbstractTools.resolveName(v) == $ss) $fc);
 
-								custom = true;
-								continue;
-							}
-							if (meta.name == ':op') {
 								custom = true;
 								continue;
 							}
@@ -376,6 +377,16 @@ class AbstractMacro {
 					case FFun(f):
 						var to = false;
 						for (meta in field.meta) {
+							if (meta.name == ':op') {
+								if (meta.params != null && meta.params.length > 0) {
+									switch (meta.params[0].expr) {
+										case EBinop(binop, _, _):
+											opMap.set(opPrinter.printBinop(binop), name);
+										default: // unary and array-access operators are not dispatched yet
+									}
+								}
+								continue;
+							}
 							if (meta.name == ':to') {
 								t = stripComplex(f.ret);
 								if (t == null)
@@ -532,6 +543,19 @@ class AbstractMacro {
 			})
 		});
 
+		var opEntries:Array<Expr> = [];
+		for (op => m in opMap)
+			opEntries.push({pos: pos, expr: EBinop(OpArrow, macro $v{op}, macro $v{m})});
+
+		cls.fields.push({
+			name: '_ops',
+			pos: pos,
+			access: [APublic, AStatic],
+			kind: FVar(macro :Map<String, String>, opEntries.length == 0 ? (macro new Map<String, String>()) : {
+				pos: pos,
+				expr: EArrayDecl(opEntries)
+			})
+		});
 		cls.fields.push({
 			name: '_enumMap',
 			pos: pos,

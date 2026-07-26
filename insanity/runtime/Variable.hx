@@ -19,6 +19,9 @@ class Variable {
 	/** The abstract wrapper, when the value is a boxed abstract. */
 	public var a:AbstractValue = null;
 
+	/** The declared type, when the binding was annotated, so writes can be checked against it. */
+	public var t:CType = null;
+
 	/** Whether the binding is `final`. */
 	public var isFinal:Bool = false;
 

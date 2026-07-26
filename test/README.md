@@ -24,9 +24,13 @@ haxe -cp test -cp . -main ReturnTest -cpp bin && ./bin/ReturnTest.exe
 | `TypedTest` | typed mode: enforcement, coercion, and that dynamic mode disables it |
 | `StructTest` | structural typedefs via `is`, `cast` and annotations |
 | `ClassProbe` | scripted classes: inheritance, `super`, statics, properties, interfaces, enums, closures |
+| `AbstractTest` | native abstracts: construction, fields, statics, and `@:op` operator dispatch |
 | `SweepProbe` | numeric edges, the `#if` preprocessor, string and regex handling, error handling, imports and `using` |
 | `GapProbe` | a broad sweep of everyday script constructs, used to hunt for gaps rather than assert one thing |
 | `Bench` | the micro-benchmark; see [`../docs/performance.md`](../docs/performance.md) |
+
+`AbstractTest` uses the `OpVec` and `OpBare` fixtures next to it, and asserts against the value
+native Haxe computes for the same expression wherever Haxe accepts it.
 
 `GapProbe` prints `ok` or `GAP` per construct and is meant to be read, not just passed. Note that map
 key order is unspecified in Haxe, so an ordering difference there is not a defect.

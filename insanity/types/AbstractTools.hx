@@ -117,6 +117,35 @@ class AbstractTools {
 	}
 
 	/**
+	 * The method implementing `op` for a wrapped abstract, as recorded from its `@:op` metadata.
+	 *
+	 * @param v The value, which may or may not be an abstract.
+	 * @param op The operator symbol, for example `+`.
+	 * @return The method name to call on `v`, or null if `v` is not an abstract or declares no such operator.
+	 */
+	public static function opMethod(v:Dynamic, op:String):String {
+		if (!(v is AbstractValue))
+			return null;
+
+		var cls:Dynamic = Type.getClass(v);
+		if (cls == null)
+			return null;
+
+		var ops:Map<String, String> = Reflect.field(cls, '_ops');
+		return (ops == null) ? null : ops.get(op);
+	}
+
+	/**
+	 * Unwraps a wrapped abstract to the value it boxes; anything else passes through.
+	 *
+	 * @param v The value.
+	 * @return The underlying value.
+	 */
+	public static inline function underlying(v:Dynamic):Dynamic {
+		return (v is AbstractValue) ? v.__a : v;
+	}
+
+	/**
 	 * Tests whether a value is a wrapped abstract.
 	 *
 	 * @param o The value.

@@ -18,8 +18,9 @@ script here cannot (or does differently).
 | Works with parity | Erases / weakened | Not available |
 | --- | --- | --- |
 | classes, `extends`, `override` | type parameters (erased) | macros / `@:build` / reification |
-| scripted + native interfaces | structural typedefs (shape, not field types) | `@:op` operator overloading |
+| scripted + native interfaces | structural typedefs (shape, not field types) | `@:op` on a *scripted* abstract |
 | enums (+ params, `switch` extraction, guards, `\|`) | scripted abstracts (underlying/`from`/`to`) | `@:structInit`, `@:forward`, `@:multiType` |
+| `@:op` binary operators on native abstracts | unary and array-access `@:op` (call the method) | |
 | typedef aliases | custom metadata (mostly inert) | compile-time type errors / inference |
 | static / instance / `private` / getters-setters | `private` enforcement (opt-in, explicit only) | overload resolution |
 | `using`, `import` (`as` / `.*` / single field) | typed metadata / `untyped` (no-op) | overriding native `inline`/`final`/`@:generic` methods |
@@ -37,14 +38,17 @@ Type annotations are **enforced at runtime**, not just parsed. This is gated by 
 which defaults on (`-D insanity_dynamic` flips the default off, and a host may set it per script
 world). Enforcement flows through a single point, `tryCast` in
 [`insanity/runtime/Interp.hx`](../insanity/runtime/Interp.hx), reached at variable declarations,
-function arguments, function returns, `(e : T)`, and `cast(x, T)`:
+**every later write to an annotated variable**, function arguments, function returns, `(e : T)`, and
+`cast(x, T)`:
 
 - **`cast(x, T)` is a real checked cast.** In typed mode it throws when `x` is not a `T`, like Haxe's
   safe cast. `x is T` / `Std.isOfType(x, T)` also work for classes, interfaces, scripted enums, and
   the primitives.
 - **Assignments are checked, Haxe-strict.** `var x:Int = aFloat`, a wrong-typed argument, or a return
-  that doesn't match its declared type throws (surfaced through the script-error funnel). `Int`
-  widens to `Float` where Haxe allows it. Containers (`Array`, `Map`) and function types (a callable
+  that doesn't match its declared type throws (surfaced through the script-error funnel). The
+  declared type sticks to the variable, so a later `x = 'hi'` or `x += 'hi'` throws too rather than
+  quietly retyping it. `Int` widens to `Float` where Haxe allows it, and an annotated variable
+  applies its abstract's `from` cast on assignment the way it does at declaration. Containers (`Array`, `Map`) and function types (a callable
   is required for `f:Int->Void`) are checked; structural typedefs are checked by field presence, and
   `private` members are access-checked.
 - **`Int` and `Float` are correct.** Integer arithmetic stays `Int` (so `is Int`, integer map keys,
@@ -87,8 +91,23 @@ operators **all erase**: it desugars to a plain class of statics/constants (`par
 - An `enum abstract` gives you unqualified constants and nothing more.
 
 Native (compiled) abstracts *are* bridged via
-[`insanity/macro/AbstractMacro.hx`](../insanity/macro/AbstractMacro.hx), static and
-instance fields and `from`/`to` casts work, but operator overloading there is still a TODO.
+[`insanity/macro/AbstractMacro.hx`](../insanity/macro/AbstractMacro.hx): static and instance fields,
+`from`/`to` casts, and binary `@:op` operators all work. The build macro records which method serves
+each operator and the interpreter dispatches `a + b` to it, so scripts get the same results the
+compiled code does. Three limits remain:
+
+- **Only binary operators.** `@:op(A + B)` and friends dispatch, including `==` and the ordering
+  operators. Unary (`-a`, `!a`, `a++`) and array access (`a[i]`) do not; call the method by name.
+- **Only the left operand is consulted.** `vec + 1` dispatches, `1 + vec` does not, so
+  `@:commutative` has no effect. Dispatching on the right operand would apply a non-commutative
+  operator the wrong way round.
+- **`!=` is derived from `==`**, so an `@:op(A != B)` that is not the negation of `@:op(A == B)` is
+  ignored.
+
+Where no `@:op` applies, the operands fall back to the values they box. That is deliberately more
+permissive than Haxe, which rejects `a < b` between two abstracts unless the operator is declared,
+and it is what makes an abstract with no operators at all compare by value instead of by wrapper
+identity.
 
 ## 4. Overriding native (bridged) methods has holes
 
@@ -119,8 +138,9 @@ and never reaches that stage.
 - **Custom metadata is inert.** Only a handful are honored: `@:bypassAccessor`, `@:snapshot`,
   `@:safe`, `@:enumAbstract`, `@:enum`, `@:keep`, `@:coreType`. Anything else parses and does nothing.
 - **Interfaces carry no default implementations**, signatures only.
-- **No `@:structInit`, `@:forward`, `@:op`, or `@:multiType`.** `Map` is the one special-cased
-  multi-type (its implementation is picked from the key type).
+- **No `@:structInit`, `@:forward`, or `@:multiType`.** `Map` is the one special-cased multi-type
+  (its implementation is picked from the key type). `@:op` is honored on native abstracts only; see
+  section 3.
 - **`inline` / `final` have no optimization effect**, they parse, but everything is interpreted.
   There is no constant folding, inlining, or dead-code elimination; expect interpreter-level
   performance.

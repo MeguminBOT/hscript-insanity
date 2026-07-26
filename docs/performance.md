@@ -122,6 +122,33 @@ collaborator objects would add a cross-object indirection to operations that run
 Package reorganization, verified **performance-neutral** against a same-session control (442/384/314/
 1164/310/156 before versus 435/378/306/1118/301/155 after).
 
+### Abstract operators and typed writes (`@:op`)
+
+The one change so far that cost time rather than saving it, kept because it buys correctness:
+dispatching `@:op` operators on abstracts, and enforcing a variable's declared type on every write
+instead of only at its declaration.
+
+Both land in the hottest paths there are, so the first attempt cost 5-6% interpreter-wide (11% on the
+emptiest loop). Attribution split it roughly evenly between two additions:
+
+- a type check on the value at every local write, and
+- an abstract check on both operands of every `<`, `>`, `<=`, `>=`.
+
+The write path was then rewritten to test the *slot* instead of the value: only a slot that already
+holds an abstract needs its box kept in step, and `l.a != null` is a field read where
+`v is AbstractValue` is a runtime type check. The declared-type check stays a null test on a field
+that is null for every unannotated variable.
+
+| case | before | after | |
+| --- | --- | --- | --- |
+| `arith` | 276 | 280 | +1.4% |
+| `locals` | 230 | 234 | +1.7% |
+| `blocks` / `field` / `call0` | | within noise | |
+| `noCall` | 60.5 | 63 | +4%, the emptiest possible loop body |
+
+Remaining cost is the two type checks per relational operator, which is what an interpreter without
+static types has to pay to tell `a < b` on two abstracts apart from `a < b` on two ints.
+
 ## Where the time goes now
 
 A script call is roughly 1.1us, against about 0.6us for an empty loop iteration, so call overhead is
