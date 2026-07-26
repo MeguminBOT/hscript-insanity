@@ -127,6 +127,10 @@ class AbstractTools {
 		if (!(v is AbstractValue))
 			return null;
 
+		// A scripted abstract carries its operator table on the declaration, not on a generated class.
+		if (v is ScriptedAbstractValue)
+			return (cast v : ScriptedAbstractValue).owner.ops.get(op);
+
 		var cls:Dynamic = Type.getClass(v);
 		if (cls == null)
 			return null;

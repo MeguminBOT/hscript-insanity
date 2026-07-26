@@ -18,9 +18,9 @@ script here cannot (or does differently).
 | Works with parity | Erases / weakened | Not available |
 | --- | --- | --- |
 | classes, `extends`, `override` | type parameters (erased) | macros / `@:build` / reification |
-| scripted + native interfaces | structural typedefs (values, not literals) | `@:op` on a *scripted* abstract |
-| enums (+ params, `switch` extraction, guards, `\|`) | scripted abstracts (underlying/`from`/`to`) | `@:structInit`, `@:forward`, `@:multiType` |
-| `@:op` and `@:arrayAccess` on native abstracts | | |
+| scripted + native interfaces | structural typedefs (values, not literals) | |
+| enums (+ params, `switch` extraction, guards, `\|`) | | `@:structInit`, `@:forward`, `@:multiType` |
+| abstracts, scripted and native: `@:op`, `@:arrayAccess`, `from`/`to` | | |
 | typedef aliases | custom metadata (mostly inert) | compile-time type errors / inference |
 | static / instance / `private` / getters-setters | `private` enforcement (opt-in, explicit only) | overload resolution |
 | `using`, `import` (`as` / `.*` / single field) | typed metadata / `untyped` (no-op) | overriding native `inline`/`final`/`@:generic` methods |
@@ -89,14 +89,34 @@ annotations are ignored and only abstract `from`/`to` casts apply.
   **Function typedefs** (`typedef F = Int->Void`) have no matchable shape; a value only has to be
   callable.
 
-## 3. Scripted abstracts are hollow
+## 3. Abstracts
 
-A script may declare `abstract` / `enum abstract`, but the underlying type, `from`/`to`, and
-operators **all erase**: it desugars to a plain class of statics/constants (`parseAbstractDecl` in
-[`insanity/syntax/Parser.hx`](../insanity/syntax/Parser.hx)).
+A script may declare `abstract` and `enum abstract`, and both work.
 
-- **No operator overloading** (`@:op`), no implicit `@:from`/`@:to`, no value boxing.
-- An `enum abstract` gives you unqualified constants and nothing more.
+A scripted `abstract` boxes a value of its underlying type. Its constructor, methods, properties,
+statics, `@:op` operators, `@:arrayAccess`, and `@:from` / `@:to` conversions all run, and an
+annotation (`var m:Meters = 2.5`) boxes implicitly, as does `cast(x, Meters)`. `is` tells values of
+one abstract from another. An `enum abstract` stays what it always was, a set of constants, reachable
+qualified or bare.
+
+The implementation is the one Haxe itself uses: every method becomes a static taking the boxed value
+as its first argument, named `this` (`ScriptedAbstract` in
+[`insanity/types/ScriptedAbstract.hx`](../insanity/types/ScriptedAbstract.hx)). That makes `this` an
+ordinary parameter, so argument binding, scoping and `return` all behave, and a constructor's
+`this = v` is just a write to it.
+
+Limits worth knowing:
+
+- **Inside an abstract's own methods, a parameter of the abstract's own type arrives as the
+  underlying value**, exactly like `this`. This is what Haxe does too, and it is what makes
+  `this + rhs` arithmetic rather than an endless re-dispatch into the operator that is running. The
+  consequence is that `rhs.someMethod()` will not work inside the body; call it through the abstract
+  or re-box.
+- **`this = v` outside the constructor does not propagate.** It writes the parameter, so the caller's
+  value is unchanged.
+- **A missing `from` is not an error.** Haxe requires a matching `from` for an implicit conversion;
+  a value with no matching `@:from` is boxed directly instead of being rejected.
+- **No `@:forward`, no `@:multiType`**, and type parameters erase as everywhere else.
 
 Native (compiled) abstracts *are* bridged via
 [`insanity/macro/AbstractMacro.hx`](../insanity/macro/AbstractMacro.hx): static and instance fields,

@@ -232,6 +232,9 @@ enum ModuleDeclDef {
 
 	/** A `typedef`. */
 	DTypedef(c:TypeDecl);
+
+	/** An `abstract`. */
+	DAbstract(a:AbstractDecl);
 }
 
 /** Fields common to every declared type. */
@@ -250,6 +253,20 @@ typedef ModuleType = {
 }
 
 /** A `class` or `interface` declaration. */
+/** An `abstract` declaration: a class-like body plus the type it boxes and its implicit casts. */
+typedef AbstractDecl = {
+	> ClassDecl,
+
+	/** The type the abstract boxes, if declared. */
+	var underlying:Null<CType>;
+
+	/** Types accepted implicitly (`from`). */
+	var from:Array<CType>;
+
+	/** Types converted to implicitly (`to`). */
+	var to:Array<CType>;
+}
+
 typedef ClassDecl = {
 	> ModuleType,
 

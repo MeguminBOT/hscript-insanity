@@ -1513,6 +1513,18 @@ class Interp {
 
 				imports.set(m.name, cls);
 
+				// An enum abstract desugars to a class of static constants, which are reachable
+				// unqualified the way enum constructors are. Importing one does this too; a
+				// script-level declaration used to bind only the type.
+				for (meta in m.meta) {
+					if (meta.name != ':enumAbstract')
+						continue;
+					for (field in m.fields)
+						if (field.access.contains(AStatic))
+							imports.set(field.name, Mirror.MProperty(cls, field.name));
+					break;
+				}
+
 			case DInterface(m):
 				if (variables.exists(m.name))
 					return;
@@ -1538,6 +1550,16 @@ class Interp {
 				// to bind only the type, so `Blue(3)` failed while `Col.Blue(3)` worked.
 				for (i => v in en.constructNames())
 					imports.set(v, Mirror.MEnumValue(en, i));
+
+			case DAbstract(m):
+				if (variables.exists(m.name))
+					return;
+
+				var ab = new ScriptedAbstract(m);
+				ab.init(environment, this);
+				ab.initialized = true;
+
+				imports.set(m.name, ab);
 
 			case DTypedef(m):
 				if (variables.exists(m.name))
@@ -2459,6 +2481,9 @@ class Interp {
 						t = info[0].compilePath().resolve();
 				}
 
+				if (e != null && t is ScriptedAbstract)
+					return (cast t : ScriptedAbstract).fromValue(e);
+
 				if (e != null && t != null && (t is Class)) {
 					if (Type.getSuperClass(t) == AbstractValue)
 						return Type.createInstance(t, [e]);
@@ -2852,6 +2877,13 @@ class Interp {
 			}
 		}
 
+		// A scripted abstract's fields are statics taking the boxed value as their `this`, so reading
+		// one has to go through the abstract rather than through the box object.
+		if (o is ScriptedAbstractValue) {
+			var box:ScriptedAbstractValue = cast o;
+			return box.owner.getField(box.boxed, f);
+		}
+
 		if (o is Mirror) {
 			switch (cast(o, Mirror)) {
 				case MSuper(locals, _):
@@ -2882,6 +2914,12 @@ class Interp {
 			#end
 		});
 
+		// An abstract's statics live on its implementation class, which reflection cannot see from the
+		// abstract itself. Guarded by the null test that is already computed, so ordinary field access
+		// never reaches the type check.
+		if (prop == null && o is ScriptedAbstract)
+			return (cast o : ScriptedAbstract).impl.reflectGetField(f);
+
 		if (prop == null && hasField(o, f) == false) {
 			var fields = getFieldsClass((o is Class || o is ScriptedClass) ? Type.getClassName(o) : Type.getEnumName(o));
 			if (fields != null)
@@ -2908,6 +2946,11 @@ class Interp {
 			throw DDefer;
 
 		checkAccess(o, f);
+
+		if (o is ScriptedAbstractValue) {
+			var box:ScriptedAbstractValue = cast o;
+			return box.owner.setField(box.boxed, f, v);
+		}
 
 		if (AbstractTools.isAbstract(v))
 			v = v.__a;
@@ -3079,6 +3122,9 @@ class Interp {
 
 		if (canDefer && c is IScriptedType && !c.initialized)
 			throw DDefer;
+
+		if (c is ScriptedAbstract)
+			return (cast c : ScriptedAbstract).create(args);
 
 		return Type.createInstance(c, args);
 	}

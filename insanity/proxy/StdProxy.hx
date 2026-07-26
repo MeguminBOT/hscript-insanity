@@ -4,6 +4,8 @@ import insanity.types.ScriptedClass;
 import insanity.types.ScriptedInterface;
 import insanity.types.ScriptedEnum;
 import insanity.types.ScriptedTypedef;
+import insanity.types.ScriptedAbstract;
+import insanity.types.ScriptedAbstractValue;
 import insanity.proxy.TypeProxy.ICustomEnumValueType;
 
 /**
@@ -78,6 +80,12 @@ class StdProxy {
 				return false;
 			var e:Dynamic = cast(v, ICustomEnumValueType).typeGetEnum();
 			return e == t || (e is ScriptedEnum && (cast(e, ScriptedEnum).path == cast(t, ScriptedEnum).path));
+		} else if (t is ScriptedAbstract) {
+			// A boxed value belongs to `t` when `t` declared it (by path, so a reload still matches).
+			if (!(v is ScriptedAbstractValue))
+				return false;
+			var o:ScriptedAbstract = cast(v, ScriptedAbstractValue).owner;
+			return o == t || (o != null && o.path == cast(t, ScriptedAbstract).path);
 		} else if (t is ScriptedTypedef) {
 			return cast(t, ScriptedTypedef).matchesStructure(v);
 		} else {

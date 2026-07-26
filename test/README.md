@@ -25,6 +25,7 @@ haxe -cp test -cp . -main ReturnTest -cpp bin && ./bin/ReturnTest.exe
 | `StructTest` | structural typedefs via `is`, `cast` and annotations: field presence, field types, optional fields |
 | `ClassProbe` | scripted classes: inheritance, `super`, statics, properties, interfaces, enums, closures |
 | `AbstractTest` | native abstracts: construction, fields, statics, and `@:op` operator dispatch |
+| `ScriptedAbstractTest` | script-declared abstracts: construction, members, implicit boxing, operators, conversions |
 | `SweepProbe` | numeric edges, the `#if` preprocessor, string and regex handling, error handling, imports and `using` |
 | `GapProbe` | a broad sweep of everyday script constructs, used to hunt for gaps rather than assert one thing |
 | `Bench` | the micro-benchmark; see [`../docs/performance.md`](../docs/performance.md) |

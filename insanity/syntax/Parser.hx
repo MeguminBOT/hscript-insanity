@@ -583,7 +583,7 @@ class Parser extends Lexer {
 				}
 
 				mk(EImport(path, mode));
-			case "class", "interface", "enum", "typedef":
+			case "class", "interface", "enum", "typedef", "abstract":
 				push(TId(id));
 				var decl = parseModuleDecl();
 				if (!maybe(TSemicolon))
@@ -1340,23 +1340,28 @@ class Parser extends Lexer {
 	 * @return The resulting declaration.
 	 */
 	function parseAbstractDecl(name:String, meta:Metadata, params:Array<String>, isEnum:Bool, isPrivate:Bool):ModuleDecl {
-		// `abstract Name(Underlying) from A to B { ... }`. The underlying type and from/to casts
-		// erase (the runtime is dynamic). An enum abstract's members become static constants,
-		// tagged @:enumAbstract so the module exposes them unqualified, like enum constructors.
+		// `abstract Name(Underlying) from A to B { ... }`.
+		var underlying:Null<CType> = null;
 		if (maybe(TPOpen)) {
-			parseType();
+			underlying = parseType();
 			ensure(TPClose);
 		}
+
+		var from:Array<CType> = [];
+		var to:Array<CType> = [];
 		while (true) {
 			var t = token();
 			switch (t) {
-				case TId("from"), TId("to"):
-					parseType();
+				case TId("from"):
+					from.push(parseType());
+				case TId("to"):
+					to.push(parseType());
 				default:
 					push(t);
 					break;
 			}
 		}
+
 		var fields = [];
 		ensure(TBrOpen);
 		while (!maybe(TBrClose)) {
@@ -1365,16 +1370,34 @@ class Parser extends Lexer {
 				f.access.push(AStatic);
 			fields.push(f);
 		}
-		var m = isEnum ? meta.concat([{name: ':enumAbstract', params: []}]) : meta;
-		return mkd(DClass({
+
+		// An `enum abstract` is its constants and nothing else, so it stays a class of statics, tagged
+		// so the module exposes them unqualified the way enum constructors are.
+		if (isEnum) {
+			return mkd(DClass({
+				name: name,
+				meta: meta.concat([{name: ':enumAbstract', params: []}]),
+				params: params,
+				extend: null,
+				implement: [],
+				fields: fields,
+				isPrivate: isPrivate,
+				isExtern: false,
+			}), tokenMin, tokenMax);
+		}
+
+		return mkd(DAbstract({
 			name: name,
-			meta: m,
+			meta: meta,
 			params: params,
 			extend: null,
 			implement: [],
 			fields: fields,
 			isPrivate: isPrivate,
 			isExtern: false,
+			underlying: underlying,
+			from: from,
+			to: to,
 		}), tokenMin, tokenMax);
 	}
 

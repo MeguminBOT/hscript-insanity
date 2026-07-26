@@ -99,7 +99,7 @@ Currently , the following types can be scripted:
 - [Enums](https://haxe.org/manual/types-enum-instance.html) (with & without parameters)
 - [Module level fields](https://haxe.org/blog/module-level-fields/) (including their respective `Module_Fields_` class)
 
-Scripted abstracts are currently unsupported, but support may be introduced in the future.
+Scripted abstracts are supported: they box their underlying value, and their methods, properties, statics, operators and `from`/`to` conversions all run. See the parity document for the limits.
 
 (NOTE: currently only most behavior is properly implemented from extending classes. while i dont see why implement the interface in the base class, some things might have to be promptly fixed to correctly support them ...)
 
@@ -405,10 +405,13 @@ It represents my dwindling mental state as I figure how to modify this library!!
 	- [X] enums
 	- [X] typedefs (type alias + structural shape check)
 	- [X] module level fields
-	- [ ] abstracts
-		- [ ] abstract class
-		- [ ] abstract enum
-		- [ ] underlying type
+	- [X] abstracts
+		- [X] underlying type (values are boxed)
+		- [X] constructor, methods, properties, statics
+		- [X] `from` / `to` conversions
+		- [X] operators (`@:op`, `@:arrayAccess`)
+		- [X] enum abstract (constants, qualified and bare)
+		- [ ] `@:forward`
 
 - general
 	- [X] fix compile errors in HashLink (for now)

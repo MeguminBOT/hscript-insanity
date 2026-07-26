@@ -132,6 +132,8 @@ class Module {
 				new ScriptedEnum(m, this);
 			case DTypedef(m):
 				new ScriptedTypedef(m, this);
+			case DAbstract(m):
+				new ScriptedAbstract(m, this);
 			case DField(m):
 				var fieldsPath:String = Tools.pathToString('_$name.${name}_Fields_', pack);
 				var t:ScriptedClass = cast types.get(fieldsPath);
