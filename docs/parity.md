@@ -36,7 +36,7 @@ script here cannot (or does differently).
 Type annotations are **enforced at runtime**, not just parsed. This is gated by `Config.typedMode`,
 which defaults on (`-D insanity_dynamic` flips the default off, and a host may set it per script
 world). Enforcement flows through a single point, `tryCast` in
-[`insanity/backend/Interp.hx`](../insanity/backend/Interp.hx), reached at variable declarations,
+[`insanity/runtime/Interp.hx`](../insanity/runtime/Interp.hx), reached at variable declarations,
 function arguments, function returns, `(e : T)`, and `cast(x, T)`:
 
 - **`cast(x, T)` is a real checked cast.** In typed mode it throws when `x` is not a `T`, like Haxe's
@@ -55,9 +55,8 @@ function arguments, function returns, `(e : T)`, and `cast(x, T)`:
 What is still missing is everything that needs the *compiler*:
 
 - **No compile-time type errors and no inference.** Mismatches surface as runtime throws, not
-  editor/compile errors. A separate checker exists
-  ([`insanity/backend/Checker.hx`](../insanity/backend/Checker.hx)) but is not wired into normal
-  execution.
+  editor/compile errors. There is no static checker in the
+  library (the upstream one was removed as dead code); adding one is a possible future direction.
 - **No overload resolution.** Haxe's method overloading and implicit conversions at call boundaries
   don't exist.
 - **`untyped` is a no-op**, there is nothing to suppress.
@@ -69,12 +68,12 @@ annotations are ignored and only abstract `from`/`to` casts apply.
 
 - **Generics are erased.** `class Pool<T>` parses and runs, but parameter *names* are kept and
   *constraints are dropped*; every `T` resolves to `Dynamic`. See the note on
-  `params:Array<String>` in [`insanity/backend/Expr.hx`](../insanity/backend/Expr.hx). There is no
+  `params:Array<String>` in [`insanity/syntax/Expr.hx`](../insanity/syntax/Expr.hx). There is no
   generic type safety.
 - **Anonymous-structure typedefs are checked by shape, not by field type.** `typedef Foo = {x:Int}`
   (named or inline `{x:Int}`) works for `is`, `cast`, and variable/argument annotations, matching any
-  value that has all the required *field names* (`InsanityScriptedTypedef.matchesStructure` in
-  [`insanity/backend/types/Scripted.hx`](../insanity/backend/types/Scripted.hx)). Field *types* are
+  value that has all the required *field names* (`ScriptedTypedef.matchesStructure` in
+  [`insanity/types/ScriptedTypedef.hx`](../insanity/types/ScriptedTypedef.hx)). Field *types* are
   not verified, so `{x: "str"}` still satisfies `{x:Int}`. **Function typedefs** (`typedef F = Int->Void`)
   have no matchable shape and erase.
 
@@ -82,19 +81,19 @@ annotations are ignored and only abstract `from`/`to` casts apply.
 
 A script may declare `abstract` / `enum abstract`, but the underlying type, `from`/`to`, and
 operators **all erase**: it desugars to a plain class of statics/constants (`parseAbstractDecl` in
-[`insanity/backend/Parser.hx`](../insanity/backend/Parser.hx)).
+[`insanity/syntax/Parser.hx`](../insanity/syntax/Parser.hx)).
 
 - **No operator overloading** (`@:op`), no implicit `@:from`/`@:to`, no value boxing.
 - An `enum abstract` gives you unqualified constants and nothing more.
 
 Native (compiled) abstracts *are* bridged via
-[`insanity/backend/macro/AbstractMacro.hx`](../insanity/backend/macro/AbstractMacro.hx), static and
+[`insanity/macro/AbstractMacro.hx`](../insanity/macro/AbstractMacro.hx), static and
 instance fields and `from`/`to` casts work, but operator overloading there is still a TODO.
 
 ## 4. Overriding native (bridged) methods has holes
 
 Scripts extend curated native bases through generated bridges
-([`insanity/backend/macro/ScriptedMacro.hx`](../insanity/backend/macro/ScriptedMacro.hx)). A native
+([`insanity/macro/ScriptedMacro.hx`](../insanity/macro/ScriptedMacro.hx)). A native
 method **cannot be overridden** when it is:
 
 - **`inline`**, no runtime method exists to route through.
@@ -116,7 +115,7 @@ and never reaches that stage.
 - **Access control is partial.** `private` is enforced in typed mode (or when `Config.strictAccess` is
   set), but only for members marked `private` *explicitly*. **Unmarked members are public**, unlike
   Haxe, where the default is stricter. See `checkAccess` in
-  [`insanity/backend/Interp.hx`](../insanity/backend/Interp.hx).
+  [`insanity/runtime/Interp.hx`](../insanity/runtime/Interp.hx).
 - **Custom metadata is inert.** Only a handful are honored: `@:bypassAccessor`, `@:snapshot`,
   `@:safe`, `@:enumAbstract`, `@:enum`, `@:keep`, `@:coreType`. Anything else parses and does nothing.
 - **Interfaces carry no default implementations**, signatures only.
@@ -132,7 +131,7 @@ Scripted types are ordinary **class instances**, not native `Class<T>` / `Enum<T
 runtime objects. Any interop path that hard-types a parameter or return as one of those will coerce a
 scripted instance to `null` at the call boundary (this is what broke bare enum construction before
 the `createEnum` fix, see the note on that method in
-[`insanity/backend/Interp.hx`](../insanity/backend/Interp.hx)). Keep scripted-type boundaries
+[`insanity/runtime/Interp.hx`](../insanity/runtime/Interp.hx)). Keep scripted-type boundaries
 `Dynamic`.
 
 ---

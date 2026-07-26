@@ -140,7 +140,7 @@ Enforcement is controlled by [`Config.typedMode`](insanity/Config.hx), which def
 
 > [!WARNING]
 > This feature is very experimental. Use with caution! <br>
-> Add the `@:build(insanity.backend.macro.AbstractMacro.build())` metadata to your abstracts to make them usable in Hscript.
+> Add the `@:build(insanity.macro.AbstractMacro.build())` metadata to your abstracts to make them usable in Hscript.
 
 Importing abstracts and abstract features are *mostly* supported.
 
@@ -181,7 +181,7 @@ trace(get({hi: 123}, 'hi'));
 You can also import type alias typedefs, and module level fields!<br>
 (Due to type parameters being mostly stripped at runtime, adding support for importing anonymous structure typedefs is not very practical)
 
-All compile-time type information is accessible in [`insanity.backend.TypeCollection.main`](insanity/backend/TypeCollection.hx).
+All compile-time type information is accessible in [`insanity.types.TypeCollection.main`](insanity/types/TypeCollection.hx).
 
 
 ### Using (static extension)

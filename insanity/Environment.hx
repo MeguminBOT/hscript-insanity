@@ -1,7 +1,7 @@
 package insanity;
 
-import insanity.backend.types.Scripted;
-import insanity.backend.TypeCollection;
+import insanity.types.*;
+import insanity.types.TypeCollection;
 
 /**
  * A world of modules that resolve against each other. It owns the module set, a combined
@@ -20,7 +20,7 @@ class Environment {
 	public var variables:Map<String, Dynamic> = [];
 
 	/** Callbacks run once `start` finishes; returning false removes the callback. */
-	public var onInitialized:Array<Map<String, IInsanityType>->Bool> = [];
+	public var onInitialized:Array<Map<String, IScriptedType>->Bool> = [];
 
 	/**
 	 * Creates a world, optionally seeded with modules, and builds the initial type index.
@@ -66,7 +66,7 @@ class Environment {
 	 * @param path The type path to resolve.
 	 * @return The matching type, or null if no module declares it.
 	 */
-	public function resolve(path:String):IInsanityType {
+	public function resolve(path:String):IScriptedType {
 		for (module in modules) {
 			if (module.types.exists(path))
 				return module.types.get(path);
@@ -81,7 +81,7 @@ class Environment {
 	 * fires the `onInitialized` callbacks with the combined type table.
 	 */
 	public function start():Void {
-		var allTypes:Map<String, IInsanityType> = [];
+		var allTypes:Map<String, IScriptedType> = [];
 
 		for (module in modules)
 			module.init(this);
@@ -132,13 +132,13 @@ class Environment {
 				var isInterface:Bool = false;
 				var structural:Bool = false;
 
-				if (type is InsanityScriptedEnum)
+				if (type is ScriptedEnum)
 					k = 'enum';
-				else if (type is InsanityScriptedInterface)
+				else if (type is ScriptedInterface)
 					isInterface = true;
-				else if (type is InsanityScriptedTypedef) {
+				else if (type is ScriptedTypedef) {
 					k = 'typedef';
-					structural = cast(type, InsanityScriptedTypedef).structural;
+					structural = cast(type, ScriptedTypedef).structural;
 				}
 
 				var info:TypeInfo = {

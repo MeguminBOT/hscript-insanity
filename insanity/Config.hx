@@ -1,9 +1,9 @@
 package insanity;
 
 #if (!macro) import insanity.tools.Defines; #end
-import insanity.backend.Expr;
-import insanity.custom.*;
-#if hl import insanity.custom.HL; #end
+import insanity.syntax.Expr;
+import insanity.proxy.*;
+#if hl import insanity.proxy.HL; #end
 
 /**
  * Global, process-wide interpreter configuration: which interpreter class to instantiate, access
@@ -13,7 +13,7 @@ import insanity.custom.*;
 class Config {
 	#if (!macro)
 	/** The interpreter class instantiated by `Module`/`Script`; override to plug in a subclass. */
-	public static var interpClass:Class<insanity.backend.Interp> = insanity.backend.Interp;
+	public static var interpClass:Class<insanity.runtime.Interp> = insanity.runtime.Interp;
 
 	/**
 	 * Enforces `private` on script-declared members: reading or writing one from
@@ -50,16 +50,16 @@ class Config {
 
 	/**
 	 * Variables defined in every interpreter by default: the literals `null`/`true`/`false`, and the
-	 * `Int`/`Float`/`Bool` type tokens (see `InsanityCoreType`) so those primitives are usable as
+	 * `Int`/`Float`/`Bool` type tokens (see `CoreType`) so those primitives are usable as
 	 * values in `is`/`Std.isOfType`/`cast`.
 	 */
 	public static var globalVariables:Map<String, Dynamic> = [
 		'null' => null,
 		'true' => true,
 		'false' => false,
-		'Int' => InsanityCoreType.CTInt,
-		'Float' => InsanityCoreType.CTFloat,
-		'Bool' => InsanityCoreType.CTBool
+		'Int' => CoreType.CTInt,
+		'Float' => CoreType.CTFloat,
+		'Bool' => CoreType.CTBool
 	];
 
 	/** Imports applied to every interpreter by default (the root package, wildcard-imported). */
@@ -70,9 +70,9 @@ class Config {
 		#if hl
 		'Math' => HLMath,
 		#end
-		'Reflect' => InsanityReflect,
-		'Type' => InsanityType,
-		'Std' => InsanityStd
+		'Reflect' => ReflectProxy,
+		'Type' => TypeProxy,
+		'Std' => StdProxy
 	];
 
 	/** Types scripts are forbidden to touch, grouped by how they are matched (exact type, module, or package). */
@@ -98,7 +98,7 @@ class ConfigUtil {
 		if (Config.blacklist.get(ByType)?.contains(name))
 			return true;
 
-		var info = insanity.backend.TypeCollection.main.fromCompilePath(name);
+		var info = insanity.types.TypeCollection.main.fromCompilePath(name);
 		if (info != null) {
 			if (Config.blacklist.get(ByModule)?.contains(info[0].module))
 				return true;

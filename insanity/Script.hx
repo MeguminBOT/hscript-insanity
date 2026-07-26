@@ -1,9 +1,9 @@
 package insanity;
 
-import insanity.backend.Exception;
-import insanity.backend.Parser;
-import insanity.backend.Interp;
-import insanity.backend.Expr;
+import insanity.runtime.InterpException;
+import insanity.syntax.Parser;
+import insanity.runtime.Interp;
+import insanity.syntax.Expr;
 
 /**
  * A single free-standing script: one expression program with its own parser and interpreter, run
@@ -11,7 +11,7 @@ import insanity.backend.Expr;
  * `Module` (which produces scripted classes/enums); use it to evaluate a body and then `call`
  * functions it declared.
  */
-@:access(insanity.backend.Interp)
+@:access(insanity.runtime.Interp)
 class Script {
 	/** The script's name, used for error positions. */
 	public var name:String;

@@ -22,11 +22,12 @@
 
 package insanity.tools;
 
-import insanity.backend.Expr;
-import insanity.custom.InsanityType;
+import insanity.syntax.Expr;
+import insanity.types.AbstractTools;
+import insanity.proxy.TypeProxy;
 
-using insanity.backend.TypeCollection;
-using insanity.backend.types.Abstract;
+using insanity.types.TypeCollection;
+using insanity.types.AbstractValue;
 using insanity.Environment;
 
 /** AST and type-resolution helpers used throughout the parser and interpreter. */
@@ -262,8 +263,8 @@ class Tools {
 
 		var type:Dynamic = env?.resolve(path);
 		type ??= AbstractTools.resolve(path);
-		type ??= InsanityType.resolveClass(path);
-		type ??= InsanityType.resolveEnum(path);
+		type ??= TypeProxy.resolveClass(path);
+		type ??= TypeProxy.resolveEnum(path);
 
 		return type;
 	}

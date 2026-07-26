@@ -1,10 +1,11 @@
 package insanity;
 
-import insanity.backend.types.Scripted;
-import insanity.backend.Exception;
-import insanity.backend.Parser;
-import insanity.backend.Interp;
-import insanity.backend.Expr;
+import insanity.types.*;
+import insanity.runtime.InterpException;
+import insanity.syntax.Parser;
+import insanity.runtime.Interp;
+import insanity.syntax.Expr;
+import insanity.runtime.Mirror;
 import insanity.tools.Tools;
 
 /**
@@ -42,13 +43,13 @@ class Module {
 	public var decls:Array<ModuleDecl> = [];
 
 	/** Types declared by this module, keyed by their fully-qualified path. */
-	public var types:Map<String, IInsanityType> = [];
+	public var types:Map<String, IScriptedType> = [];
 
 	/** Synthetic host class holding the module's top-level fields, or null if it declares none. */
-	public var moduleFields:InsanityScriptedClass = null;
+	public var moduleFields:ScriptedClass = null;
 
 	/** Callbacks run once `startTypes` completes; returning false removes the callback. */
-	public var onInitialized:Array<Map<String, IInsanityType>->Bool> = [];
+	public var onInitialized:Array<Map<String, IScriptedType>->Bool> = [];
 
 	/** Other modules merged into this one at `start` (imports, and cross-file dependencies). */
 	public var subModules:Array<Module> = [];
@@ -101,7 +102,7 @@ class Module {
 			for (decl in declList) {
 				decls.push(decl);
 
-				var type:IInsanityType = loadType(decl);
+				var type:IScriptedType = loadType(decl);
 
 				if (type != null)
 					types.set(Tools.pathToString(type.name, pack), type);
@@ -120,21 +121,21 @@ class Module {
 	 * @param decl The module declaration to realize.
 	 * @return The created type, or null for declarations that produce no standalone type (e.g. fields).
 	 */
-	public function loadType(decl):IInsanityType {
+	public function loadType(decl):IScriptedType {
 		return switch (decl.d) {
 			default:
 				null;
 			case DClass(m):
-				new InsanityScriptedClass(m, this);
+				new ScriptedClass(m, this);
 			case DInterface(m):
-				new InsanityScriptedInterface(m, this);
+				new ScriptedInterface(m, this);
 			case DEnum(m):
-				new InsanityScriptedEnum(m, this);
+				new ScriptedEnum(m, this);
 			case DTypedef(m):
-				new InsanityScriptedTypedef(m, this);
+				new ScriptedTypedef(m, this);
 			case DField(m):
 				var fieldsPath:String = Tools.pathToString('_$name.${name}_Fields_', pack);
-				var t:InsanityScriptedClass = cast types.get(fieldsPath);
+				var t:ScriptedClass = cast types.get(fieldsPath);
 
 				var d:FieldDecl = {
 					name: m.name,
@@ -155,7 +156,7 @@ class Module {
 						extend: null,
 					};
 
-					var cl = new InsanityScriptedClass(fieldsModule, this);
+					var cl = new ScriptedClass(fieldsModule, this);
 					cl.pack = cl.pack.copy();
 					cl.pack.push('_$name');
 					cl.path = Tools.pathToString(cl.name, cl.pack);
@@ -191,14 +192,14 @@ class Module {
 		for (type in types) {
 			interp.imports.set(type.name, type);
 
-			if (type is InsanityScriptedEnum) {
-				var e:InsanityScriptedEnum = cast type;
+			if (type is ScriptedEnum) {
+				var e:ScriptedEnum = cast type;
 
 				for (i => v in e.constructNames())
 					interp.imports.set(v, Mirror.MEnumValue(e, i));
-			} else if (type is InsanityScriptedClass) {
+			} else if (type is ScriptedClass) {
 				// An enum abstract desugars to a class of static constants; expose those the same way.
-				var c:InsanityScriptedClass = cast type;
+				var c:ScriptedClass = cast type;
 				var enumAbstract:Bool = false;
 				for (m in @:privateAccess c.decl.meta)
 					if (m.name == ':enumAbstract')
@@ -235,7 +236,7 @@ class Module {
 					for (n => i in module.interp.imports)
 						interp.imports.set(n, i);
 				} else {
-					var mainType:IInsanityType = module.types.get(module.path);
+					var mainType:IScriptedType = module.types.get(module.path);
 
 					if (mainType != null)
 						module.interp.imports.set(mainType.name, mainType);
@@ -261,7 +262,7 @@ class Module {
 	 * @param type The type to initialize.
 	 * @return The same `type`, for chaining.
 	 */
-	public function startType(?environment:Environment, type:IInsanityType):IInsanityType {
+	public function startType(?environment:Environment, type:IScriptedType):IScriptedType {
 		if (type.initializing || type.initialized || type.failed)
 			return type;
 
@@ -295,11 +296,11 @@ class Module {
 	 * @param environment The world the types initialize against; may be null.
 	 * @return The module's type table.
 	 */
-	public function startTypes(?environment:Environment):Map<String, IInsanityType> {
+	public function startTypes(?environment:Environment):Map<String, IScriptedType> {
 		if (moduleFields != null) {
 			startType(environment, moduleFields);
 
-			for (field in insanity.custom.InsanityReflect.fields(moduleFields))
+			for (field in insanity.proxy.ReflectProxy.fields(moduleFields))
 				interp.imports.set(field, MProperty(moduleFields, field));
 		}
 
@@ -352,7 +353,7 @@ class Module {
 	 * @param e The exception thrown during initialization.
 	 * @param type The type that failed.
 	 */
-	public dynamic function onTypeError(e:haxe.Exception, type:IInsanityType):Void {
+	public dynamic function onTypeError(e:haxe.Exception, type:IScriptedType):Void {
 		trace('Failed to load type ${type.name} for module $path!\n' + e.details());
 	}
 
