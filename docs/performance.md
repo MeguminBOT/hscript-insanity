@@ -149,6 +149,12 @@ that is null for every unannotated variable.
 Remaining cost is the two type checks per relational operator, which is what an interpreter without
 static types has to pay to tell `a < b` on two abstracts apart from `a < b` on two ints.
 
+Extending the same dispatch to the unary operators and to `@:arrayAccess` then cost **nothing
+measurable**, on new `index`, `indexSet`, `not` and `neg` cases added to isolate exactly those paths.
+The check disappears into the dynamic dispatch already happening around it, which is worth
+remembering before assuming the next one is too expensive: measure the path, do not reason about it
+from the relational-operator result.
+
 ## Where the time goes now
 
 A script call is roughly 1.1us, against about 0.6us for an empty loop iteration, so call overhead is

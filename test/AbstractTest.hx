@@ -106,6 +106,17 @@ class AbstractTest {
 		ok("Int < abstract falls back", eval("{ var y:OpVec = cast 2; 1 < y; }") == "true");
 		ok("Int == abstract compares values", eval("{ var y:OpVec = cast 1; 1 == y; }") == "true");
 
+		// Unary operators and array access. Haxe accepts `-a` and `!a` here because the fixture
+		// declares them; `a[i]` goes through `@:arrayAccess`.
+		same("-a dispatches", "{ var x:OpVec = cast 5; (-x).raw; }", (-(5 : OpVec)).raw);
+		same("!a dispatches", "{ var x:OpVec = cast 5; !x; }", !(5 : OpVec));
+		same("a[i] dispatches", "{ var x:OpVec = cast 5; x[3]; }", (5 : OpVec)[3]);
+
+		// The operator-free abstract has none of these, so each falls back to the boxed value.
+		ok("-a falls back", eval("{ var x:OpBare = cast 5; -x; }") == "-5");
+		ok("!a falls back", eval("{ var x:OpBare = cast 5; !x; }") == "true");
+		ok("a[i] falls back", eval("{ var x:OpBare = cast 5; x[3]; }") == "null");
+
 		trace("-- " + pass + " passed, " + fail + " failed --");
 	}
 }

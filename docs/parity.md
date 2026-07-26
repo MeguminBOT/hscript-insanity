@@ -20,7 +20,7 @@ script here cannot (or does differently).
 | classes, `extends`, `override` | type parameters (erased) | macros / `@:build` / reification |
 | scripted + native interfaces | structural typedefs (shape, not field types) | `@:op` on a *scripted* abstract |
 | enums (+ params, `switch` extraction, guards, `\|`) | scripted abstracts (underlying/`from`/`to`) | `@:structInit`, `@:forward`, `@:multiType` |
-| `@:op` binary operators on native abstracts | unary and array-access `@:op` (call the method) | |
+| `@:op` and `@:arrayAccess` on native abstracts | | |
 | typedef aliases | custom metadata (mostly inert) | compile-time type errors / inference |
 | static / instance / `private` / getters-setters | `private` enforcement (opt-in, explicit only) | overload resolution |
 | `using`, `import` (`as` / `.*` / single field) | typed metadata / `untyped` (no-op) | overriding native `inline`/`final`/`@:generic` methods |
@@ -92,12 +92,14 @@ operators **all erase**: it desugars to a plain class of statics/constants (`par
 
 Native (compiled) abstracts *are* bridged via
 [`insanity/macro/AbstractMacro.hx`](../insanity/macro/AbstractMacro.hx): static and instance fields,
-`from`/`to` casts, and binary `@:op` operators all work. The build macro records which method serves
+`from`/`to` casts, and operator overloading all work. The build macro records which method serves
 each operator and the interpreter dispatches `a + b` to it, so scripts get the same results the
 compiled code does. Three limits remain:
 
-- **Only binary operators.** `@:op(A + B)` and friends dispatch, including `==` and the ordering
-  operators. Unary (`-a`, `!a`, `a++`) and array access (`a[i]`) do not; call the method by name.
+- **Binary, unary and array-access operators dispatch.** `@:op(A + B)` and friends, including `==`
+  and the ordering operators; `@:op(-A)`, `@:op(!A)` and `@:op(~A)`; and `@:arrayAccess` getters and
+  setters for `a[i]` and `a[i] = v`. `a++` is the exception: it goes through the increment path,
+  which applies `+ 1` to whatever the operand is.
 - **The left operand is tried first**, and the right one only for `+` and `*`, so `1 + vec`
   dispatches (as `@:commutative` does in Haxe) while `1 - vec` falls back to the boxed values rather
   than applying a non-commutative operator the wrong way round. The `@:commutative` metadata itself
@@ -140,8 +142,8 @@ and never reaches that stage.
   `@:safe`, `@:enumAbstract`, `@:enum`, `@:keep`, `@:coreType`. Anything else parses and does nothing.
 - **Interfaces carry no default implementations**, signatures only.
 - **No `@:structInit`, `@:forward`, or `@:multiType`.** `Map` is the one special-cased multi-type
-  (its implementation is picked from the key type). `@:op` is honored on native abstracts only; see
-  section 3.
+  (its implementation is picked from the key type). `@:op` and `@:arrayAccess` are honored on native
+  abstracts only; see section 3.
 - **`inline` / `final` have no optimization effect**, they parse, but everything is interpreted.
   There is no constant folding, inlining, or dead-code elimination; expect interpreter-level
   performance.

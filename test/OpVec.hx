@@ -64,4 +64,26 @@ abstract OpVec(Int) from Int to Int {
 	@:op(A > B) public function gt(rhs:OpVec):Bool {
 		return this < (rhs : Int);
 	}
+
+	/**
+	 * @return The negation, offset so it cannot be confused with plain `Int` negation.
+	 */
+	@:op(-A) public function neg():OpVec {
+		return new OpVec(-this - 100);
+	}
+
+	/**
+	 * @return Whether the boxed value is odd, so this is not the plain truthiness of the value.
+	 */
+	@:op(!A) public function not():Bool {
+		return this % 2 != 0;
+	}
+
+	/**
+	 * @param k The element key.
+	 * @return The boxed value scaled by the key, so the getter is distinguishable.
+	 */
+	@:arrayAccess public function get(k:Int):Int {
+		return this * 100 + k;
+	}
 }

@@ -377,12 +377,20 @@ class AbstractMacro {
 					case FFun(f):
 						var to = false;
 						for (meta in field.meta) {
+							if (meta.name == ':arrayAccess') {
+								// One argument reads, two write, matching how Haxe picks them.
+								opMap.set(f.args.length > 1 ? '[]=' : '[]', name);
+								continue;
+							}
 							if (meta.name == ':op') {
 								if (meta.params != null && meta.params.length > 0) {
 									switch (meta.params[0].expr) {
 										case EBinop(binop, _, _):
 											opMap.set(opPrinter.printBinop(binop), name);
-										default: // unary and array-access operators are not dispatched yet
+										case EUnop(unop, _, _):
+											// Keyed apart from the binary operators, which share the symbols.
+											opMap.set('u' + opPrinter.printUnop(unop), name);
+										default:
 									}
 								}
 								continue;

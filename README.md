@@ -373,7 +373,7 @@ It represents my dwindling mental state as I figure how to modify this library!!
 	- [X] static fields
 	- [X] instance fields
 	- [X] cast from / to types
-	- [X] overload operators (`@:op`, binary only, dispatched on the left operand)
+	- [X] overload operators (`@:op`, `@:arrayAccess`)
 	
 - enum abstracts
 	- [X] static fields

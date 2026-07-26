@@ -285,6 +285,55 @@ class Interp {
 	}
 
 	/**
+	 * Applies a unary operator to a wrapped abstract, through its `@:op` method when it declares one
+	 * and otherwise to the value it boxes.
+	 *
+	 * @param op The operator symbol, prefixed with `u` to keep it apart from the binary operator
+	 *           sharing the same symbol.
+	 * @param v The operand.
+	 * @return The operator's result.
+	 */
+	function abstractUnop(op:String, v:Dynamic):Dynamic {
+		var m:String = AbstractTools.opMethod(v, op);
+		if (m != null)
+			return fcall(v, m, []);
+
+		var u:Dynamic = AbstractTools.underlying(v);
+		return switch (op) {
+			case "u!": u != true;
+			case "u~": ~(u : Int);
+			default: (u is Int) ? -(u : Int) : -(u : Float);
+		}
+	}
+
+	/**
+	 * Reads an element from a wrapped abstract through its `@:arrayAccess` getter.
+	 *
+	 * @param a The abstract.
+	 * @param index The element key.
+	 * @return The element, or null when the abstract declares no getter.
+	 */
+	function abstractGetIndex(a:Dynamic, index:Dynamic):Dynamic {
+		var m:String = AbstractTools.opMethod(a, "[]");
+		return (m == null) ? null : fcall(a, m, [index]);
+	}
+
+	/**
+	 * Writes an element into a wrapped abstract through its `@:arrayAccess` setter.
+	 *
+	 * @param a The abstract.
+	 * @param index The element key.
+	 * @param v The value to write.
+	 * @return The written value.
+	 */
+	function abstractSetIndex(a:Dynamic, index:Dynamic, v:Dynamic):Dynamic {
+		var m:String = AbstractTools.opMethod(a, "[]=");
+		if (m != null)
+			fcall(a, m, [index, v]);
+		return v;
+	}
+
+	/**
 	 * Compares a wrapped abstract for equality, through its `@:op(A == B)` method when it declares
 	 * one and otherwise on the values the operands box. Comparing the wrappers themselves would
 	 * compare identity, which reports equal values as different.
@@ -515,6 +564,8 @@ class Interp {
 				var index:Dynamic = expr(index);
 				if (isMap(arr)) {
 					setMapValue(arr, index, v);
+				} else if (arr is AbstractValue) {
+					abstractSetIndex(arr, index, v);
 				} else {
 					arr[index] = v;
 				}
@@ -565,6 +616,9 @@ class Interp {
 				if (isMap(arr)) {
 					v = fop(getMapValue(arr, index), expr(e2));
 					setMapValue(arr, index, v);
+				} else if (arr is AbstractValue) {
+					v = fop(abstractGetIndex(arr, index), expr(e2));
+					abstractSetIndex(arr, index, v);
 				} else {
 					v = fop(arr[index], expr(e2));
 					arr[index] = v;
@@ -2009,16 +2063,20 @@ class Interp {
 			case EUnop(op, prefix, e):
 				switch (op) {
 					case "!":
-						return expr(e) != true;
+						var v:Dynamic = expr(e);
+						return (v is AbstractValue) ? abstractUnop("u!", v) : v != true;
 					case "-":
 						var v:Dynamic = expr(e);
-						return (v is Int) ? -(v : Int) : -(v : Float);
+						if (v is Int)
+							return -(v : Int);
+						return (v is AbstractValue) ? abstractUnop("u-", v) : -(v : Float);
 					case "++":
 						return increment(e, prefix, 1);
 					case "--":
 						return increment(e, prefix, -1);
 					case "~":
-						return ~(expr(e) : Int);
+						var v:Dynamic = expr(e);
+						return (v is AbstractValue) ? abstractUnop("u~", v) : ~(v : Int);
 					default:
 						error(EInvalidOp(op));
 				}
@@ -2079,6 +2137,8 @@ class Interp {
 				var index:Dynamic = expr(index);
 				if (isMap(arr))
 					return getMapValue(arr, index);
+				if (arr is AbstractValue)
+					return abstractGetIndex(arr, index);
 				return arr[index];
 			case ENew(cl, params):
 				var a = new Array();

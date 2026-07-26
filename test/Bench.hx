@@ -38,6 +38,12 @@ class Bench {
 		bench("call", "function f(a) return a + 1; var i = 0; var s = 0; while (i < 100000) { s = f(s); i++; } s;");
 		bench("field", "var o = {a: 1, b: 2}; var i = 0; var s = 0; while (i < 200000) { s += o.a; i++; } s;");
 		bench("method", "var arr = [1]; var i = 0; while (i < 100000) { arr.indexOf(1); i++; } i;");
+		// Array element read and write, and the unary operators, all of which have to tell an
+		// ordinary value apart from a wrapped abstract before they can act on it.
+		bench("index", "var a = [1, 2, 3]; var i = 0; var s = 0; while (i < 200000) { s += a[1]; i++; } s;");
+		bench("indexSet", "var a = [1, 2, 3]; var i = 0; while (i < 200000) { a[0] = i; i++; } a[0];");
+		bench("not", "var b = false; var i = 0; var s = 0; while (i < 200000) { if (!b) s++; i++; } s;");
+		bench("neg", "var x = 5; var i = 0; var s = 0; while (i < 200000) { s = -x; i++; } s;");
 
 		// Attribution: 0 / 1 / 3 parameters at the same call count. The spread between them is the
 		// per-parameter cost (declared.push + locals.set + tryCast); call0 is the fixed per-call
