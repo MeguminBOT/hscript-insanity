@@ -1328,11 +1328,17 @@ class Interp {
 				if (variables.exists(m.name))
 					return;
 
-				var cls = new ScriptedEnum(m);
-				cls.init(environment, this);
-				cls.initialized = true;
+				var en = new ScriptedEnum(m);
+				en.init(environment, this);
+				en.initialized = true;
 
-				imports.set(m.name, cls);
+				imports.set(m.name, en);
+
+				// Constructors are also reachable unqualified, the way Haxe exposes them for an enum
+				// declared in the same module. Module.init does this too; a script-level `enum` used
+				// to bind only the type, so `Blue(3)` failed while `Col.Blue(3)` worked.
+				for (i => v in en.constructNames())
+					imports.set(v, Mirror.MEnumValue(en, i));
 
 			case DTypedef(m):
 				if (variables.exists(m.name))

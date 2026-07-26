@@ -23,6 +23,7 @@ haxe -cp test -cp . -main ReturnTest -cpp bin && ./bin/ReturnTest.exe
 | `ArgsTest` | argument binding: exact, optional, default and rest parameters |
 | `TypedTest` | typed mode: enforcement, coercion, and that dynamic mode disables it |
 | `StructTest` | structural typedefs via `is`, `cast` and annotations |
+| `ClassProbe` | scripted classes: inheritance, `super`, statics, properties, interfaces, enums, closures |
 | `GapProbe` | a broad sweep of everyday script constructs, used to hunt for gaps rather than assert one thing |
 | `Bench` | the micro-benchmark; see [`../docs/performance.md`](../docs/performance.md) |
 

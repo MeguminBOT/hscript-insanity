@@ -583,7 +583,7 @@ class Parser extends Lexer {
 				}
 
 				mk(EImport(path, mode));
-			case "class", "enum", "typedef":
+			case "class", "interface", "enum", "typedef":
 				push(TId(id));
 				var decl = parseModuleDecl();
 				if (!maybe(TSemicolon))
