@@ -920,38 +920,19 @@ class Interp {
 	 * @return The expression's value, or the returned value if it returned.
 	 */
 	function exprReturn(e, ?t:CType):Dynamic {
-		try {
-			var v:Dynamic = expr(e, t);
-			if (returning) {
-				returning = false;
-				v = returnValue;
-				returnValue = null;
-			} else if (breaking) {
-				breaking = false;
-				throw "Invalid break";
-			} else if (continuing) {
-				continuing = false;
-				throw "Invalid continue";
-			}
-			return v;
-		} catch (e:Stop) {
-			#if cpp
-			if (!(e is Stop))
-				throw e;
-			#end
-
-			switch (e) {
-				case SBreak:
-					throw "Invalid break";
-				case SContinue:
-					throw "Invalid continue";
-				case SReturn:
-					var v = returnValue;
-					returnValue = null;
-					return v;
-			}
+		var v:Dynamic = expr(e, t);
+		if (returning) {
+			returning = false;
+			v = returnValue;
+			returnValue = null;
+		} else if (breaking) {
+			breaking = false;
+			throw "Invalid break";
+		} else if (continuing) {
+			continuing = false;
+			throw "Invalid continue";
 		}
-		return null;
+		return v;
 	}
 
 	/**
@@ -2798,17 +2779,7 @@ class Interp {
 	 */
 	inline function loopRun(f:Void->Void) {
 		var cont = true;
-		try {
-			f();
-		} catch (err:Stop) {
-			switch (err) {
-				case SContinue:
-				case SBreak:
-					cont = false;
-				case SReturn:
-					throw err;
-			}
-		}
+		f();
 		if (continuing) // consumed here: `continue` only affects the innermost loop
 			continuing = false;
 		if (breaking) {
