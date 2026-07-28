@@ -20,7 +20,7 @@ class Bench {
 			if (dt < best)
 				best = dt;
 		}
-		trace(pad(name, 10) + Std.int(best * 1000) + " ms");
+		trace(pad(name, 14) + Std.int(best * 1000) + " ms");
 	}
 
 	static function pad(s:String, n:Int):String {
@@ -60,12 +60,47 @@ class Bench {
 		bench("loopCont", "var i = 0; var s = 0; while (i < 100000) { i++; if (i % 2 == 0) continue; s += i; } s;");
 		bench("noCall", "var i = 0; var s = 0; while (i < 100000) { s = s; i++; } s;");
 
+		// Type annotations. Each pair is the same work with and without the annotation, so the spread
+		// is what checking a declared type costs on a write, on an argument, and on a return.
+		bench("varPlain", "var i = 0; var x = 0; while (i < 200000) { x = i; i++; } x;");
+		bench("varTyped", "var i = 0; var x:Int = 0; while (i < 200000) { x = i; i++; } x;");
+		bench("varTypedObj", "var i = 0; var x:String = 'a'; while (i < 200000) { x = 'b'; i++; } x;");
+		bench("fnPlain", "function f(a) return a; var i = 0; var s = 0; while (i < 100000) { s = f(i); i++; } s;");
+		bench("fnTyped", "function f(a:Int):Int return a; var i = 0; var s = 0; while (i < 100000) { s = f(i); i++; } s;");
+
+		// Scripted-class instantiation, which builds an interpreter per instance. `newInstBare` is the
+		// floor (no members); `newInstFields` adds members so the per-member construction work shows
+		// up separately from the fixed per-instance cost.
+		var bare = "class B { public function new() {} }\n";
+		var full = "class F { public var x:Int = 0; public var y:Float = 1.5; public var n:String = 'a';"
+			+ " public function new() {} public function m1(v) return v; public function m2(v) return v; }\n";
+		bench("newInstBare", bare + "var i = 0; while (i < 20000) { new B(); i++; } i;");
+		bench("newInstFields", full + "var i = 0; while (i < 20000) { new F(); i++; } i;");
+		// An instance method call and an instance field read, through the generated bridge.
+		bench("instCall", full + "var p = new F(); var i = 0; while (i < 100000) { p.m1(1); i++; } i;");
+		bench("instField", full + "var p = new F(); var i = 0; var s = 0; while (i < 100000) { s += p.x; i++; } s;");
+
 		// Diagnostic: same call count, but the function is declared in a scope holding 20 locals.
 		// If per-call cost scales with captured-scope size, the locals-map copy dominates calls.
 		var many = "";
 		for (n in 0...20)
 			many += "var v" + n + " = " + n + "; ";
 		bench("call_cap20", many + "function f(a) return a + 1; var i = 0; var s = 0; while (i < 100000) { s = f(s); i++; } s;");
+
+		// The configuration a host actually ships: `private` enforced, and a non-empty blacklist. Both
+		// sit on paths that run per field access and per type resolution, so the cost of turning them
+		// on is measured rather than assumed. Re-runs the cases above so the pairs line up.
+		insanity.Config.strictAccess = true;
+		insanity.Config.blacklist.set(ByType, ['sys.io.File', 'sys.io.Process', 'Sys']);
+		insanity.Config.blacklist.set(ByPackage(true), ['sys', 'haxe.macro', 'cpp']);
+
+		var cls = "class S { public var x:Int = 0; private var h:Int = 1; public function new() {}"
+			+ " public function m(v) return v; }\n";
+		bench("fieldGuard", "var o = {a: 1, b: 2}; var i = 0; var s = 0; while (i < 200000) { s += o.a; i++; } s;");
+		bench("methodGuard", "var arr = [1]; var i = 0; while (i < 100000) { arr.indexOf(1); i++; } i;");
+		bench("instFieldGuard", cls + "var p = new S(); var i = 0; var s = 0; while (i < 100000) { s += p.x; i++; } s;");
+		bench("instCallGuard", cls + "var p = new S(); var i = 0; while (i < 100000) { p.m(1); i++; } i;");
+		bench("newInstGuard", cls + "var i = 0; while (i < 20000) { new S(); i++; } i;");
 
 		trace("-- done --");
 	}
