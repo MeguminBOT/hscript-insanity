@@ -94,6 +94,17 @@ class Interp {
 	/** The interpreter's own call stack (frames with their locals). */
 	var stack:CallStack;
 
+	/**
+	 * The innermost frame's scope, kept in step with `stack` rather than fetched from it.
+	 *
+	 * `locals` is read for every variable read, write and declaration, and reaching it meant loading
+	 * the call stack, loading its array, indexing it and null-checking the frame. The frames only
+	 * change in `pushStack`, `shiftStack` and `execute`, so holding the answer costs three
+	 * assignments and saves four loads on the interpreter's busiest path. Null exactly when there is
+	 * no frame, which is what the entry guard in `expr` tests.
+	 */
+	var frameLocals:Map<String, Variable> = null;
+
 	/** Whether execution is currently inside a `try`. */
 	var inTry:Bool;
 
@@ -105,6 +116,16 @@ class Interp {
 
 	/** Captured variables for the closure currently being built. */
 	var captures:Map<String, Dynamic>;
+
+	/**
+	 * Whether `captures` currently holds anything.
+	 *
+	 * Capture variables exist only while a `switch` case with pattern bindings is being evaluated,
+	 * which is a sliver of what an interpreter runs, yet every identifier read consulted the map
+	 * anyway. Conservative on purpose: `clear` resets it and a single `remove` leaves it set, so the
+	 * flag can cost a lookup that was not needed but can never skip one that was.
+	 */
+	var hasCaptures:Bool = false;
 
 	/** Variables declared in the current scope, with their shadowed previous bindings, for restoration. */
 	var declared:Array<{n:String, old:Variable}>;
@@ -229,8 +250,8 @@ class Interp {
 	}
 
 	/** @return The current frame's local variables. */
-	function get_locals():Map<String, Variable> {
-		return stack.first()?.locals;
+	inline function get_locals():Map<String, Variable> {
+		return frameLocals;
 	}
 
 	/** @return The current source origin. */
@@ -374,10 +395,13 @@ class Interp {
 	 * @return The concatenated string or the promoted numeric sum.
 	 */
 	inline function numAdd(a:Dynamic, b:Dynamic):Dynamic {
-		if (a is String || b is String)
-			return Std.string(a) + Std.string(b);
+		// Int first. The result is the same whichever order these are tested in -- an operand cannot
+		// be both an Int and a String -- and integer addition is what a script actually spends its
+		// time on, so it should not pay two string checks to get there.
 		if (a is Int && b is Int)
 			return (a : Int) + (b : Int);
+		if (a is String || b is String)
+			return Std.string(a) + Std.string(b);
 		if (a is AbstractValue || b is AbstractValue)
 			return abstractArith("+", a, b);
 		return (a : Float) + (b : Float);
@@ -568,8 +592,11 @@ class Interp {
 		var v = expr(e2);
 		switch (Tools.expr(e1)) {
 			case EIdent(id):
-				if (locals.exists(id)) {
-					setLocal(id, v);
+				// One map read for the slot, then write it directly -- `exists` followed by `setLocal`
+				// hashed the name twice for every assignment.
+				var l:Variable = locals.get(id);
+				if (l != null) {
+					writeLocal(l, id, v);
 				} else {
 					setVar(id, v);
 				}
@@ -615,12 +642,21 @@ class Interp {
 		var v;
 		switch (Tools.expr(e1)) {
 			case EIdent(id):
-				v = fop(expr(e1), expr(e2));
-
-				if (locals.exists(id)) {
-					setLocal(id, v);
+				// `x op= y` reads and writes the same slot, so resolve it once and use it for both.
+				// Only when there are no captures, because `expr(EIdent)` consults those first and a
+				// capture of the same name has to keep winning.
+				var l:Variable = hasCaptures ? null : locals.get(id);
+				if (l != null) {
+					v = fop(readLocal(l, id), expr(e2));
+					writeLocal(l, id, v);
 				} else {
-					setVar(id, v);
+					v = fop(expr(e1), expr(e2));
+
+					if (locals.exists(id)) {
+						setLocal(id, v);
+					} else {
+						setVar(id, v);
+					}
 				}
 			case EField(e, f, _):
 				var obj = expr(e);
@@ -658,6 +694,25 @@ class Interp {
 		var l:Variable = map.get(id);
 		if (l == null)
 			return null;
+
+		return readLocal(l, id);
+	}
+
+	/**
+	 * Reads an already-resolved slot, honouring its property accessor.
+	 *
+	 * Split out of `getLocal` so a caller that has just looked the slot up does not look it up again,
+	 * and so the accessor dispatch can be skipped outright: a plain variable has no accessor, which
+	 * is nearly every read, and testing one field beats falling through a switch over five string
+	 * constants to reach the same answer.
+	 *
+	 * @param l The slot.
+	 * @param id Its name, for the accessor call and for error reporting.
+	 * @return The value.
+	 */
+	function readLocal(l:Variable, id:String):Dynamic {
+		if (l.get == null)
+			return (l.a != null) ? l.a : l.r;
 
 		switch (l.get) {
 			case 'null':
@@ -749,11 +804,30 @@ class Interp {
 		if (l == null)
 			return null;
 
+		return writeLocal(l, id, v);
+	}
+
+	/**
+	 * Writes an already-resolved slot, honouring finality, method rebinding and its accessor.
+	 *
+	 * The write-side counterpart of `readLocal`, split out for the same two reasons: a caller holding
+	 * the slot should not look it up a second time, and a plain variable -- which is nearly every
+	 * write -- should not fall through a switch over five string constants to reach `store`.
+	 *
+	 * @param l The slot.
+	 * @param id Its name, for the accessor call and for error reporting.
+	 * @param v The value to write.
+	 * @return The stored value.
+	 */
+	function writeLocal(l:Variable, id:String, v:Dynamic):Dynamic {
 		if (l.isFinal)
 			throw 'Cannot assign to final';
 
 		if (l.access != null && Reflect.isFunction(l.r) && !l.access.contains(ADynamic))
 			throw 'Cannot rebind method $id: please use \'dynamic\' before method declaration';
+
+		if (l.set == null)
+			return store(l, v);
 
 		switch (l.set) {
 			case 'null':
@@ -802,22 +876,23 @@ class Interp {
 
 		switch (e) {
 			case EIdent(id):
-				// One lookup of the scope map and one membership test, held across the read and the
-				// write: this is `i++`, so it runs on every iteration of every counted loop.
-				var map:Map<String, Variable> = locals;
-				var isLocal:Bool = map.exists(id);
-				var v:Dynamic = (isLocal ? getLocal(id, map) : resolve(id));
+				// One map read, held across the read and the write: this is `i++`, so it runs on every
+				// iteration of every counted loop. It used to be a membership test plus a lookup inside
+				// `getLocal` plus another inside `setLocal`, hashing the name three times.
+				var l:Variable = locals.get(id);
+				if (l == null) {
+					var v:Dynamic = resolve(id);
+					var next:Dynamic = numAdd(v, delta);
+					setVar(id, next);
+					return prefix ? next : v;
+				}
+
+				var v:Dynamic = readLocal(l, id);
 				if (prefix) {
 					v = numAdd(v, delta);
-					if (isLocal)
-						setLocal(id, v, map)
-					else
-						setVar(id, v);
+					writeLocal(l, id, v);
 				} else {
-					if (isLocal)
-						setLocal(id, numAdd(v, delta), map)
-					else
-						setVar(id, numAdd(v, delta));
+					writeLocal(l, id, numAdd(v, delta));
 				}
 				return v;
 			case EField(e, f, _):
@@ -898,6 +973,7 @@ class Interp {
 	public function execute(expr:Expr):Dynamic {
 		try {
 			stack.stack.resize(0);
+			frameLocals = null;
 			declared = new Array();
 
 			return exprReturn(expr);
@@ -956,7 +1032,9 @@ class Interp {
 			}
 		}
 		if (item != null) {
-			stack.stack.unshift({locals: locals ?? duplicate(), item: item});
+			var frame:StackFrame = {locals: locals ?? duplicate(), item: item};
+			stack.stack.unshift(frame);
+			frameLocals = frame.locals;
 
 			if (stack.length > callStackDepth)
 				error(ECustom('StackFrame overflow'));
@@ -971,6 +1049,9 @@ class Interp {
 	 */
 	function shiftStack(put:Bool = true):StackFrame {
 		var item:StackFrame = stack.stack.shift();
+
+		var top:StackFrame = stack.stack[0];
+		frameLocals = (top == null) ? null : top.locals;
 
 		if (put)
 			localsPool.push(item.locals);
@@ -1238,19 +1319,22 @@ class Interp {
 	 * @throws InterpException If the identifier is unknown.
 	 */
 	public function resolve(id:String):Dynamic {
-		if (imports.exists(id)) {
-			var v:Dynamic = imports.get(id);
-
-			if (v == null)
-				error(ECustom('Module $id does not define type $id'));
-
+		// One map read per table on the hit, with the membership test kept only for the case it is
+		// actually needed for -- telling "bound to null" apart from "not bound". `exists` then `get`
+		// doubled the hashing on every identifier that was not a local.
+		var v:Dynamic = imports.get(id);
+		if (v != null)
 			return resolveMirror(v);
-		}
+		if (imports.exists(id))
+			error(ECustom('Module $id does not define type $id'));
 
+		v = variables.get(id);
+		if (v != null)
+			return resolveMirror(v);
 		if (!variables.exists(id))
 			error(EUnknownVariable(id));
 
-		return resolveMirror(variables.get(id));
+		return null;
 	}
 
 	/**
@@ -1942,6 +2026,7 @@ class Interp {
 						throw 'Unknown identifier: $id, pattern variables must be lower-case or with \'var \' prefix';
 
 					captures.set(id, match);
+					hasCaptures = true;
 					return true;
 
 				case EField(ve, f, m):
@@ -1950,6 +2035,7 @@ class Interp {
 
 				case EVar(id):
 					captures.set(id, match);
+					hasCaptures = true;
 					true;
 
 				case EConst(_):
@@ -1960,6 +2046,7 @@ class Interp {
 
 				case EBinop('=>', e1, e2):
 					captures.set('_', match);
+					hasCaptures = true;
 
 					var a:Dynamic = expr(e1);
 					testCase(e2, a);
@@ -2021,6 +2108,7 @@ class Interp {
 		for (c in cases) {
 			for (exr in c.values) {
 				captures.clear();
+				hasCaptures = false;
 
 				match = testCase(exr, val);
 
@@ -2044,6 +2132,7 @@ class Interp {
 			val = def == null ? null : expr(def, void, mapCompr);
 
 		captures.clear();
+		hasCaptures = false;
 
 		return val;
 	}
@@ -2060,12 +2149,21 @@ class Interp {
 	 * @return The expression's value.
 	 */
 	public function expr(e:Expr, ?t:CType, void:Bool = false, mapCompr:Bool = false):Dynamic {
-		Type.environment = environment;
-		accessingInterp = this;
+		// Both of these are already what they need to be for every node after the first, and both are
+		// statics holding object references, so an unconditional store pays hxcpp's write barrier on
+		// every node evaluated. A load and a compare do not. They stay separate tests because
+		// `environment` is a public field a host can reassign under a running interpreter.
+		if (accessingInterp != this)
+			accessingInterp = this;
+		if (Type.environment != environment)
+			Type.environment = environment;
+
 		position = e.pos;
 		var e = e.e;
 
-		if (stack.length == 0)
+		// `frameLocals` is null exactly when there is no frame, so this is one field load where it
+		// used to be a walk from the call stack into its array to ask for the length.
+		if (frameLocals == null)
 			pushStack(SScript(position.origin));
 
 		switch (e) {
@@ -2083,10 +2181,14 @@ class Interp {
 					case CReg(p, m): return new EReg(p, m);
 				}
 			case EIdent(id):
-				if (captures.exists(id))
+				if (hasCaptures && captures.exists(id))
 					return captures.get(id);
-				if (locals.exists(id))
-					return getLocal(id);
+				// One map read, not `exists` then `get`. `locals` is a property backed by a call into
+				// the call stack, so the old pair cost two of those on top of two hash lookups, on the
+				// single most frequently evaluated node there is.
+				var l:Variable = locals.get(id);
+				if (l != null)
+					return readLocal(l, id);
 				return resolve(id);
 			case EVar(n, t, e, get, set, isFinal):
 				declared.push({n: n, old: locals.get(n)});
@@ -2306,8 +2408,34 @@ class Interp {
 	 * @param m Whether this is a null-safe (`?.`) access.
 	 * @return The resolved value, or null while an inner call defers to the outermost one.
 	 */
-	inline function resolveField(e:Expr, f:String, m:Bool = false):Dynamic {
+	function resolveField(e:Expr, f:String, m:Bool = false):Dynamic {
 		final canResolve = (resolveFields.length == 0);
+
+		// Fast path: `value.field`, which is nearly every field access there is. Everything below
+		// exists to recognise a dotted TYPE path (`pack.Type.field`), and to do it builds an array,
+		// two enum values and a joined string per access -- none of which is needed once the base is
+		// known to be a value. Resolution order matches the general path exactly, and a base that
+		// does not resolve to a value falls straight through to it, which is precisely when a type
+		// path is still on the table.
+		if (canResolve) {
+			switch (Tools.expr(e)) {
+				case EIdent(id):
+					var base:Dynamic = null;
+					if (hasCaptures && captures.exists(id)) {
+						base = captures.get(id);
+					} else {
+						var l:Variable = locals.get(id);
+						if (l != null)
+							base = readLocal(l, id);
+						else if (isResolvable(id))
+							base = resolve(id);
+					}
+
+					if (base != null)
+						return get(base, f, m);
+				default:
+			}
+		}
 
 		resolveFields.unshift(m ? RMaybe(f) : RNormal(f));
 		switch (Tools.expr(e)) {
