@@ -802,17 +802,20 @@ class Interp {
 
 		switch (e) {
 			case EIdent(id):
-				var l = locals.get(id);
-				var v:Dynamic = (locals.exists(id) ? getLocal(id) : resolve(id));
+				// One lookup of the scope map and one membership test, held across the read and the
+				// write: this is `i++`, so it runs on every iteration of every counted loop.
+				var map:Map<String, Variable> = locals;
+				var isLocal:Bool = map.exists(id);
+				var v:Dynamic = (isLocal ? getLocal(id, map) : resolve(id));
 				if (prefix) {
 					v = numAdd(v, delta);
-					if (locals.exists(id))
-						setLocal(id, v)
+					if (isLocal)
+						setLocal(id, v, map)
 					else
 						setVar(id, v);
 				} else {
-					if (locals.exists(id))
-						setLocal(id, numAdd(v, delta))
+					if (isLocal)
+						setLocal(id, numAdd(v, delta), map)
 					else
 						setVar(id, numAdd(v, delta));
 				}
