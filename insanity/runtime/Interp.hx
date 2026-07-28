@@ -2109,9 +2109,10 @@ class Interp {
 			case EParent(e):
 				return expr(e, void, mapCompr);
 			case EBlock(exprs):
-				// Only whether the scope had any locals matters, so test for one entry instead of
-				// counting them all (this runs on entry to every block).
-				var hadLocals = locals.keys().hasNext();
+				// `restore` is already a no-op when the block declared nothing, so it is called
+				// unconditionally. Guarding it on whether the scope held any locals meant allocating a
+				// map iterator on entry to every block, function body and loop body, and it also let a
+				// block declared in an empty scope leak its variables out of the block.
 				var old = declared.length;
 				var v = null;
 				for (e in exprs) {
@@ -2119,8 +2120,7 @@ class Interp {
 					if (unwinding)
 						break;
 				}
-				if (hadLocals)
-					restore(old);
+				restore(old);
 				return v;
 			case EField(e, f, m):
 				return resolveField(e, f, m);
