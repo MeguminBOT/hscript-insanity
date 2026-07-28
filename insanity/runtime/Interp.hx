@@ -2465,7 +2465,7 @@ class Interp {
 				if (!Config.typedMode || v == null)
 					return true;
 
-				var path:String = p.join('.');
+				var path:String = (p.length == 1 ? p[0] : p.join('.'));
 				switch (path) {
 					case 'Dynamic' | 'Any' | 'Void' | 'Class' | 'Enum':
 						return true;
@@ -2519,6 +2519,43 @@ class Interp {
 	 * @return The value, coerced to the target where applicable.
 	 * @throws InterpException If typed mode rejects the value, or an abstract can't convert.
 	 */
+	/**
+	 * Checks a non-null value against a core type in typed mode, coercing where Haxe allows it
+	 * implicitly. Split out of `tryCast` so the fast path and the general path share one definition.
+	 *
+	 * @param e The value to check.
+	 * @param path The core type name.
+	 * @return The value, widened to `Float` where that is the implicit conversion.
+	 * @throws InterpException If the value is not of that type.
+	 */
+	function castCoreType(e:Dynamic, path:String):Dynamic {
+		switch (path) {
+			case 'Int':
+				if (Std.isOfType(e, Int))
+					return e;
+				return error(ECustom('${AbstractTools.resolveName(e)} should be Int'));
+			case 'Float':
+				if (Std.isOfType(e, Int))
+					return (e : Int) + 0.0; // widen to a real Float value (retagging via `(e : Float)` is a no-op on eval)
+				if (Std.isOfType(e, Float))
+					return e;
+				return error(ECustom('${AbstractTools.resolveName(e)} should be Float'));
+			case 'Bool':
+				if (Std.isOfType(e, Bool))
+					return e;
+				return error(ECustom('${AbstractTools.resolveName(e)} should be Bool'));
+			case 'String':
+				if (Std.isOfType(e, String))
+					return e;
+				return error(ECustom('${AbstractTools.resolveName(e)} should be String'));
+			default:
+				// `Map` is an abstract over `IMap`, so it never resolves to a checkable class.
+				if (e is IMap)
+					return e;
+				return error(ECustom('${AbstractTools.resolveName(e)} should be Map'));
+		}
+	}
+
 	function tryCast(e:Dynamic, ?type):Dynamic {
 		switch (type) {
 			case null:
@@ -2530,10 +2567,27 @@ class Interp {
 			case CTPath(['Null'], params) if (params != null && params.length > 0):
 				return (e == null) ? e : tryCast(e, params[0]);
 			case CTPath(p, _):
-				var path = p.join('.');
+				// An unqualified annotation is the overwhelmingly common one, and joining a one-element
+				// path allocated a string on every write, argument and return that carried a type.
+				var path = (p.length == 1 ? p[0] : p.join('.'));
 				var t = imports.get(path);
 
 				if (t == null) {
+					// A core type resolves to nothing in the type index and cannot be a script-declared
+					// type (a name the script did import is already in `t`), so the index lookup and the
+					// abstract handling below have nothing to contribute. Skipping straight to the check
+					// keeps `:Int` and `:String`, which is most annotations, off the resolution path.
+					// A boxed abstract still goes the long way round, since it may convert.
+					if (!(e is AbstractValue)) {
+						switch (path) {
+							case 'Dynamic' | 'Any' | 'Void' | 'Class' | 'Enum':
+								return e;
+							case 'Int' | 'Float' | 'Bool' | 'String' | 'Map' | 'IMap':
+								return (!Config.typedMode || e == null) ? e : castCoreType(e, path);
+							default:
+						}
+					}
+
 					var info = TypeCollection.main.fromPath(path);
 					if (info != null)
 						t = info[0].compilePath().resolve();
@@ -2559,29 +2613,8 @@ class Interp {
 				switch (path) {
 					case 'Dynamic' | 'Any' | 'Void' | 'Class' | 'Enum':
 						return e;
-					case 'Int':
-						if (Std.isOfType(e, Int))
-							return e;
-						return error(ECustom('${AbstractTools.resolveName(e)} should be Int'));
-					case 'Float':
-						if (Std.isOfType(e, Int))
-							return (e : Int) + 0.0; // widen to a real Float value (retagging via `(e : Float)` is a no-op on eval)
-						if (Std.isOfType(e, Float))
-							return e;
-						return error(ECustom('${AbstractTools.resolveName(e)} should be Float'));
-					case 'Bool':
-						if (Std.isOfType(e, Bool))
-							return e;
-						return error(ECustom('${AbstractTools.resolveName(e)} should be Bool'));
-					case 'String':
-						if (Std.isOfType(e, String))
-							return e;
-						return error(ECustom('${AbstractTools.resolveName(e)} should be String'));
-					case 'Map' | 'IMap':
-						// `Map` is an abstract over `IMap`, so it never resolves to a checkable class above.
-						if (e is IMap)
-							return e;
-						return error(ECustom('${AbstractTools.resolveName(e)} should be Map'));
+					case 'Int' | 'Float' | 'Bool' | 'String' | 'Map' | 'IMap':
+						return castCoreType(e, path);
 					default:
 						// Type parameters resolve to null here; they erase, so pass through.
 						if (t == null)
