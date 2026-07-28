@@ -76,6 +76,12 @@ class Interp {
 	/** Pool of reusable local-variable maps, to avoid per-call allocation. */
 	static var localsPool:Array<Map<String, Variable>> = [];
 
+	/**
+	 * Wildcard-import results for interpreters with no world, keyed by package path. A world keeps its
+	 * own on the `Environment`, since its type index takes part in the resolution.
+	 */
+	static var globalImportCache:Map<String, Array<ImportEntry>> = new Map();
+
 	/** The current frame's local variables. */
 	var locals(get, never):Map<String, Variable>;
 
@@ -200,6 +206,16 @@ class Interp {
 				inf.customParams = el;
 			haxe.Log.trace(Std.string(v), inf);
 		}));
+	}
+
+	/**
+	 * Discards the remembered wildcard-import results for world-less interpreters. Call this after
+	 * changing `Config.blacklist` or `Config.typeProxy` once scripts have already run, since those
+	 * decide what a package's types resolve to. A world's own cache is dropped when its type index is
+	 * rebuilt.
+	 */
+	public static function clearImportCache():Void {
+		globalImportCache.clear();
 	}
 
 	/** @return A short debug string with the parent and origin. */
@@ -1333,20 +1349,38 @@ class Interp {
 	function importPath(path:Array<String>, mode:ImportMode):Void {
 		if (mode == IAll) {
 			var fullPath:String = path.join('.');
-			var types:Array<TypeInfo> = Tools.listTypesEx(fullPath, true, [TypeCollection.main, environment?.types]);
 
-			if (types == null)
-				return;
+			// Resolving a package's types is what a wildcard import spends its time on, and the answer
+			// only changes when the world's type index does. Every interpreter re-resolved it, which put
+			// the default `import *` on the critical path of constructing one.
+			var cache:Map<String, Array<ImportEntry>> = (environment != null ? environment.importCache : globalImportCache);
+			var entries:Array<ImportEntry> = cache.get(fullPath);
+
+			if (entries == null) {
+				var types:Array<TypeInfo> = Tools.listTypesEx(fullPath, true, [TypeCollection.main, environment?.types]);
+
+				if (types == null)
+					return;
+
+				entries = [];
+				for (type in types) {
+					if (type.module != type.name && type.name != 'Main')
+						continue; // only the module's main type, not its sub-types
+					if (type.name.indexOf('_Impl_') > -1 || type.name.startsWith('AbstractValue_'))
+						continue;
+
+					entries.push({
+						name: type.name,
+						type: (type.kind == 'abstract' ? AbstractTools.resolve(type.compilePath()) : type.resolve(environment))
+					});
+				}
+
+				cache.set(fullPath, entries);
+			}
 
 			imports.set(fullPath.substr(fullPath.lastIndexOf('.') + 1), null);
-			for (type in types) {
-				if (type.module != type.name && type.name != 'Main')
-					continue; // only the module's main type, not its sub-types
-				if (type.name.indexOf('_Impl_') > -1 || type.name.startsWith('AbstractValue_'))
-					continue;
-
-				importType(type.name, type.kind == 'abstract' ? AbstractTools.resolve(type.compilePath()) : type.resolve(environment), false);
-			}
+			for (entry in entries)
+				importType(entry.name, entry.type, false);
 
 			return;
 		}

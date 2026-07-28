@@ -19,6 +19,12 @@ class Environment {
 	/** Variables shared into every module's interpreter at `init`. */
 	public var variables:Map<String, Dynamic> = [];
 
+	/**
+	 * Wildcard-import results for this world, keyed by package path, so each package resolves once
+	 * rather than once per interpreter. Dropped whenever the type index is rebuilt.
+	 */
+	public var importCache:Map<String, Array<insanity.runtime.ImportEntry>> = [];
+
 	/** Callbacks run once `start` finishes; returning false removes the callback. */
 	public var onInitialized:Array<Map<String, IScriptedType>->Bool> = [];
 
@@ -116,6 +122,9 @@ class Environment {
 	 * @return The freshly built collection (also stored in `types`).
 	 */
 	public function rebuildTypes():TypeCollection {
+		// A wildcard import resolves against this index, so its remembered results die with it.
+		importCache.clear();
+
 		var map:TypeMap = {
 			byPackage: [],
 			byModule: [],

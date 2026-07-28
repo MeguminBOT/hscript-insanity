@@ -744,7 +744,10 @@ class ScriptedMacro {
 			__interp.ownerClass = base;
 			__interp.pushStack(insanity.runtime.CallStack.StackItem.SModule(base.module?.path ?? base.name));
 
-			__interp.setDefaults();
+			// Without the Config seeding: the class's own interpreter already holds it, and its
+			// imports and variables are copied over the top a few lines down, so seeding here only
+			// resolved the default wildcard import a second time to throw the result away.
+			__interp.setDefaults(true, false);
 			__interp.variables.set('this', this);
 			__interp.variables.set('interp', __interp);
 
