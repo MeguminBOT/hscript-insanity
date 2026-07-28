@@ -1046,7 +1046,7 @@ class Parser extends Lexer {
 										if (op == ">")
 											break;
 										if (op.charCodeAt(0) == ">".code) {
-											tokens.add({t: TOp(op.substr(1)), min: tokenMax - op.length - 1, max: tokenMax});
+											tokens.unshift({t: TOp(op.substr(1)), min: tokenMax - op.length - 1, max: tokenMax});
 											break;
 										}
 									default:
@@ -1316,7 +1316,7 @@ class Parser extends Lexer {
 						break;
 					// A nested parameter list closes with `>>`, which lexes as one operator.
 					if (op.charCodeAt(0) == ">".code) {
-						tokens.add({t: TOp(op.substr(1)), min: tokenMax - op.length - 1, max: tokenMax});
+						tokens.unshift({t: TOp(op.substr(1)), min: tokenMax - op.length - 1, max: tokenMax});
 						break;
 					}
 				default:

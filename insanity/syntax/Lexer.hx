@@ -101,8 +101,15 @@ class Lexer {
 	/** End offset of the previous token. */
 	var oldTokenMax:Int;
 
-	/** The pushed-back token buffer for lookahead. */
-	var tokens:List<{min:Int, max:Int, t:Token}>;
+	/**
+	 * Pushed-back tokens, innermost LAST.
+	 *
+	 * An `Array` used as a stack rather than a `List`: a linked list allocates a node per pushback on
+	 * top of the entry itself, and the depth here is never more than a token or two. The end is the
+	 * next token to be read, so `push`/`pop` are the array's own; `add`, which queues a token to be
+	 * read after everything already pending, inserts at the front instead.
+	 */
+	var tokens:Array<TokenEntry>;
 
 	/** @return The absolute current read position. */
 	inline function get_currentPos()
@@ -181,7 +188,10 @@ class Lexer {
 	 */
 	function maybe(tk) {
 		var t = token();
-		if (Type.enumEq(t, tk))
+		// Plain equality first. Sixty-two of the seventy-one call sites pass a parameterless token
+		// constructor, and equality answering true always implies structural equality, so the
+		// reflective comparison is only reached for the handful that carry a payload.
+		if (t == tk || Type.enumEq(t, tk))
 			return true;
 		push(t);
 		return false;
@@ -1013,7 +1023,7 @@ class Lexer {
 		readPos = 0;
 		tokenMin = oldTokenMin = pos;
 		tokenMax = oldTokenMax = pos;
-		tokens = new List();
+		tokens = [];
 		offset = pos;
 		char = -1;
 		ops = new Array();
