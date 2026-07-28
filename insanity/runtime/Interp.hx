@@ -988,8 +988,12 @@ class Interp {
 		if (localsPool.length > 0) {
 			var locals:Map<String, Variable> = localsPool.pop();
 
+			// A recycled map still holds the entries of the frame it came from, so it has to be cleared
+			// whether or not there is anything to copy in. Returning it dirty leaked one frame's locals
+			// into an unrelated new scope, including into a freshly-built interpreter's first frame.
+			locals.clear();
+
 			if (h != null) {
-				locals.clear();
 				for (k => v in h)
 					locals.set(k, v);
 			}
