@@ -306,6 +306,107 @@ The one caveat of the cache: a blacklist installed *after* scripts have already 
 packages already cached. Configure it at startup, or call `Interp.clearImportCache()` after changing
 it.
 
+### Per-operation dispatch: one hash per name, one field test per accessor
+
+Prompted by [`benchmarks.md`](benchmarks.md), which put plain hscript at roughly **half** this fork's
+time on per-operation work while this fork stayed 5x ahead on calls. The gap was not in the operators
+themselves: `not`, `neg`, `index` and `indexSet` have bodies here that are within one type check of
+hscript's and still cost 1.8x, which puts the cost before the case body, in what every node pays.
+
+Four things, all of them named as "remaining known costs" in the list below before this pass:
+
+**Names were hashed two to four times per access.** Reading an identifier ran `captures.exists` then
+`captures.get`, then `locals.exists` then a `getLocal` that looked the slot up again. Writing ran
+`locals.exists` then a `setLocal` that looked it up again, and `x op= y` did the whole read sequence
+and the whole write sequence for the same slot. `readLocal`/`writeLocal` now take the slot the caller
+already holds, and every one of those pairs is a single `get` with a null test. `resolve` keeps a
+membership test only for the case it exists for, telling "bound to null" apart from "not bound".
+
+**Every accessor dispatch was a string switch.** `getLocal` and `setLocal` fell through a switch over
+five string constants (`null`, `never`, `get`, `dynamic`, `default`) to reach `store` for a plain
+variable, which is nearly every variable. A `l.get == null` / `l.set == null` test in front skips it.
+
+**`locals` was a call into the call stack.** It is a property, and its getter loaded the stack, loaded
+its array, indexed it and null-checked the frame -- on every read, write and declaration. The frames
+only change in `pushStack`, `shiftStack` and `execute`, so `frameLocals` holds the answer and the
+three of them keep it current. The per-node `stack.length == 0` entry guard became a null test on the
+same field.
+
+**`resolveField` allocated to recognise a type path.** An array, two enum values and a joined string
+per field access, all so `pack.Type.field` could be told from `value.field`. The `value.field` case --
+nearly all of them -- now resolves the base and calls `get` directly, and falls through to the general
+path untouched when the base is not a value, which is exactly when a type path is still possible.
+
+Also: `numAdd` tested `is String` twice before reaching the integer case, and `expr` stored two
+statics unconditionally per node where a compare avoids hxcpp's write barrier.
+
+| case | before | after | | case | before | after |
+| --- | --- | --- | --- | --- | --- | --- |
+| `field` | 173 | **119** | | `arith` | 244 | **195** |
+| `fieldGuard` | 192 | **121** | | `locals` | 200 | **161** |
+| `instField` | 98 | **71** | | `varPlain` | 110 | **86** |
+| `instFieldGuard` | 102 | **73** | | `varTyped` | 154 | **128** |
+| `index` / `indexSet` | 143 / 120 | **104 / 98** | | `blocks` | 153 | **128** |
+| `not` / `neg` | 132 / 130 | **103 / 100** | | `loopPlain` / `loopCont` | 65 / 82 | **47 / 68** |
+| `method` | 97 | **86** | | `noCall` | 54 | **43** |
+
+Interpreter-wide **-12.5%**, and 16 to 37% on the per-operation cases the comparison was losing on.
+Calls moved 10% as a side effect, since they read and write variables too.
+
+Measured as best-of-3 inside the harness, then the minimum across four paired runs of both binaries,
+because a single pair put `neg` at -18% on one run and +6% on the next. All eleven tests in
+[`../test`](../test) produce byte-identical output before and after, on both `--interp` and hxcpp.
+
+### Parsing: most of the "4x slower" was position tracking
+
+[`benchmarks.md`](benchmarks.md) put this fork's parser at roughly **4x** hscript's. That number is
+real but it is not a like-for-like comparison, and it took a controlled experiment to see why.
+
+hscript's `Expr` is `typedef ExprDef = Expr` unless you compile it with `-D hscriptPos`: without that
+define it does not record positions **at all**, and its token pushback is a `GenericStack<Token>`
+instead of a list of `{min, max, t}`. The comparison suite passes no defines, so it was measuring a
+parser that tracks source positions against one that does not.
+
+Parsing the same 19KB source, best of 5 x 200 parses, three runs:
+
+| | ms/parse | vs hscript as benchmarked |
+| --- | --- | --- |
+| hscript, no position tracking | 0.684 | 1.00x |
+| hscript, `-D hscriptPos` | 1.219 | **1.78x** |
+| this fork, before | 1.266 | 1.85x |
+| this fork, after | **1.045** | **1.53x** |
+
+Position tracking costs *hscript itself* 1.78x. Against hscript doing the same job this fork was 4%
+slower before the changes below and is now **14% faster**. Positions are not optional here -- error
+reporting, `posInfos` and the call-stack traces a host renders all depend on them -- so the residual
+1.53x is the price of a feature, not a defect to chase.
+
+The cross-library suite reaches the same conclusion on its own 11.6KB corpus source, where the effect
+is larger still: hscript costs 1.97x with positions on (0.985ms against 0.501ms), and this fork
+parses it in 0.819ms -- **17% faster** than hscript doing the same job. See
+[`benchmarks.md`](benchmarks.md). The two sources disagree on the exact multiple because they exercise
+different syntax; they agree on the direction and on the cause.
+
+What changed, all in the lexer:
+
+- The pushback buffer held **anonymous structures** (`List<{min, max, t}>`), which resolve their
+  fields by name at runtime on static targets. It is a `@:structInit class TokenEntry` now, for the
+  same reason `Variable` and `StackFrame` already were.
+- It was a `List`, which allocates a node per pushback on top of the entry. It is an `Array` used as
+  a stack; a recursive-descent parser pushes back on every lookahead that does not match, which is
+  most of them.
+- `maybe` compared tokens with `Type.enumEq`, reflectively, on all 71 call sites. 62 of them pass a
+  parameterless constructor, so plain equality is tried first -- it answering true always implies
+  structural equality, so the reflective path is only reached for the handful carrying a payload.
+
+That is **-17% on parse**, and a further **-1.6%** on the interpreter from the reduced garbage, which
+is worth knowing: allocation during parse is paid for again during execution.
+
+> The -1.6% figure is itself a lesson in the rule at the top of this page. Measured against numbers
+> taken earlier in the same session it looked like **-9.4%**, which would have been a nonsense
+> attribution -- parsing happens outside the benchmark's timer. Re-running both binaries interleaved
+> at the same moment gave -1.6%, and showed the machine had drifted nearly 9% faster in between.
+
 ## Where the time goes now
 
 A script call is roughly 1.1us, against about 0.6us for an empty loop iteration, so call overhead is
@@ -335,14 +436,22 @@ Interpreter-wide that is 8 to 23%, and 8 to 10x on instantiation.
 
 Remaining known costs, none currently urgent:
 
-- Every variable access is a string hash into a `Map`, and several paths hash the same name more than
-  once (`exists` followed by `get`). Reading an identifier can take up to four hashes. Collapsing the
-  pairs is mechanical; slot-resolving identifiers at parse time would remove the hash entirely, but
-  that is a real redesign.
+- Every variable access is still one string hash into a `Map`. The duplicate hashes are gone;
+  removing the remaining one means slot-resolving identifiers at parse time, which is a real redesign.
 - A typed write still costs one `imports` lookup, about 0.2us. Caching the resolved type on the slot
   or on the closure would remove it.
-- `resolveField` allocates an array and an enum instance per field-access chain, measured at 0.32us
-  per extra hop.
+- `resolveField` still allocates an array and an enum instance for a **chained** access (`a.b.c`), and
+  for any base that is not a plain value. Single-hop `value.field` no longer does.
+- **Every AST node is three objects** -- an `Expr`, its `ExprDef`, and a `Position` allocated fresh
+  per node in `getPos`. hscript compiled without `-D hscriptPos` has one: the enum itself is the
+  expression. That is three times the parse allocation and an extra indirection on every evaluation,
+  and it is the whole of the 4x parse gap in [`benchmarks.md`](benchmarks.md). Folding the position
+  fields into `Expr` and tracking the current node rather than the current `Position` would remove
+  one object per node; it touches four files, and `ModuleDecl` carries a `Position` too, so it is
+  the largest remaining item and the one most likely to need care.
+- `expr` takes four parameters where hscript's takes one, so every recursive call pushes three extra.
+  Splitting a one-argument hot path from a context-carrying cold one is possible but `EBlock` passes
+  its context to every child, so most nodes would still take the wide path.
 - Every generated bridge override tests `__interp.locals.exists(name)` and then reads it, so a native
   method the engine calls per frame pays two map hashes whether or not the script overrides it. The
   method set is known at macro time and could be a per-instance slot.

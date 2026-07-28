@@ -1,0 +1,23 @@
+
+--macro addMetadata('#if hscriptPos @:build(rulescript.macro.ExprMacro.build()) #end', 'hscript.ExprDef')
+--macro addMetadata('#if !hscriptPos @:build(rulescript.macro.ExprMacro.build()) #end', 'hscript.Expr')
+
+--macro addMetadata('@:build(rulescript.macro.ExprMacro.buildToken())', 'hscript.Token')
+
+--macro addMetadata('@:build(rulescript.macro.ExprMacro.buildModuleDecl())', 'hscript.ModuleDecl')
+
+--macro addMetadata('@:build(rulescript.macro.ExprMacro.buildParserDefaults())', 'hscript.Parser')
+
+--macro addMetadata('@:build(rulescript.macro.ExprMacro.buildInterpDefaults())', 'hscript.Interp')
+
+--macro addMetadata('@:build(rulescript.macro.ExprMacro.buildToolsDefaults())', 'hscript.Tools')
+
+--macro addMetadata('@:build(rulescript.macro.ExprMacro.buildPrinterDefaults())', 'hscript.Printer')
+
+--macro addMetadata('@:build(rulescript.macro.ExprMacro.buildBytesDefaults())', 'hscript.Bytes')
+
+--macro addMetadata('@:build(rulescript.macro.ExprMacro.buildCheckerDefaults())', 'hscript.Checker')
+
+--macro addMetadata('@:build(rulescript.macro.ExprMacro.buildMacroDefaults())', 'hscript.Macro')
+
+--macro rulescript.macro.Converter.init()
