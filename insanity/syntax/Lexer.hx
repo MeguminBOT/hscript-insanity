@@ -645,7 +645,7 @@ class Lexer {
 				case '@'.code:
 					char = readChar();
 					if (idents[char] == true || char == ':'.code) {
-						var id = String.fromCharCode(char);
+						var start:Int = readPos - 1;
 						while (true) {
 							char = readChar();
 							if (StringTools.isEof(char))
@@ -653,16 +653,15 @@ class Lexer {
 							if (idents[char] != true) {
 								this.char = char;
 								this.columnOffset = colOffset;
-								return TMeta(id);
+								return TMeta(input.substr(start, readPos - 1 - start));
 							}
-							id += String.fromCharCode(char);
 						}
 					}
 					invalidChar(char);
 				case '#'.code:
 					char = readChar();
 					if (idents[char] == true) {
-						var id = String.fromCharCode(char);
+						var start:Int = readPos - 1;
 						while (true) {
 							char = readChar();
 							if (StringTools.isEof(char))
@@ -670,9 +669,8 @@ class Lexer {
 							if (idents[char] != true) {
 								this.char = char;
 								this.columnOffset = colOffset;
-								return preprocess(id);
+								return preprocess(input.substr(start, readPos - 1 - start));
 							}
-							id += String.fromCharCode(char);
 						}
 					}
 					invalidChar(char);
@@ -699,16 +697,19 @@ class Lexer {
 						}
 					}
 					if (idents[char] == true) {
-						var id = String.fromCharCode(char);
+						// Sliced out of the input in one go rather than grown a character at a time.
+						// `id += String.fromCharCode(char)` allocated a string per character AND copied
+						// everything read so far into it, so lexing an identifier was quadratic in its
+						// length -- on the most common token there is.
+						var start:Int = readPos - 1;
 						while (true) {
 							char = readChar();
 							if (StringTools.isEof(char))
 								char = 0;
 							if (idents[char] != true) {
 								this.char = char;
-								return TId(id);
+								return TId(input.substr(start, readPos - 1 - start));
 							}
-							id += String.fromCharCode(char);
 						}
 					}
 					invalidChar(char);
