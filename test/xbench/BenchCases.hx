@@ -16,6 +16,23 @@ class BenchCases {
 	/** Element count of the array `forArray` walks; the loop count decides how many passes it makes. */
 	static inline var ARRAY_LEN:Int = 1000;
 
+	/** How many extra variables `callCap20` leaves in scope around its function. */
+	static inline var CAPTURED:Int = 20;
+
+	/**
+	 * `CAPTURED` variable declarations, to sit in scope around a function so the call has something
+	 * to capture.
+	 *
+	 * Plain `var` declarations only, so this stays inside the subset every library runs.
+	 */
+	static function fill(k:Int):String {
+		var out:StringBuf = new StringBuf();
+		for (v in 0...k) {
+			out.add('var v$v = $v; ');
+		}
+		return out.toString();
+	}
+
 	/**
 	 * The corpus scaled to `n` loop iterations.
 	 *
@@ -59,6 +76,20 @@ class BenchCases {
 				i: N,
 				x: "6",
 				s: 'function f(a, b, c) return a + b + c; var i = 0; var s = 0; while (i < $N) { s = f(1, 2, 3); i += 1; } s;'
+			},
+			// Exactly `call1` with CAPTURED more variables in the enclosing scope. Read as a PAIR: the
+			// two differ in nothing but how much scope surrounds the function, so the gap between them
+			// is what a call costs per captured variable and nothing else.
+			//
+			// Worth measuring across libraries because it is a design difference, not a constant: an
+			// interpreter that builds its call frame by copying the captured scope pays for every
+			// variable in it on every call, and one that does not pay nothing.
+			{
+				n: "callCap20",
+				t: "core",
+				i: N,
+				x: "7",
+				s: fill(CAPTURED) + 'function f(a) return a; var i = 0; var s = 0; while (i < $N) { s = f(7); i += 1; } s;'
 			},
 			{n: "forRange", t: "core", i: N, x: last, s: 'var s = 0; for (i in 0...$N) s = i; s;'},
 			// `n / ARRAY_LEN` passes over an ARRAY_LEN-element array, so the element visits total `n`
