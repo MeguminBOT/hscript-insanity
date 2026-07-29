@@ -132,6 +132,19 @@ which is the guarantee the enclosing scope relies on.
 `call_cap20` now matches plain `call`, so call cost no longer scales with scope size at all. Scripted
 class methods were always exempt, running in a fixed `functionLocals`.
 
+This is a design difference and not a universal one, which is worth knowing before assuming any
+hscript-derived library behaves the same way. The cross-library suite grew a `callCap20` case for it
+(see [`benchmarks.md`](benchmarks.md)); measured against each library's OWN `call1`, so the ratio is
+independent of how fast that library is otherwise:
+
+| library | penalty for twenty captured variables |
+| --- | --- |
+| this fork | none |
+| hscript-improved | none |
+| RuleScript | 1.27x |
+| hscript / hscript-iris | 1.29x |
+| upstream insanity | 1.36x |
+
 Fixed a latent bug the reuse made reachable: the `inTry` path unwound the frame on a caught exception
 but not its declarations, leaving them on `declared` for an enclosing `restore` to roll back once
 `locals` was the CALLER's scope -- writing a callee's parameters into its caller.
