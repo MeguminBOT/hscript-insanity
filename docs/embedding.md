@@ -375,7 +375,12 @@ See [`parity.md`](parity.md#1-typed-by-default-with-a-dynamic-escape-hatch).
 
 - **Dead code elimination.** With `-dce std`, methods your own code never calls statically are
   stripped from the build, and a script reaching one by reflection gets `Cannot call null`. It looks
-  like a library bug and is not. `-dce no`, or `@:keep` on what scripts need.
+  like a library bug and is not. `-dce no`, or `@:keep` on what scripts need. Measured below, because
+  it removes more than people expect.
+- **`inline` is not the reason a member is missing.** An `inline` method still has a runtime form;
+  what removes it is DCE noticing that every call site inlined it, so nothing references it. The two
+  get confused constantly, and the fix is different: `-dce no`/`@:keep` for this, a `callShim` for a
+  genuine `inline extern`.
 - **`inline extern` methods have no runtime form.** Reflection finds nothing, so the call fails.
   Register a real closure that performs the call in `Config.callShims`, keyed
   `<fully.qualified.Owner>.<method>`; the interpreter walks the receiver's superclasses looking for
@@ -386,6 +391,50 @@ See [`parity.md`](parity.md#1-typed-by-default-with-a-dynamic-escape-hatch).
   declared *in scripts* need no setup.
 - **Build macros hold type paths as strings**, which the compiler cannot check for you. If you rename
   a bridged base or move a package, nothing fails at compile time; it fails when a script asks.
+
+### What `-dce std` actually removes
+
+Probed over 83 commonly-scripted standard-library members on hxcpp, asking only whether
+`Reflect.field` finds them -- which is how an interpreter reaches them:
+
+| build | reachable | unreachable |
+| --- | --- | --- |
+| `-dce std` (hxcpp's default) | 41 | **42** |
+| `-dce no` | 92 | 3 |
+
+**This list is for a bare program.** A member survives when something in the build references it
+statically, so a large host keeps far more of it alive by accident, and your own numbers will differ.
+Take the shape of the result, not the exact set.
+
+Two causes, and they need different fixes.
+
+**Members stripped from a class that is otherwise in the build.** `-dce no`, or `@:keep` on what
+scripts need:
+
+| type | members reflection could not reach |
+| --- | --- |
+| `IntIterator` | `hasNext`, `next` |
+| `Reflect` | `setField`, `getProperty`, `setProperty`, `fields`, `callMethod`, `isFunction`, `compare`, `copy`, `makeVarArgs` |
+| `Type` | `getClass`, `getClassName`, `createInstance`, `getInstanceFields`, `typeof`, `enumEq` |
+| `haxe.ds.StringMap` | `set`, `get`, `exists`, `remove`, `keys`, `iterator` |
+| `EReg` | `match`, `matched`, `replace`, `split` |
+| `List` | `add`, `push`, `pop`, `remove`, `iterator` |
+| `Date` | `getTime`, `getFullYear`, `getHours`, `toString` |
+| `Sys` | `time`, `getEnv` |
+
+`IntIterator` is the one worth knowing by name: it is why `for (i in 0...n)` fails on hxcpp in
+several hscript-family libraries, and it is a property of how the host was built rather than of the
+library. See [`benchmarks.md`](benchmarks.md).
+
+**Whole classes that were never compiled in**, because nothing in the host referenced them.
+`-dce no` does not help -- the type has to be reached somehow, by a real reference or by forcing it
+into the build:
+
+- `StringTools` (unresolvable entirely under `-dce std`)
+- `Lambda`, `haxe.Json`, `haxe.Timer` (unresolvable in a bare program under either setting)
+
+**Survived untouched** in the same probe: every `Math` and `Std` static, and the `Array` and `String`
+instance methods. The runtime itself references those, so they are never candidates.
 
 ## Where to go next
 

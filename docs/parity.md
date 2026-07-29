@@ -151,7 +151,8 @@ Scripts extend curated native bases through generated bridges
 ([`insanity/macro/ScriptedMacro.hx`](../insanity/macro/ScriptedMacro.hx)). A native
 method **cannot be overridden** when it is:
 
-- **`inline`**, no runtime method exists to route through.
+- **`inline`**, which Haxe forbids overriding outright. (Not because the method has no runtime form:
+  it does, and reflection finds it. See section 7.)
 - **`final`**.
 - **`@:generic`**, the compiler emits one specialized field per instantiation, so there is no single
   method to override.
@@ -191,8 +192,21 @@ This is easy to mistake for a library bug. A standalone test program that never 
 compiles without `EReg.replace`, so `~/a+/g.replace(...)` fails there while working under `-dce no`.
 
 Mitigations, in order of preference: call the API somewhere in the host, add an `include()` for the
-type in the build, or register a `Config.callShims` entry. The same reasoning covers `inline`
-methods, which have no runtime form at all to reflect on regardless of DCE (see section 8).
+type in the build, or register a `Config.callShims` entry.
+
+**It is per MEMBER, not per class**, which is what makes it confusing in practice. A host that calls
+`StringTools.trim` in three hundred places keeps `trim` and loses `isSpace`, so scripts see a
+`StringTools` that resolves fine and is missing exactly the members nobody happened to use.
+
+**`inline` is not a second cause of this, and it is routinely blamed for it.** On hxcpp a `static
+inline` or `inline` member still has a runtime form and reflects fine -- verified by declaring one and
+reading it back with `Reflect.field` under both `-dce std` and `-dce no`. What removes it is DCE
+noticing that every call site inlined it, so nothing references it any more. Only **`extern inline`**
+has genuinely no body to emit; that is the case `Config.callShims` exists for (see section 8).
+
+`StringTools.trim` is the usual example given, and it is a bad one twice over: on the C++ target it
+is not `inline` at all (only on `cs`/`java`), and when it goes missing it is because the host never
+called it.
 
 ## 8. Interop subtlety worth knowing
 

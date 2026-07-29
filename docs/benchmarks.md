@@ -39,7 +39,26 @@ check earned its place: it caught two mistakes in the expected values, and three
 differences between libraries that timings alone would have hidden.
 
 Each case runs in its **own process**, because some libraries hang or crash on some inputs and would
-otherwise take the rest of the run with them. Best of 3, hxcpp, one machine, one sitting.
+otherwise take the rest of the run with them. 100,000 iterations, **median of 5**, hxcpp, one
+machine, one sitting.
+
+The median rather than the fastest run: best-of-N answers "how fast can this go when nothing
+interferes", which flatters whichever library got the quietest slice of the machine. The median
+answers "what does this usually cost", which is what a host budgeting a frame needs, and an unlucky
+scheduler spike moves it no more than a lucky one does.
+
+### Built with `-dce no`, and that is a correctness setting
+
+Under hxcpp's default `-dce std` the compiler eliminates `IntIterator.hasNext` and `next`: every call
+site inlines them, so nothing references them statically. An interpreter reaching them by reflection
+then finds a null field, and `for (i in 0...n)` fails -- **in the host's build, not in the library**.
+Earlier versions of this page reported that as a defect in four of the six libraries. It was not.
+
+Everything here is therefore built with `-dce no`, which measures the libraries rather than the build
+settings. A probe over 83 commonly-scripted standard-library members found **42 unreachable** under
+`-dce std` against 3 under `-dce no`; the catalogue is in
+[`embedding.md`](embedding.md#what--dce-std-actually-removes), and it is worth reading before
+concluding that any scripting library "cannot do" something.
 
 ### Every library is built with position tracking
 
@@ -52,84 +71,114 @@ on them. Comparing against a build that records nothing would not be measuring t
 library in the comparison is built **with** them. What the switch costs the libraries that have it is
 reported separately at the end, where it reads as the price of a feature rather than a ranking.
 
-### Three scales
+### One scale
 
-The corpus runs at 25,000, 100,000 and 500,000 iterations. One scale cannot tell a real
-per-operation difference apart from a fixed setup cost or a warm-up artefact. Expected values are
-derived from the iteration count, so the value checking holds at every scale.
+The corpus runs at 100,000 iterations. Three scales spanning 20x were used to establish that the
+ranking is a property of the interpreters rather than a warm-up or fixed-setup artefact; it held,
+moving by at most a few percent, so re-establishing it on every run is not worth three times the wall
+time. `SCALES="25000 100000 500000"` checks it again after a change that could plausibly disturb it.
+Expected values are derived from the iteration count, so the value checking holds at any scale.
 
 ## Results
 
 <!-- BEGIN GENERATED: test/xbench/collate.py -->
 
-### Every case, microseconds per iteration at 500,000
+### Every case, microseconds per iteration at 100,000
 
 One row per case, and the only per-case table in this document. `kind` is which average the
 row feeds: `op` and `call` are averaged separately because they differ by design rather than
-by degree, and `unwind` cases are in neither, being dominated by how a library implements
-`continue` and `throw`.
+by degree. `unwind` cases are in neither, being dominated by how a library implements
+`continue` and `throw`, and nor are `compound` ones, which do far more than one operation per
+iteration and would describe themselves rather than the interpreter.
+
+<details>
+<summary><strong>33 cases, click to expand</strong></summary>
 
 | case | kind | this fork | insanity | hscript | improved | iris | rulescript |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `noCall` | op | 0.456 | 1.019 | 0.388 | 0.641 | 0.360 | 0.507 |
-| `loopPlain` | op | 0.454 | 1.052 | 0.415 | 0.623 | 0.378 | 0.531 |
-| `loopCont` | unwind | 0.664 | 5.303 | 4.413 | 4.752 | 4.323 | 4.841 |
-| `postIncr` | op | 0.432 | 1.001 | 0.358 | 0.494 | WRONG (0) | 0.450 |
-| `arith` | op | 0.647 | 1.196 | 0.531 | 0.787 | 0.467 | 0.696 |
-| `locals` | op | 0.557 | 1.261 | 0.481 | 0.756 | 0.440 | 0.620 |
-| `blocks` | op | 0.678 | 1.598 | 0.560 | 0.956 | 0.486 | 0.738 |
-| `field` | op | 0.584 | 1.281 | 0.427 | 0.721 | 0.401 | 0.574 |
-| `fieldSet` | op | 0.617 | 1.167 | 0.427 | 0.738 | 0.404 | 0.557 |
-| `method` | op | 1.017 | 1.617 | 0.681 | 1.052 | 0.669 | 0.862 |
-| `index` | op | 0.527 | 1.138 | 0.443 | 0.677 | 0.407 | 0.580 |
-| `indexSet` | op | 0.514 | 1.084 | 0.442 | 0.699 | 0.418 | 0.567 |
-| `not` | op | 0.544 | 1.164 | 0.468 | 0.708 | 0.427 | 0.616 |
-| `neg` | op | 0.513 | 1.115 | 0.425 | 0.700 | 0.399 | 0.561 |
-| `call0` | call | 0.843 | 9.309 | 7.731 | 8.312 | 7.588 | 8.124 |
-| `call1` | call | 1.250 | 10.043 | 8.049 | 8.570 | 7.874 | 8.422 |
-| `call3` | call | 1.910 | 10.754 | 8.513 | 9.097 | 8.226 | 8.981 |
-| `callCap20` | call | 1.244 | 13.612 | 10.416 | 8.499 | 10.147 | 10.684 |
-| `forRange` | op | 0.153 | not supported | not supported | not supported | 0.130 | not supported |
-| `forArray` | op | 0.161 | 0.293 | 0.173 | 0.264 | 0.138 | 0.216 |
-| `arrayDecl` | op | 0.979 | 1.764 | 0.699 | 1.115 | 0.595 | 0.904 |
-| `strConcat` | op | 0.886 | 1.979 | 1.235 | 1.491 | 1.201 | 1.380 |
-| `ternary` | op | 0.725 | 1.438 | 0.713 | 0.994 | 0.641 | 0.891 |
-| `switch` | op | 0.825 | 1.580 | 0.727 | 0.963 | 0.634 | 0.883 |
-| `tryCatch` | unwind | 8.291 | 9.715 | 7.874 | 8.183 | 7.637 | 8.416 |
-| `strInterp` | op | 1.085 | 1.589 | WRONG (v$n) | WRONG (v$n) | WRONG (v$n) | 0.883 |
-| `mapLiteral` | op | 1.317 | 2.112 | 1.162 | 1.483 | 1.016 | 1.355 |
-| `arrayCompr` | op | 3.052 | not supported | not supported | not supported | 10.339 | not supported |
-| `varTyped` | op | 0.654 | 1.005 | 0.385 | 0.616 | 0.358 | not supported |
-| `fnTyped` | call | 1.710 | 10.371 | 8.066 | 8.550 | 7.836 | not supported |
-| `classNew` | op | 6.907 | 110.801 | not supported | 4.608 | not supported | not supported |
-| `classCall` | call | 1.523 | not supported | not supported | 8.785 | not supported | not supported |
-| `classField` | op | 0.685 | 1.399 | not supported | 0.799 | not supported | not supported |
+| `noCall` | op | 0.478 | 1.043 | 0.394 | 0.643 | 0.375 | 0.517 |
+| `loopPlain` | op | 0.493 | 1.083 | 0.437 | 0.665 | 0.418 | 0.554 |
+| `loopCont` | unwind | 0.695 | 5.248 | 4.463 | 4.823 | 4.452 | 4.821 |
+| `postIncr` | op | 0.458 | 1.022 | 0.379 | 0.523 | WRONG (0) | 0.463 |
+| `arith` | op | 0.692 | 1.234 | 0.549 | 0.820 | 0.494 | 0.703 |
+| `locals` | op | 0.591 | 1.292 | 0.491 | 0.795 | 0.457 | 0.625 |
+| `blocks` | op | 0.705 | 1.624 | 0.578 | 0.989 | 0.535 | 0.744 |
+| `field` | op | 0.600 | 1.297 | 0.434 | 0.747 | 0.411 | 0.604 |
+| `fieldSet` | op | 0.655 | 1.178 | 0.437 | 0.750 | 0.429 | 0.560 |
+| `method` | op | 1.071 | 1.668 | 0.704 | 1.117 | 0.689 | 0.898 |
+| `index` | op | 0.554 | 1.171 | 0.443 | 0.734 | 0.423 | 0.601 |
+| `indexSet` | op | 0.546 | 1.150 | 0.447 | 0.744 | 0.435 | 0.600 |
+| `not` | op | 0.568 | 1.186 | 0.481 | 0.743 | 0.445 | 0.628 |
+| `neg` | op | 0.536 | 1.149 | 0.448 | 0.713 | 0.432 | 0.572 |
+| `call0` | call | 0.878 | 9.218 | 7.971 | 8.426 | 7.806 | 8.250 |
+| `call1` | call | 1.300 | 9.834 | 8.217 | 8.729 | 8.029 | 8.488 |
+| `call3` | call | 1.986 | 10.659 | 8.637 | 9.435 | 8.319 | 9.047 |
+| `callCap20` | call | 1.298 | 13.819 | 10.522 | 8.740 | 10.447 | 10.955 |
+| `forRange` | op | 0.173 | 0.305 | 0.174 | 0.273 | 0.139 | 0.210 |
+| `forArray` | op | 0.188 | 0.319 | 0.190 | 0.286 | 0.156 | 0.231 |
+| `arrayDecl` | op | 1.019 | 1.794 | 0.707 | 1.170 | 0.628 | 0.917 |
+| `strConcat` | op | 0.911 | 2.041 | 1.295 | 1.623 | 1.229 | 1.429 |
+| `ternary` | op | 0.745 | 1.470 | 0.738 | 1.033 | 0.666 | 0.901 |
+| `switch` | op | 0.854 | 1.604 | 0.775 | 0.996 | 0.666 | 0.894 |
+| `tryCatch` | unwind | 8.173 | 9.629 | 8.029 | 8.527 | 7.689 | 8.558 |
+| `strInterp` | op | 1.140 | 1.613 | WRONG (v$n) | WRONG (v$n) | WRONG (v$n) | 0.906 |
+| `mapLiteral` | op | 1.395 | 2.155 | 1.192 | 1.552 | 1.035 | 1.394 |
+| `arrayCompr` | compound | 3.179 | 4.227 | 3.264 | 5.209 | 10.376 | 11.308 |
+| `varTyped` | op | 0.669 | 1.031 | 0.392 | 0.641 | 0.387 | not supported |
+| `fnTyped` | call | 1.773 | 10.192 | 8.306 | 8.765 | 8.488 | not supported |
+| `classNew` | compound | 6.976 | 111.156 | not supported | 4.687 | not supported | not supported |
+| `classCall` | call | 1.563 | not supported | not supported | 9.151 | not supported | not supported |
+| `classField` | op | 0.711 | 1.475 | not supported | 0.875 | not supported | not supported |
 
-### Summary, over the 24 cases every library ran
+</details>
+
+### Summary, over the 26 cases every library ran
 
 | | this fork | insanity | hscript | improved | iris | rulescript |
 | --- | --- | --- | --- | --- | --- | --- |
-| us per operation (18 cases) | 0.667 | 1.326 | 0.578 | 0.854 | 0.527 | 0.724 |
-| us per call (4 cases) | 1.312 | 10.930 | 8.677 | 8.620 | 8.459 | 9.053 |
-| parse, ms | 0.784 | 1.16 | 0.977 | 2.754 | 0.627 | 1.145 |
-| corpus total, ms | 13102 | 41299 | 28696 | 31391 | 27638 | 31252 |
-| total relative to this fork | 1.00x | 3.15x | 2.19x | 2.40x | 2.11x | 2.39x |
+| us per operation (19 cases) | 0.672 | 1.303 | 0.574 | 0.863 | 0.530 | 0.715 |
+| us per call (4 cases) | 1.366 | 10.882 | 8.837 | 8.833 | 8.650 | 9.185 |
+| parse, ms | 0.768 | 1.28 | 1.049 | 2.608 | 0.749 | 1.124 |
+| corpus total, ms | 3028 | 8740 | 6202 | 7028 | 6718 | 7501 |
+| total relative to this fork | 1.00x | 2.89x | 2.05x | 2.32x | 2.22x | 2.48x |
 
 ```mermaid
 xychart-beta
-    title "Cost of one operation at 500,000 iterations"
+    title "Cost of one operation at 100,000 iterations"
     x-axis ["iris", "hscript", "this fork", "rulescript", "improved", "insanity"]
-    y-axis "microseconds" 0 --> 1.524
-    bar [0.527, 0.578, 0.667, 0.724, 0.854, 1.326]
+    y-axis "microseconds" 0 --> 1.499
+    bar [0.530, 0.574, 0.672, 0.715, 0.863, 1.303]
 ```
 
 ```mermaid
 xychart-beta
-    title "Cost of one call at 500,000 iterations"
+    title "Cost of one call at 100,000 iterations"
     x-axis ["this fork", "iris", "improved", "hscript", "rulescript", "insanity"]
     y-axis "microseconds" 0 --> 12
-    bar [1.312, 8.459, 8.620, 8.677, 9.053, 10.930]
+    bar [1.366, 8.650, 8.833, 8.837, 9.185, 10.882]
 ```
+
+### How much script fits in one frame
+
+The per-operation and per-call averages read as a budget. A 60Hz frame is 16.667ms;
+the second pair is a 2ms slice of it, which is a more realistic allowance once
+rendering and physics are paid for. Whole units, rounded down.
+
+**Derived, not measured at this scale.** Timing a frame's worth of work directly is dominated
+by noise -- a few hundred operations is far too short an interval to time on a preemptive OS.
+These come from the 100,000-iteration averages above, which are stable, multiplied back out.
+Read it the other way for a budget you already have in mind:
+
+```
+per-call us  x  calls per frame  x  60  =  us per second spent in script
+```
+
+| | this fork | insanity | hscript | improved | iris | rulescript |
+| --- | --- | --- | --- | --- | --- | --- |
+| operations per 60Hz frame | 24,788 | 12,787 | 29,017 | 19,316 | 31,469 | 23,316 |
+| calls per 60Hz frame | 12,204 | 1,531 | 1,885 | 1,886 | 1,926 | 1,814 |
+| operations per 2ms slice | 2,974 | 1,534 | 3,482 | 2,318 | 3,776 | 2,798 |
+| calls per 2ms slice | 1,464 | 183 | 226 | 226 | 231 | 217 |
 
 ### The ranking does not depend on the scale
 
@@ -138,27 +187,23 @@ warm-up or fixed-setup artefact rather than a property of the interpreter.
 
 | | this fork | insanity | hscript | improved | iris | rulescript |
 | --- | --- | --- | --- | --- | --- | --- |
-| us per operation, 25,000 | 0.687 | 1.369 | 0.592 | 0.868 | 0.540 | 0.741 |
-| us per operation, 100,000 | 0.672 | 1.329 | 0.586 | 0.854 | 0.535 | 0.731 |
-| us per operation, 500,000 | 0.667 | 1.326 | 0.578 | 0.854 | 0.527 | 0.724 |
-| us per call, 25,000 | 1.327 | 10.659 | 8.611 | 8.630 | 8.511 | 9.072 |
-| us per call, 100,000 | 1.312 | 10.642 | 8.542 | 8.566 | 8.464 | 9.034 |
-| us per call, 500,000 | 1.312 | 10.930 | 8.677 | 8.620 | 8.459 | 9.053 |
-| spread, operations | 3.1% | 3.3% | 2.4% | 1.6% | 2.6% | 2.4% |
-| spread, calls | 1.1% | 2.7% | 1.6% | 0.7% | 0.6% | 0.4% |
+| us per operation, 100,000 | 0.672 | 1.303 | 0.574 | 0.863 | 0.530 | 0.715 |
+| us per call, 100,000 | 1.366 | 10.882 | 8.837 | 8.833 | 8.650 | 9.185 |
+| spread, operations | 0.0% | 0.0% | 0.0% | 0.0% | 0.0% | 0.0% |
+| spread, calls | 0.0% | 0.0% | 0.0% | 0.0% | 0.0% | 0.0% |
 
 ### What position tracking costs the libraries that can switch it off
 
 Not a ranking. This fork cannot turn positions off, so the comparison above is built
-with them on everywhere; this is what that decision costs the others. At 500,000.
+with them on everywhere; this is what that decision costs the others. At 100,000.
 
 | | hscript | improved | iris | rulescript |
 | --- | --- | --- | --- | --- |
-| us per operation, with | 0.578 | 0.854 | 0.527 | 0.724 |
-| us per operation, without | 0.487 | 0.786 | 0.527 | 0.598 |
-| cost | 18.6% | 8.7% | 0.0% | 21.2% |
-| parse with, ms | 0.977 | 2.754 | 0.627 | 1.145 |
-| parse without, ms | 0.468 | 2.123 | 0.463 | 0.498 |
+| us per operation, with | 0.574 | 0.863 | 0.530 | 0.715 |
+| us per operation, without | 0.492 | 0.787 | 0.514 | 0.601 |
+| cost | 16.7% | 9.6% | 3.0% | 18.9% |
+| parse with, ms | 1.049 | 2.608 | 0.749 | 1.124 |
+| parse without, ms | 0.524 | 2.128 | 0.511 | 0.526 |
 
 <!-- END GENERATED -->
 
@@ -167,26 +212,17 @@ with them on everywhere; this is what that decision costs the others. At 500,000
 These came out of the value checking, not the timing, and matter more than any of the numbers above
 if you are choosing a library. All were reproduced directly, outside the harness.
 
-**`for (i in 0...n)` does not work on hxcpp in hscript, hscript-improved, RuleScript or upstream
-insanity.** The cause is a known hxcpp detail: `IntIterator`'s `hasNext`/`next` are `inline`, so they
-have no runtime form to reflect on. This fork and hscript-iris both special-case it.
+**`for (i in 0...n)` works everywhere, and a previous version of this page said otherwise.** It was
+recorded as broken on hxcpp in hscript, hscript-improved, RuleScript and upstream insanity, blamed on
+`IntIterator.hasNext`/`next` being `inline` and having no runtime form. Both halves were wrong. They
+have a runtime form; `-dce std` removes it because every call site inlines them, so nothing references
+them. Build with `-dce no` and all six libraries run `forRange` and `arrayCompr` correctly -- the whole
+`CRASH` column this page used to carry is gone, and so are the nine timeouts behind it.
 
-How it fails depends on whether the library was built with position tracking, which is worth knowing
-because the silent form is far harder to diagnose:
-
-```haxe
-// hscript, hscript-improved, RuleScript built WITHOUT -D hscriptPos
-var z = 1; for (k in 0...5) { } z = 2; z;   // -> null, no exception, rest of the program abandoned
-var z = 1; for (k in [1,2]) { } z = 2; z;   // -> 2, array iteration is fine
-
-// the same libraries built WITH -D hscriptPos
-var z = 1; for (k in 0...5) { } z = 2; z;   // -> raises "Invalid iterator: IntIterator"
-```
-
-This is also the whole explanation for `arrayCompr`: `[for (k in 0...5) ...]` abandons the enclosing
-block, the loop counter never advances, and the surrounding `while` spins forever, which is why the
-no-position builds of those three time out and are recorded as `CRASH`. With positions on they raise
-the same `IntIterator` error instead. Comprehension over an array works fine in every library.
+Worth stating plainly because the failure looks exactly like a library defect from the outside: a
+script gets `Cannot call null`, or on a build without position tracking it silently abandons the rest
+of the program. Neither points at the host's own compiler flags, which is where the cause is. See
+[`embedding.md`](embedding.md#what--dce-std-actually-removes) for what else DCE takes with it.
 
 **hscript-iris does not implement `++`.** `var i = 0; i++; i;` returns `0`, and `++i` behaves the
 same; `i = i + 1` and `i += 1` both work. Any `while (i < n) { ...; i++; }` therefore never
@@ -203,6 +239,8 @@ hscript-iris, which return the literal text. This fork, upstream insanity and Ru
 
 ## What was tested
 
+Haxe 4.3.7, hxcpp, `-dce no`, Windows, single machine, one sitting.
+
 | library | version | notes |
 | --- | --- | --- |
 | this fork | working tree | always tracks positions |
@@ -211,8 +249,6 @@ hscript-iris, which return the literal text. This fork, upstream insanity and Ru
 | [hscript-improved](https://github.com/CodenameCrew/hscript-improved) | `48ec0f4` | built both ways |
 | [hscript-iris](https://github.com/pisayesiwsi/hscript-iris) | 1.1.3 (`8867c9a`) | built both ways |
 | [RuleScript](https://github.com/Kriptel/RuleScript) | `b5b377a` | built both ways; needs hscript `609c489` |
-
-Haxe 4.3.7, hxcpp, Windows, single machine, one sitting.
 
 ## Reproducing
 
@@ -235,6 +271,9 @@ SCALES="50000 200000" LIBS=... sh test/xbench/run.sh
 
 They must be multiples of 1000, which is the array length `forArray` walks.
 
+`DCE` defaults to `no` and should stay there; see above. `DCE=std` reproduces what a host with default
+compiler flags actually gets, which is a different and also useful question.
+
 `collate.py` writes the whole of the Results section above. Paste its output between the two
 `GENERATED` markers rather than editing the tables by hand: it is one table of record plus its
 summaries, so a re-run replaces all of it in one go and there is nothing to keep in sync.
@@ -252,11 +291,16 @@ re-run everything in one sitting before comparing anything, and never merge a re
 into a table measured in another sitting.
 
 **The shared-case set excludes the cases some library cannot run**, so the totals and averages
-describe a common subset and say nothing about the features that subset leaves out: `forRange` and
-`arrayCompr` (the `IntIterator` issue above), `postIncr` (iris has no `++`), `strInterp` (three
-libraries return the literal text), `varTyped` and `fnTyped` (RuleScript rejects type annotations),
-and `classNew`/`classCall`/`classField` (only some libraries have scripted classes). Excluding them
-is generous to the libraries that fail them. The per-case list is where those live.
+describe a common subset and say nothing about the features that subset leaves out: `postIncr` (iris
+has no `++`), `strInterp` (three libraries return the literal text), `varTyped` and `fnTyped`
+(RuleScript rejects type annotations), and `classNew`/`classCall`/`classField` (only some libraries
+have scripted classes). Excluding them is generous to the libraries that fail them. The per-case list
+is where those live.
+
+**`arrayCompr` and `classNew` are excluded from the averages too**, for a different reason: they do
+far more than one operation per iteration, so a mean including them describes the outlier. Leaving
+`arrayCompr` in moved hscript-iris's per-operation figure from 0.53us to 1.02us on this run, which
+would have reported it as twice as slow as it is.
 
 **A micro-benchmark is not an application.** These cases isolate single operations on purpose, so
 they overstate interpreter differences relative to a real script that also touches the host's own

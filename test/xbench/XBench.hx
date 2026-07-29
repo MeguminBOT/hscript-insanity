@@ -9,7 +9,23 @@
  *   R|<lib>|<case>|<tier>|<status>|<ms>|<value>
  */
 class XBench {
-	static inline var REPS:Int = 3;
+	static inline var REPS:Int = 5;
+
+	/**
+	 * The MEDIAN of the reps, not the fastest.
+	 *
+	 * Best-of-N answers "how fast can this go when nothing interferes", which flatters whichever
+	 * library happened to get the quietest slice of the machine. The median answers "what does this
+	 * usually cost", which is the question a host budgeting a frame is actually asking, and it is
+	 * robust at both ends: an unlucky scheduler spike moves it no more than a lucky one does.
+	 *
+	 * @param xs Timings, reordered in place.
+	 * @return The middle timing.
+	 */
+	static function median(xs:Array<Float>):Float {
+		xs.sort(function(a:Float, b:Float):Int return (a < b) ? -1 : ((a > b) ? 1 : 0));
+		return xs[Std.int(xs.length / 2)];
+	}
 
 	public static function run(lib:String, prepare:String->Dynamic, exec:Dynamic->Dynamic):Void {
 		// One case per process invocation: two of the libraries under test segfault outright on a
@@ -49,7 +65,7 @@ class XBench {
 				continue;
 			}
 
-			var best:Float = 1e9;
+			var times:Array<Float> = [];
 			var value:Dynamic = null;
 			var failed:String = null;
 
@@ -60,9 +76,7 @@ class XBench {
 					var h:Dynamic = prepare(c.s);
 					var t0:Float = haxe.Timer.stamp();
 					value = exec(h);
-					var dt:Float = haxe.Timer.stamp() - t0;
-					if (dt < best)
-						best = dt;
+					times.push(haxe.Timer.stamp() - t0);
 				} catch (e:Dynamic) {
 					failed = shorten(Std.string(e));
 					break;
@@ -76,7 +90,7 @@ class XBench {
 
 			var got:String = Std.string(value);
 			var status:String = (got == c.x) ? "ok" : "wrong";
-			line(lib, c, status, best * 1000, got);
+			line(lib, c, status, median(times) * 1000, got);
 		}
 
 	}
@@ -84,21 +98,19 @@ class XBench {
 	/** Parse throughput, on a source of realistic size. */
 	static function parseBench(lib:String, prepare:String->Dynamic):Void {
 		var src:String = BenchCases.parseSource();
-		var best:Float = 1e9;
+		var times:Array<Float> = [];
 		var ok:Bool = true;
 		for (r in 0...REPS) {
 			try {
 				var t0:Float = haxe.Timer.stamp();
 				prepare(src);
-				var dt:Float = haxe.Timer.stamp() - t0;
-				if (dt < best)
-					best = dt;
+				times.push(haxe.Timer.stamp() - t0);
 			} catch (e:Dynamic) {
 				ok = false;
 				break;
 			}
 		}
-		Sys.println("P|" + lib + "|" + src.length + "|" + (ok ? Std.string(Std.int(best * 1e6) / 1000) : "unsupported"));
+		Sys.println("P|" + lib + "|" + src.length + "|" + (ok ? Std.string(Std.int(median(times) * 1e6) / 1000) : "unsupported"));
 	}
 
 	static function line(lib:String, c:BenchCases.Case, status:String, ms:Float, value:String):Void {

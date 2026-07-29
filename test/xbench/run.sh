@@ -18,9 +18,16 @@ OUT="$BIN/results.txt"
 
 mkdir -p "$BIN"
 
+# Dead code elimination, defaulted OFF. That is a correctness setting here rather than a tuning one:
+# under hxcpp's default `-dce std` the compiler eliminates `IntIterator.hasNext`/`next`, because every
+# call site inlines them and nothing references them statically, so an interpreter reaching them by
+# reflection finds a null field. It made `for (i in 0...n)` look like a defect in four of the six
+# libraries when it is a property of how the HOST was built. See docs/benchmarks.md.
+DCE=${DCE:-no}
+
 build() { # name, classpath, main, [extra hxml]
   [ -d "$2" ] || { echo "skip $1 (no $2)" >&2; return; }
-  haxe -cp "$HERE" -cp "$2" ${4:+"$4"} -main "$3" -cpp "$BIN/$1" >/dev/null 2>&1 \
+  haxe -cp "$HERE" -cp "$2" ${4:+"$4"} -dce "$DCE" -main "$3" -cpp "$BIN/$1" >/dev/null 2>&1 \
     || { echo "skip $1 (build failed)" >&2; return; }
   echo "$1"
 }
@@ -41,9 +48,9 @@ build iris-pos "$LIBS/iris" RunIris "$HERE/hscript-pos.hxml" >/dev/null
 # entirely, since the collator reads a position-less build as the no-pos column.
 if [ -d "$LIBS/rulescript" ] && [ -d "$LIBS/hscript-rs" ]; then
   haxe -cp "$HERE" -cp "$LIBS/rulescript" -cp "$LIBS/hscript-rs" "$HERE/rulescript-params.hxml" \
-    -main RunRuleScript -cpp "$BIN/rulescript" >/dev/null 2>&1 || echo "skip rulescript" >&2
+    -dce "$DCE" -main RunRuleScript -cpp "$BIN/rulescript" >/dev/null 2>&1 || echo "skip rulescript" >&2
   haxe -cp "$HERE" -cp "$LIBS/rulescript" -cp "$LIBS/hscript-rs" "$HERE/rulescript-params.hxml" \
-    "$HERE/hscript-pos.hxml" -main RunRuleScript -cpp "$BIN/rulescript-pos" >/dev/null 2>&1 \
+    "$HERE/hscript-pos.hxml" -dce "$DCE" -main RunRuleScript -cpp "$BIN/rulescript-pos" >/dev/null 2>&1 \
     || echo "skip rulescript-pos" >&2
 fi
 
@@ -51,10 +58,14 @@ fi
 # tr -d '\r': the runners emit CRLF, and a case name carrying a trailing CR matches nothing
 CASES=$("$BIN/ours/RunInsanity.exe" ours __list | tr -d '\r')
 
-# The whole corpus is run at each of these scales. One scale cannot tell a real per-operation
-# difference apart from a fixed setup cost or a warm-up artefact. Must be multiples of 1000, which is
-# the array length `forArray` walks.
-SCALES=${SCALES:-"25000 100000 500000"}
+# Scales the whole corpus is run at. Must be multiples of 1000, which is the array length `forArray`
+# walks.
+#
+# One scale by default. Three were used to establish that the ranking is a property of the
+# interpreters rather than a warm-up or fixed-setup artefact; that held, moving by at most a few
+# percent across a 20x change, so paying three times the wall time to re-establish it on every run is
+# not worth it. Pass SCALES to check it again after a change that could plausibly disturb it.
+SCALES=${SCALES:-"100000"}
 
 for entry in "ours:$BIN/ours/RunInsanity.exe" \
              "insanity-upstream:$BIN/upstream/RunInsanity.exe" \

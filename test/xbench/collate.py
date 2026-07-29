@@ -72,6 +72,14 @@ REF = scales[-1] if scales else 0
 CALLS = ["call0", "call1", "call3", "callCap20", "fnTyped", "classCall"]
 UNWIND = ["loopCont", "tryCatch"]
 
+# Cases that do materially more than one operation per iteration, so averaging them beside ones that
+# do not says nothing. `arrayCompr` runs a nested five-iteration loop per outer iteration, and
+# `classNew` builds an object and an interpreter. Both are 5-100x the cost of anything else measured
+# here, so a mean including them describes the outlier rather than the interpreter: `arrayCompr` alone
+# moved hscript-iris's per-operation average from 0.53us to 1.02us, which would have reported it as
+# twice as slow as it is. Kept in the list, out of the averages.
+COMPOUND = ["arrayCompr", "classNew"]
+
 
 def kind(case):
     """Which average a case feeds, which is also why a reader should or should not compare it."""
@@ -79,6 +87,8 @@ def kind(case):
         return "call"
     if case in UNWIND:
         return "unwind"
+    if case in COMPOUND:
+        return "compound"
     return "op"
 
 
@@ -149,14 +159,24 @@ def chart(title, unit, pairs, sort=True):
 print(f"\n### Every case, microseconds per iteration at {REF:,}\n")
 print("One row per case, and the only per-case table in this document. `kind` is which average the")
 print("row feeds: `op` and `call` are averaged separately because they differ by design rather than")
-print("by degree, and `unwind` cases are in neither, being dominated by how a library implements")
-print("`continue` and `throw`.\n")
+print("by degree. `unwind` cases are in neither, being dominated by how a library implements")
+print("`continue` and `throw`, and nor are `compound` ones, which do far more than one operation per")
+print("iteration and would describe themselves rather than the interpreter.")
+print("")
+# Folded away by default: it is the table of record and worth having, but it is thirty-odd rows and
+# the summary underneath is what answers the question. GitHub renders <details> in Markdown; it does
+# NOT support sortable tables, since it strips scripts, so the order here is the corpus order.
+print("<details>")
+print(f"<summary><strong>{sum(1 for c in order if REF in rows[c])} cases, click to expand</strong></summary>")
+print("")
 print("| case | kind | " + " | ".join(LABEL[l] for l in MAIN) + " |")
 print("| --- | --- |" + " --- |" * len(MAIN))
 for c in order:
     if REF not in rows[c]:
         continue
     print(f"| `{c}` | {kind(c)} | " + " | ".join(per_iter(rows[c][REF].get(l), REF) for l in MAIN) + " |")
+print("")
+print("</details>")
 
 # ---------------------------------------------------------------- summary
 
@@ -177,6 +197,42 @@ print("| total relative to this fork | " + " | ".join("%.2fx" % (tot[l] / base) 
 
 chart(f"Cost of one operation at {REF:,} iterations", "microseconds", [(LABEL[l], avg(l, perop, REF)) for l in MAIN])
 chart(f"Cost of one call at {REF:,} iterations", "microseconds", [(LABEL[l], avg(l, callc, REF)) for l in MAIN])
+
+# ---------------------------------------------------------------- frame budget
+
+# The same averages read as a budget, which is the shape a game actually needs: not "how many
+# microseconds does this cost" but "how much script fits in a frame". A 60Hz frame is 16.667ms, and
+# no game gives scripts all of it -- 2ms is a realistic slice with rendering and physics to pay for.
+FRAME_US = 1000000.0 / 60.0
+SLICE_MS = 2.0
+
+print("\n### How much script fits in one frame\n")
+print(f"The per-operation and per-call averages read as a budget. A 60Hz frame is {FRAME_US / 1000:.3f}ms;")
+print(f"the second pair is a {SLICE_MS:.0f}ms slice of it, which is a more realistic allowance once")
+print("rendering and physics are paid for. Whole units, rounded down.\n")
+print("**Derived, not measured at this scale.** Timing a frame's worth of work directly is dominated")
+print("by noise -- a few hundred operations is far too short an interval to time on a preemptive OS.")
+print(f"These come from the {REF:,}-iteration averages above, which are stable, multiplied back out.")
+print("Read it the other way for a budget you already have in mind:\n")
+print("```")
+print("per-call us  x  calls per frame  x  60  =  us per second spent in script")
+print("```\n")
+print("| | " + " | ".join(LABEL[l] for l in MAIN) + " |")
+print("| --- |" + " --- |" * len(MAIN))
+
+
+def budget(cases, us):
+    out = []
+    for l in MAIN:
+        a = avg(l, cases, REF)
+        out.append("{:,}".format(int(us / a)) if a else "n/a")
+    return out
+
+
+print("| operations per 60Hz frame | " + " | ".join(budget(perop, FRAME_US)) + " |")
+print("| calls per 60Hz frame | " + " | ".join(budget(callc, FRAME_US)) + " |")
+print(f"| operations per {SLICE_MS:.0f}ms slice | " + " | ".join(budget(perop, SLICE_MS * 1000)) + " |")
+print(f"| calls per {SLICE_MS:.0f}ms slice | " + " | ".join(budget(callc, SLICE_MS * 1000)) + " |")
 
 # ---------------------------------------------------------------- scale
 
