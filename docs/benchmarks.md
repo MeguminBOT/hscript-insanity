@@ -38,14 +38,63 @@ parses and "runs" a case without doing the work is reported as `WRONG`, not as i
 check earned its place: it caught two mistakes in the expected values, and three genuine behavioural
 differences between libraries that timings alone would have hidden.
 
-Each case runs in its **own process**, because some libraries hang or crash on some inputs and would
-otherwise take the rest of the run with them. 100,000 iterations, **median of 5**, hxcpp, one
-machine, one sitting.
+### How a case is run
+
+A case is a source string, an iteration count, and the value the source must evaluate to. The loop is
+written **into the script**, not around it, so what is timed is the interpreter running a loop rather
+than the host calling into it N times:
+
+```haxe
+// `call1`, at 100,000 iterations, expected value "7"
+function f(a) return a;
+var i = 0; var s = 0;
+while (i < 100000) { s = f(7); i += 1; }
+s;
+```
+
+Each library supplies two closures to
+[`XBench.run`](../test/xbench/XBench.hx) and nothing else, so the harness never touches a library's
+internals:
+
+- **`prepare(src)`** parses and builds whatever that library needs, and is **untimed**.
+- **`exec(handle)`** runs the prepared program and returns its value, and is **timed**.
+
+Per case the harness then:
+
+1. calls `prepare` once; if it throws or returns null the case is `not supported` for that library and
+   nothing is timed
+2. runs 5 reps. Each rep calls `prepare` **again**, then times `exec` alone. Re-preparing every rep
+   matters for fairness: a library that mutates its program in place or caches state on the
+   interpreter would otherwise look faster on reps 2-5 than one that does not
+3. takes the **median** of the 5 timings
+4. compares the returned value against the expected one, and records `ok` or `wrong`
+
+Expected values are derived from the iteration count (`call1` expects `7`, `loopPlain` expects the
+count itself), so the same corpus and the same checking work at any scale.
 
 The median rather than the fastest run: best-of-N answers "how fast can this go when nothing
 interferes", which flatters whichever library got the quietest slice of the machine. The median
 answers "what does this usually cost", which is what a host budgeting a frame needs, and an unlucky
 scheduler spike moves it no more than a lucky one does.
+
+Each case runs in its **own process**, with a 300-second timeout, because some libraries hang or
+crash outright on some inputs and would otherwise take the rest of the run down with them. Each
+emits one machine-readable line:
+
+```
+R|<lib>|<case>|<tier>|<iterations>|<status>|<median ms>|<value>
+```
+
+`tier` is `core` or `ext` -- whether the case uses only constructs every library is expected to have.
+It is not the `kind` column in the per-case table below, which `collate.py` derives from the case
+name to decide which average the row feeds.
+
+`collate.py` reads those lines and divides: microseconds per iteration is
+`median ms x 1000 / iterations`. Nothing in the tables is a raw timing, which is why they stay
+comparable across scales.
+
+Parse throughput is measured separately, and is the only place `prepare` is timed: one 11.6KB source
+of 80 small functions, median of 5, no execution.
 
 ### Built with `-dce no`, and that is a correctness setting
 
@@ -77,7 +126,6 @@ The corpus runs at 100,000 iterations. Three scales spanning 20x were used to es
 ranking is a property of the interpreters rather than a warm-up or fixed-setup artefact; it held,
 moving by at most a few percent, so re-establishing it on every run is not worth three times the wall
 time. `SCALES="25000 100000 500000"` checks it again after a change that could plausibly disturb it.
-Expected values are derived from the iteration count, so the value checking holds at any scale.
 
 ## Results
 
