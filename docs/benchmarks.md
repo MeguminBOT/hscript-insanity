@@ -96,39 +96,39 @@ iteration and would describe themselves rather than the interpreter.
 
 | case | kind | this fork | insanity | hscript | improved | iris | rulescript |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `noCall` | op | 0.478 | 1.043 | 0.394 | 0.643 | 0.375 | 0.517 |
-| `loopPlain` | op | 0.493 | 1.083 | 0.437 | 0.665 | 0.418 | 0.554 |
-| `loopCont` | unwind | 0.695 | 5.248 | 4.463 | 4.823 | 4.452 | 4.821 |
-| `postIncr` | op | 0.458 | 1.022 | 0.379 | 0.523 | WRONG (0) | 0.463 |
-| `arith` | op | 0.692 | 1.234 | 0.549 | 0.820 | 0.494 | 0.703 |
-| `locals` | op | 0.591 | 1.292 | 0.491 | 0.795 | 0.457 | 0.625 |
-| `blocks` | op | 0.705 | 1.624 | 0.578 | 0.989 | 0.535 | 0.744 |
-| `field` | op | 0.600 | 1.297 | 0.434 | 0.747 | 0.411 | 0.604 |
-| `fieldSet` | op | 0.655 | 1.178 | 0.437 | 0.750 | 0.429 | 0.560 |
-| `method` | op | 1.071 | 1.668 | 0.704 | 1.117 | 0.689 | 0.898 |
-| `index` | op | 0.554 | 1.171 | 0.443 | 0.734 | 0.423 | 0.601 |
-| `indexSet` | op | 0.546 | 1.150 | 0.447 | 0.744 | 0.435 | 0.600 |
-| `not` | op | 0.568 | 1.186 | 0.481 | 0.743 | 0.445 | 0.628 |
-| `neg` | op | 0.536 | 1.149 | 0.448 | 0.713 | 0.432 | 0.572 |
-| `call0` | call | 0.878 | 9.218 | 7.971 | 8.426 | 7.806 | 8.250 |
-| `call1` | call | 1.300 | 9.834 | 8.217 | 8.729 | 8.029 | 8.488 |
-| `call3` | call | 1.986 | 10.659 | 8.637 | 9.435 | 8.319 | 9.047 |
-| `callCap20` | call | 1.298 | 13.819 | 10.522 | 8.740 | 10.447 | 10.955 |
-| `forRange` | op | 0.173 | 0.305 | 0.174 | 0.273 | 0.139 | 0.210 |
-| `forArray` | op | 0.188 | 0.319 | 0.190 | 0.286 | 0.156 | 0.231 |
-| `arrayDecl` | op | 1.019 | 1.794 | 0.707 | 1.170 | 0.628 | 0.917 |
-| `strConcat` | op | 0.911 | 2.041 | 1.295 | 1.623 | 1.229 | 1.429 |
-| `ternary` | op | 0.745 | 1.470 | 0.738 | 1.033 | 0.666 | 0.901 |
-| `switch` | op | 0.854 | 1.604 | 0.775 | 0.996 | 0.666 | 0.894 |
-| `tryCatch` | unwind | 8.173 | 9.629 | 8.029 | 8.527 | 7.689 | 8.558 |
-| `strInterp` | op | 1.140 | 1.613 | WRONG (v$n) | WRONG (v$n) | WRONG (v$n) | 0.906 |
-| `mapLiteral` | op | 1.395 | 2.155 | 1.192 | 1.552 | 1.035 | 1.394 |
-| `arrayCompr` | compound | 3.179 | 4.227 | 3.264 | 5.209 | 10.376 | 11.308 |
-| `varTyped` | op | 0.669 | 1.031 | 0.392 | 0.641 | 0.387 | not supported |
-| `fnTyped` | call | 1.773 | 10.192 | 8.306 | 8.765 | 8.488 | not supported |
-| `classNew` | compound | 6.976 | 111.156 | not supported | 4.687 | not supported | not supported |
-| `classCall` | call | 1.563 | not supported | not supported | 9.151 | not supported | not supported |
-| `classField` | op | 0.711 | 1.475 | not supported | 0.875 | not supported | not supported |
+| `noCall` | op | 0.484 | 1.046 | 0.391 | 0.656 | 0.373 | 0.520 |
+| `loopPlain` | op | 0.510 | 1.106 | 0.429 | 0.680 | 0.406 | 0.556 |
+| `loopCont` | unwind | 0.728 | 5.333 | 4.487 | 5.137 | 4.402 | 5.006 |
+| `postIncr` | op | 0.474 | 1.024 | 0.378 | 0.550 | WRONG (0) | 0.481 |
+| `arith` | op | 0.710 | 1.226 | 0.544 | 0.838 | 0.501 | 0.708 |
+| `locals` | op | 0.587 | 1.313 | 0.492 | 0.800 | 0.467 | 0.624 |
+| `blocks` | op | 0.705 | 1.634 | 0.571 | 1.012 | 0.534 | 0.798 |
+| `field` | op | 0.629 | 1.313 | 0.436 | 0.761 | 0.422 | 0.618 |
+| `fieldSet` | op | 0.671 | 1.204 | 0.445 | 0.786 | 0.432 | 0.575 |
+| `method` | op | 1.102 | 1.721 | 0.708 | 1.094 | 0.691 | 0.951 |
+| `index` | op | 0.567 | 1.156 | 0.439 | 0.713 | 0.431 | 0.633 |
+| `indexSet` | op | 0.559 | 1.097 | 0.446 | 0.742 | 0.451 | 0.611 |
+| `not` | op | 0.596 | 1.226 | 0.478 | 0.755 | 0.458 | 0.658 |
+| `neg` | op | 0.569 | 1.166 | 0.439 | 0.739 | 0.429 | 0.596 |
+| `call0` | call | 0.879 | 9.328 | 7.794 | 8.505 | 7.814 | 8.600 |
+| `call1` | call | 1.316 | 10.075 | 8.012 | 8.573 | 8.461 | 8.925 |
+| `call3` | call | 1.968 | 10.963 | 8.427 | 9.196 | 8.683 | 9.120 |
+| `callCap20` | call | 1.318 | 13.891 | 10.276 | 8.558 | 11.362 | 10.949 |
+| `forRange` | op | 0.172 | 0.300 | 0.172 | 0.268 | 0.144 | 0.214 |
+| `forArray` | op | 0.186 | 0.324 | 0.187 | 0.284 | 0.158 | 0.234 |
+| `arrayDecl` | op | 1.032 | 1.870 | 0.689 | 1.147 | 0.634 | 0.935 |
+| `strConcat` | op | 0.941 | 2.129 | 1.255 | 1.559 | 1.264 | 1.438 |
+| `ternary` | op | 0.740 | 1.461 | 0.724 | 1.008 | 0.681 | 0.911 |
+| `switch` | op | 0.857 | 1.620 | 0.740 | 0.987 | 0.686 | 0.906 |
+| `tryCatch` | unwind | 8.271 | 9.749 | 7.869 | 8.207 | 8.043 | 8.547 |
+| `strInterp` | op | 1.169 | 1.651 | WRONG (v$n) | WRONG (v$n) | WRONG (v$n) | 0.929 |
+| `mapLiteral` | op | 1.430 | 2.209 | 1.170 | 1.557 | 1.071 | 1.421 |
+| `arrayCompr` | compound | 3.237 | 4.405 | 3.310 | 5.238 | 11.175 | 11.364 |
+| `varTyped` | op | 0.706 | 1.071 | 0.391 | 0.673 | 0.387 | not supported |
+| `fnTyped` | call | 1.797 | 10.999 | 8.052 | 8.911 | 8.348 | not supported |
+| `classNew` | compound | 7.112 | 108.589 | not supported | 5.101 | not supported | not supported |
+| `classCall` | call | 1.604 | not supported | not supported | 8.843 | not supported | not supported |
+| `classField` | op | 0.692 | 1.445 | not supported | 0.843 | not supported | not supported |
 
 </details>
 
@@ -136,26 +136,26 @@ iteration and would describe themselves rather than the interpreter.
 
 | | this fork | insanity | hscript | improved | iris | rulescript |
 | --- | --- | --- | --- | --- | --- | --- |
-| us per operation (19 cases) | 0.672 | 1.303 | 0.574 | 0.863 | 0.530 | 0.715 |
-| us per call (4 cases) | 1.366 | 10.882 | 8.837 | 8.833 | 8.650 | 9.185 |
-| parse, ms | 0.768 | 1.28 | 1.049 | 2.608 | 0.749 | 1.124 |
-| corpus total, ms | 3028 | 8740 | 6202 | 7028 | 6718 | 7501 |
-| total relative to this fork | 1.00x | 2.89x | 2.05x | 2.32x | 2.22x | 2.48x |
+| us per operation (19 cases) | 0.687 | 1.322 | 0.566 | 0.862 | 0.539 | 0.732 |
+| us per call (4 cases) | 1.370 | 11.064 | 8.627 | 8.708 | 9.080 | 9.398 |
+| parse, ms | 0.805 | 1.187 | 1.056 | 2.757 | 0.68 | 1.205 |
+| corpus total, ms | 3076 | 8887 | 6093 | 6980 | 7017 | 7642 |
+| total relative to this fork | 1.00x | 2.89x | 1.98x | 2.27x | 2.28x | 2.48x |
 
 ```mermaid
 xychart-beta
     title "Cost of one operation at 100,000 iterations"
     x-axis ["iris", "hscript", "this fork", "rulescript", "improved", "insanity"]
-    y-axis "microseconds" 0 --> 1.499
-    bar [0.530, 0.574, 0.672, 0.715, 0.863, 1.303]
+    y-axis "microseconds" 0 --> 1.521
+    bar [0.539, 0.566, 0.687, 0.732, 0.862, 1.322]
 ```
 
 ```mermaid
 xychart-beta
     title "Cost of one call at 100,000 iterations"
-    x-axis ["this fork", "iris", "improved", "hscript", "rulescript", "insanity"]
+    x-axis ["this fork", "hscript", "improved", "iris", "rulescript", "insanity"]
     y-axis "microseconds" 0 --> 12
-    bar [1.366, 8.650, 8.833, 8.837, 9.185, 10.882]
+    bar [1.370, 8.627, 8.708, 9.080, 9.398, 11.064]
 ```
 
 ### How much script fits in one frame
@@ -175,22 +175,10 @@ per-call us  x  calls per frame  x  60  =  us per second spent in script
 
 | | this fork | insanity | hscript | improved | iris | rulescript |
 | --- | --- | --- | --- | --- | --- | --- |
-| operations per 60Hz frame | 24,788 | 12,787 | 29,017 | 19,316 | 31,469 | 23,316 |
-| calls per 60Hz frame | 12,204 | 1,531 | 1,885 | 1,886 | 1,926 | 1,814 |
-| operations per 2ms slice | 2,974 | 1,534 | 3,482 | 2,318 | 3,776 | 2,798 |
-| calls per 2ms slice | 1,464 | 183 | 226 | 226 | 231 | 217 |
-
-### The ranking does not depend on the scale
-
-The whole corpus at each scale. If a difference only showed up at one size it would be a
-warm-up or fixed-setup artefact rather than a property of the interpreter.
-
-| | this fork | insanity | hscript | improved | iris | rulescript |
-| --- | --- | --- | --- | --- | --- | --- |
-| us per operation, 100,000 | 0.672 | 1.303 | 0.574 | 0.863 | 0.530 | 0.715 |
-| us per call, 100,000 | 1.366 | 10.882 | 8.837 | 8.833 | 8.650 | 9.185 |
-| spread, operations | 0.0% | 0.0% | 0.0% | 0.0% | 0.0% | 0.0% |
-| spread, calls | 0.0% | 0.0% | 0.0% | 0.0% | 0.0% | 0.0% |
+| operations per 60Hz frame | 24,270 | 12,605 | 29,445 | 19,323 | 30,947 | 22,771 |
+| calls per 60Hz frame | 12,163 | 1,506 | 1,931 | 1,913 | 1,835 | 1,773 |
+| operations per 2ms slice | 2,912 | 1,512 | 3,533 | 2,318 | 3,713 | 2,732 |
+| calls per 2ms slice | 1,459 | 180 | 231 | 229 | 220 | 212 |
 
 ### What position tracking costs the libraries that can switch it off
 
@@ -199,11 +187,11 @@ with them on everywhere; this is what that decision costs the others. At 100,000
 
 | | hscript | improved | iris | rulescript |
 | --- | --- | --- | --- | --- |
-| us per operation, with | 0.574 | 0.863 | 0.530 | 0.715 |
-| us per operation, without | 0.492 | 0.787 | 0.514 | 0.601 |
-| cost | 16.7% | 9.6% | 3.0% | 18.9% |
-| parse with, ms | 1.049 | 2.608 | 0.749 | 1.124 |
-| parse without, ms | 0.524 | 2.128 | 0.511 | 0.526 |
+| us per operation, with | 0.566 | 0.862 | 0.539 | 0.732 |
+| us per operation, without | 0.498 | 0.774 | 0.534 | 0.613 |
+| cost | 13.6% | 11.5% | 0.9% | 19.4% |
+| parse with, ms | 1.056 | 2.757 | 0.68 | 1.205 |
+| parse without, ms | 0.507 | 2.196 | 0.53 | 0.531 |
 
 <!-- END GENERATED -->
 
@@ -263,10 +251,11 @@ LIBS=/path/to/library/checkouts sh test/xbench/run.sh
 drops absent libraries rather than emptying the shared-case set, so a subset produces a table for
 that subset.
 
-Scales default to `25000 100000 500000` and are settable:
+Scales default to `100000` and are settable. Passing more than one also brings back the
+scale-stability table:
 
 ```sh
-SCALES="50000 200000" LIBS=... sh test/xbench/run.sh
+SCALES="25000 100000 500000" LIBS=... sh test/xbench/run.sh
 ```
 
 They must be multiples of 1000, which is the array length `forArray` walks.
@@ -289,6 +278,12 @@ no source positions at all, and this fork cannot work that way.
 10%, which is more than most of the differences between neighbouring libraries here. Rebuild and
 re-run everything in one sitting before comparing anything, and never merge a re-run of one library
 into a table measured in another sitting.
+
+**The noise floor of this suite is about 5%.** Running the whole thing twice on the same machine,
+median of 5 at 100,000 iterations, moved the per-operation averages by at most 2.4% and the per-call
+averages by at most 5.0% (hscript-iris; every other library stayed inside 2.4%). Rankings and ratios
+did not change. So treat a gap under roughly 5% as unresolved by this suite rather than as a
+difference, and re-run before believing one.
 
 **The shared-case set excludes the cases some library cannot run**, so the totals and averages
 describe a common subset and say nothing about the features that subset leaves out: `postIncr` (iris

@@ -236,19 +236,22 @@ print(f"| calls per {SLICE_MS:.0f}ms slice | " + " | ".join(budget(callc, SLICE_
 
 # ---------------------------------------------------------------- scale
 
-print("\n### The ranking does not depend on the scale\n")
-print("The whole corpus at each scale. If a difference only showed up at one size it would be a")
-print("warm-up or fixed-setup artefact rather than a property of the interpreter.\n")
-print("| | " + " | ".join(LABEL[l] for l in MAIN) + " |")
-print("| --- |" + " --- |" * len(MAIN))
-for n in scales:
-    s = shared(n, MAIN)
-    cs = [c for c in s if kind(c) == "op"]
-    print(f"| us per operation, {n:,} | " + " | ".join("%.3f" % avg(l, cs, n) for l in MAIN) + " |")
-for n in scales:
-    s = shared(n, MAIN)
-    cs = [c for c in s if kind(c) == "call"]
-    print(f"| us per call, {n:,} | " + " | ".join("%.3f" % avg(l, cs, n) for l in MAIN) + " |")
+# Only meaningful with more than one scale. With one it printed a table restating the summary and a
+# spread row reading 0.0% for every library, which says nothing.
+if len(scales) > 1:
+    print("\n### The ranking does not depend on the scale\n")
+    print("The whole corpus at each scale. If a difference only showed up at one size it would be a")
+    print("warm-up or fixed-setup artefact rather than a property of the interpreter.\n")
+    print("| | " + " | ".join(LABEL[l] for l in MAIN) + " |")
+    print("| --- |" + " --- |" * len(MAIN))
+    for n in scales:
+        s = shared(n, MAIN)
+        cs = [c for c in s if kind(c) == "op"]
+        print(f"| us per operation, {n:,} | " + " | ".join("%.3f" % avg(l, cs, n) for l in MAIN) + " |")
+    for n in scales:
+        s = shared(n, MAIN)
+        cs = [c for c in s if kind(c) == "call"]
+        print(f"| us per call, {n:,} | " + " | ".join("%.3f" % avg(l, cs, n) for l in MAIN) + " |")
 
 
 def spread(kind_name):
@@ -264,8 +267,8 @@ def spread(kind_name):
     return out
 
 
-print("| spread, operations | " + " | ".join(spread("op")) + " |")
-print("| spread, calls | " + " | ".join(spread("call")) + " |")
+    print("| spread, operations | " + " | ".join(spread("op")) + " |")
+    print("| spread, calls | " + " | ".join(spread("call")) + " |")
 
 # ---------------------------------------------------------------- no-pos
 
