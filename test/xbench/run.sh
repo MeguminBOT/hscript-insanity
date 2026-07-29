@@ -36,9 +36,15 @@ build iris "$LIBS/iris" RunIris >/dev/null
 build hscript-pos "$LIBS/hscript" RunHscript "$HERE/hscript-pos.hxml" >/dev/null
 build improved-pos "$LIBS/improved" RunHscript "$HERE/hscript-pos.hxml" >/dev/null
 build iris-pos "$LIBS/iris" RunIris "$HERE/hscript-pos.hxml" >/dev/null
+# RuleScript needs its own macro params on top, and like every other hscript-derived library it is
+# built BOTH ways. Building it only without positions dropped it out of the like-for-like comparison
+# entirely, since the collator reads a position-less build as the no-pos column.
 if [ -d "$LIBS/rulescript" ] && [ -d "$LIBS/hscript-rs" ]; then
   haxe -cp "$HERE" -cp "$LIBS/rulescript" -cp "$LIBS/hscript-rs" "$HERE/rulescript-params.hxml" \
     -main RunRuleScript -cpp "$BIN/rulescript" >/dev/null 2>&1 || echo "skip rulescript" >&2
+  haxe -cp "$HERE" -cp "$LIBS/rulescript" -cp "$LIBS/hscript-rs" "$HERE/rulescript-params.hxml" \
+    "$HERE/hscript-pos.hxml" -main RunRuleScript -cpp "$BIN/rulescript-pos" >/dev/null 2>&1 \
+    || echo "skip rulescript-pos" >&2
 fi
 
 : > "$OUT"
@@ -58,6 +64,7 @@ for entry in "ours:$BIN/ours/RunInsanity.exe" \
              "hscript-improved:$BIN/improved/RunHscript.exe" \
              "hscript-iris-pos:$BIN/iris-pos/RunIris.exe" \
              "hscript-iris:$BIN/iris/RunIris.exe" \
+             "rulescript-pos:$BIN/rulescript-pos/RunRuleScript.exe" \
              "rulescript:$BIN/rulescript/RunRuleScript.exe"; do
   lib=${entry%%:*}
   exe=${entry#*:}

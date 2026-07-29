@@ -1,4 +1,11 @@
-"""Collate the per-library benchmark lines into comparison tables, grouped by scale."""
+"""Collate the per-library benchmark lines into ONE per-case list plus compact summaries.
+
+Deliberately one table of record. An earlier version printed the whole corpus once per scale, plus
+totals, plus averages, plus a chart for each -- eighteen tables and eighteen charts saying a handful
+of things repeatedly, which is a lot to keep consistent by hand when a single number changes. What
+comes out now is one list at a reference scale, a summary, and the evidence that the ranking does not
+depend on the scale. Everything else was restatement.
+"""
 import sys, collections
 
 # Preferred column order. A library with no rows in the results is dropped rather than emptying the
@@ -59,9 +66,20 @@ seen = {lib for c in rows for n in rows[c] for lib in rows[c][n]} | set(parse)
 LIBS = [l for l in PREFERRED if l in seen]
 MAIN = [l for l in LIBS if l not in NOPOS]
 
+# The scale everything not explicitly about scale is reported at.
+REF = scales[-1] if scales else 0
 
-CALLS = ["call0", "call1", "call3", "fnTyped", "classCall"]
+CALLS = ["call0", "call1", "call3", "callCap20", "fnTyped", "classCall"]
 UNWIND = ["loopCont", "tryCatch"]
+
+
+def kind(case):
+    """Which average a case feeds, which is also why a reader should or should not compare it."""
+    if case in CALLS:
+        return "call"
+    if case in UNWIND:
+        return "unwind"
+    return "op"
 
 
 def cell(rec):
@@ -100,10 +118,12 @@ def avg(lib, cases, n):
     return sum(vals) / len(vals) if vals else 0.0
 
 
-
 def chart(title, unit, pairs, sort=True):
     """A single-series bar chart. Mermaid's xychart-beta has no legend, so every chart here plots one
-    series and puts the comparison on the x-axis, where it needs no key to read."""
+    series and puts the comparison on the x-axis, where it needs no key to read.
+
+    Used twice in the whole document, for the two figures the trade-off turns on. A chart of a number
+    already in a table beside it is duplication, not illustration."""
     pairs = [(l, v) for l, v in pairs if v is not None]
     if not pairs:
         return
@@ -124,127 +144,91 @@ def chart(title, unit, pairs, sort=True):
     print("```")
 
 
-def table(cases, n, libs, title, fmt):
-    print(f"\n#### {title}\n")
-    print("| case | " + " | ".join(LABEL[l] for l in libs) + " |")
-    print("| --- |" + " --- |" * len(libs))
-    for c in cases:
-        print(f"| `{c}` | " + " | ".join(fmt(rows[c][n].get(l), n) for l in libs) + " |")
+# ---------------------------------------------------------------- the list
 
-
-for n in scales:
-    print(f"\n### {n:,} iterations\n")
-    core = [c for c in order if tier.get(c) == "core" and n in rows[c]]
-    ext = [c for c in order if tier.get(c) != "core" and n in rows[c]]
-    # No chart for the per-case tables. A chart can only carry one series legibly (Mermaid has no
-    # legend), and one series means one library, which shows nothing the six-library table does not
-    # already show better. The comparison is the point of these tables.
-    for cases, name in ((core, "Core"), (ext, "Extended")):
-        table(cases, n, MAIN, f"{name} cases, microseconds per iteration", per_iter)
-
-    sh = shared(n, MAIN)
-    perop = [c for c in sh if c not in CALLS and c not in UNWIND]
-    callc = [c for c in sh if c in CALLS]
-    print(f"\n#### Averages over the {len(perop)} operation and {len(callc)} call cases every library ran\n")
-    print("| | " + " | ".join(LABEL[l] for l in MAIN) + " |")
-    print("| --- |" + " --- |" * len(MAIN))
-    print("| us per operation | " + " | ".join("%.3f" % avg(l, perop, n) for l in MAIN) + " |")
-    print("| us per call | " + " | ".join("%.3f" % avg(l, callc, n) for l in MAIN) + " |")
-    chart(f"Cost of one operation at {n:,} iterations", "microseconds", [(LABEL[l], avg(l, perop, n)) for l in MAIN])
-    chart(f"Cost of one call at {n:,} iterations", "microseconds", [(LABEL[l], avg(l, callc, n)) for l in MAIN])
-
-# Totals over the shared cases, per scale. Dominated by the call cases, so they are reported
-# alongside the per-operation and per-call averages rather than instead of them.
-print("\n### Total over the shared cases, per scale (ms)\n")
-print("| iterations | cases | " + " | ".join(LABEL[l] for l in MAIN) + " |")
+print(f"\n### Every case, microseconds per iteration at {REF:,}\n")
+print("One row per case, and the only per-case table in this document. `kind` is which average the")
+print("row feeds: `op` and `call` are averaged separately because they differ by design rather than")
+print("by degree, and `unwind` cases are in neither, being dominated by how a library implements")
+print("`continue` and `throw`.\n")
+print("| case | kind | " + " | ".join(LABEL[l] for l in MAIN) + " |")
 print("| --- | --- |" + " --- |" * len(MAIN))
-for n in scales:
-    sh = shared(n, MAIN)
-    tot = {l: sum(float(rows[c][n][l][1]) for c in sh) for l in MAIN}
-    print(f"| {n:,} | {len(sh)} | " + " | ".join("%.0f" % tot[l] for l in MAIN) + " |")
-for n in scales:
-    sh = shared(n, MAIN)
-    tot = {l: sum(float(rows[c][n][l][1]) for c in sh) for l in MAIN}
-    chart(f"Total over {len(sh)} shared cases at {n:,} iterations", "milliseconds", [(LABEL[l], tot[l]) for l in MAIN])
-print("\nRelative to this fork:\n")
-print("| iterations | " + " | ".join(LABEL[l] for l in MAIN) + " |")
+for c in order:
+    if REF not in rows[c]:
+        continue
+    print(f"| `{c}` | {kind(c)} | " + " | ".join(per_iter(rows[c][REF].get(l), REF) for l in MAIN) + " |")
+
+# ---------------------------------------------------------------- summary
+
+sh = shared(REF, MAIN)
+perop = [c for c in sh if kind(c) == "op"]
+callc = [c for c in sh if kind(c) == "call"]
+tot = {l: sum(float(rows[c][REF][l][1]) for c in sh) for l in MAIN}
+base = tot["ours"] if tot.get("ours") else 1.0
+
+print(f"\n### Summary, over the {len(sh)} cases every library ran\n")
+print("| | " + " | ".join(LABEL[l] for l in MAIN) + " |")
+print("| --- |" + " --- |" * len(MAIN))
+print(f"| us per operation ({len(perop)} cases) | " + " | ".join("%.3f" % avg(l, perop, REF) for l in MAIN) + " |")
+print(f"| us per call ({len(callc)} cases) | " + " | ".join("%.3f" % avg(l, callc, REF) for l in MAIN) + " |")
+print("| parse, ms | " + " | ".join(str(parse.get(l, "n/a")) for l in MAIN) + " |")
+print("| corpus total, ms | " + " | ".join("%.0f" % tot[l] for l in MAIN) + " |")
+print("| total relative to this fork | " + " | ".join("%.2fx" % (tot[l] / base) for l in MAIN) + " |")
+
+chart(f"Cost of one operation at {REF:,} iterations", "microseconds", [(LABEL[l], avg(l, perop, REF)) for l in MAIN])
+chart(f"Cost of one call at {REF:,} iterations", "microseconds", [(LABEL[l], avg(l, callc, REF)) for l in MAIN])
+
+# ---------------------------------------------------------------- scale
+
+print("\n### The ranking does not depend on the scale\n")
+print("The whole corpus at each scale. If a difference only showed up at one size it would be a")
+print("warm-up or fixed-setup artefact rather than a property of the interpreter.\n")
+print("| | " + " | ".join(LABEL[l] for l in MAIN) + " |")
 print("| --- |" + " --- |" * len(MAIN))
 for n in scales:
-    sh = shared(n, MAIN)
-    tot = {l: sum(float(rows[c][n][l][1]) for c in sh) for l in MAIN}
-    base = tot["ours"] if tot.get("ours") else 1.0
-    print(f"| {n:,} | " + " | ".join("%.2fx" % (tot[l] / base) for l in MAIN) + " |")
-_big = scales[-1]
-_sh = shared(_big, MAIN)
-_tot = {l: sum(float(rows[c][_big][l][1]) for c in _sh) for l in MAIN}
-_base = _tot["ours"] if _tot.get("ours") else 1.0
-chart(f"Total relative to this fork, at {_big:,} iterations", "times slower", [(LABEL[l], _tot[l] / _base) for l in MAIN])
+    s = shared(n, MAIN)
+    cs = [c for c in s if kind(c) == "op"]
+    print(f"| us per operation, {n:,} | " + " | ".join("%.3f" % avg(l, cs, n) for l in MAIN) + " |")
+for n in scales:
+    s = shared(n, MAIN)
+    cs = [c for c in s if kind(c) == "call"]
+    print(f"| us per call, {n:,} | " + " | ".join("%.3f" % avg(l, cs, n) for l in MAIN) + " |")
 
-print("\n### Parse throughput (11.6KB source, ms)\n")
-print("| " + " | ".join(LABEL[l] for l in LIBS) + " |")
-print("|" + " --- |" * len(LIBS))
-print("| " + " | ".join(parse.get(l, "n/a") for l in LIBS) + " |")
-def _pf(l):
-    v = parse.get(l)
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
-chart("Parse time for an 11.6KB script", "milliseconds", [(LABEL[l], _pf(l)) for l in MAIN])
 
-def _spread(kind):
+def spread(kind_name):
     out = []
     for l in MAIN:
         vals = []
         for n in scales:
-            sh = shared(n, MAIN)
-            cs = [c for c in sh if c in CALLS] if kind == "call" else [c for c in sh if c not in CALLS and c not in UNWIND]
+            s = shared(n, MAIN)
+            cs = [c for c in s if kind(c) == kind_name]
             vals.append(avg(l, cs, n))
         vals = [v for v in vals if v]
-        out.append((LABEL[l], (max(vals) - min(vals)) / min(vals) * 100.0 if vals else 0.0))
+        out.append("%.1f%%" % ((max(vals) - min(vals)) / min(vals) * 100.0) if vals else "n/a")
     return out
 
-# How stable the ranking is across scale: the per-operation average at each scale, side by side.
-print("\n### Per-operation average across scales (us)\n")
-print("| iterations | " + " | ".join(LABEL[l] for l in MAIN) + " |")
-print("| --- |" + " --- |" * len(MAIN))
-for n in scales:
-    sh = shared(n, MAIN)
-    perop = [c for c in sh if c not in CALLS and c not in UNWIND]
-    print(f"| {n:,} | " + " | ".join("%.3f" % avg(l, perop, n) for l in MAIN) + " |")
-chart("Per-operation cost, variation across a 20x change in scale", "percent", _spread("op"))
 
-print("\n### Per-call average across scales (us)\n")
-print("| iterations | " + " | ".join(LABEL[l] for l in MAIN) + " |")
-print("| --- |" + " --- |" * len(MAIN))
-for n in scales:
-    sh = shared(n, MAIN)
-    callc = [c for c in sh if c in CALLS]
-    print(f"| {n:,} | " + " | ".join("%.3f" % avg(l, callc, n) for l in MAIN) + " |")
-chart("Per-call cost, variation across a 20x change in scale", "percent", _spread("call"))
+print("| spread, operations | " + " | ".join(spread("op")) + " |")
+print("| spread, calls | " + " | ".join(spread("call")) + " |")
 
-# The position-tracking builds, kept separate so they cannot be mistaken for the fair comparison.
+# ---------------------------------------------------------------- no-pos
+
 if any(l in seen for l in NOPOS):
-    print("\n### The same libraries built without position tracking, per-operation average (us)\n")
-    pairs = [("hscript-pos", "hscript"), ("hscript-improved-pos", "hscript-improved"), ("hscript-iris-pos", "hscript-iris"),
-             ("rulescript-pos", "rulescript")]
+    pairs = [("hscript-pos", "hscript"), ("hscript-improved-pos", "hscript-improved"),
+             ("hscript-iris-pos", "hscript-iris"), ("rulescript-pos", "rulescript")]
     pairs = [(a, b) for a, b in pairs if a in seen and b in seen]
-    print("| iterations | " + " | ".join(f"{LABEL[a]} | {LABEL[b]}" for a, b in pairs) + " |")
-    print("| --- |" + " --- |" * (2 * len(pairs)))
-    for n in scales:
-        sh = shared(n, [l for p in pairs for l in p])
-        perop = [c for c in sh if c not in CALLS and c not in UNWIND]
-        cells = []
-        for a, b in pairs:
-            cells += ["%.3f" % avg(a, perop, n), "%.3f" % avg(b, perop, n)]
-        print(f"| {n:,} | " + " | ".join(cells) + " |")
-    _big = scales[-1]
-    _sh = shared(_big, [l for pr in pairs for l in pr])
-    _op = [c for c in _sh if c not in CALLS and c not in UNWIND]
-    chart(f"What position tracking costs per operation, at {_big:,} iterations", "percent",
-          [(LABEL[a], (avg(a, _op, _big) / avg(b, _op, _big) - 1) * 100.0) for a, b in pairs if avg(b, _op, _big)])
-    print("\n| | " + " | ".join(f"{LABEL[a]} | {LABEL[b]}" for a, b in pairs) + " |")
-    print("| --- |" + " --- |" * (2 * len(pairs)))
-    print("| parse (ms) | " + " | ".join(f"{parse.get(a,'n/a')} | {parse.get(b,'n/a')}" for a, b in pairs) + " |")
-    chart("What position tracking costs at parse time", "percent",
-          [(LABEL[a], (_pf(a) / _pf(b) - 1) * 100.0) for a, b in pairs if _pf(a) and _pf(b)])
+    if pairs:
+        print("\n### What position tracking costs the libraries that can switch it off\n")
+        print("Not a ranking. This fork cannot turn positions off, so the comparison above is built")
+        print(f"with them on everywhere; this is what that decision costs the others. At {REF:,}.\n")
+        s = shared(REF, [l for p in pairs for l in p])
+        op = [c for c in s if kind(c) == "op"]
+        print("| | " + " | ".join(LABEL[a] for a, _ in pairs) + " |")
+        print("| --- |" + " --- |" * len(pairs))
+        print("| us per operation, with | " + " | ".join("%.3f" % avg(a, op, REF) for a, _ in pairs) + " |")
+        print("| us per operation, without | " + " | ".join("%.3f" % avg(b, op, REF) for _, b in pairs) + " |")
+        print("| cost | " + " | ".join(
+            ("%.1f%%" % ((avg(a, op, REF) / avg(b, op, REF) - 1) * 100.0)) if avg(b, op, REF) else "n/a"
+            for a, b in pairs) + " |")
+        print("| parse with, ms | " + " | ".join(str(parse.get(a, "n/a")) for a, _ in pairs) + " |")
+        print("| parse without, ms | " + " | ".join(str(parse.get(b, "n/a")) for _, b in pairs) + " |")
