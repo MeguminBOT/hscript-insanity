@@ -86,6 +86,17 @@ new Script("damage * 2", "w", world).start(); // 42
 Config.globalVariables.set("VERSION", "1.4.0");
 ```
 
+**A bare `Interp`** is the one case that needs a step. `Script`, `Module`, `ImportModule` and every
+scripted type call `setDefaults()` for you, and the constructor deliberately does not -- all of them
+called it again immediately afterwards, so seeding twice was most of what building an interpreter
+cost. If you construct one yourself and run it directly, seed it first:
+
+```haxe
+var interp = new Interp();
+interp.setDefaults();   // globals, the default import, `trace`
+interp.execute(program);
+```
+
 **One script, after it has started**, then call in:
 
 ```haxe

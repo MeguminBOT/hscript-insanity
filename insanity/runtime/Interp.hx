@@ -177,7 +177,15 @@ class Interp {
 	public var ownerClass:ScriptedClass = null;
 
 	/**
-	 * Creates an interpreter, seeding it with defaults and the operator table.
+	 * Creates an interpreter with its operator table but WITHOUT the `Config` defaults.
+	 *
+	 * Call `setDefaults` before running anything in a bare interpreter. `Script`, `Module`,
+	 * `ImportModule` and every scripted type already do, which is why the constructor no longer does
+	 * it: all five construction sites in this library called `setDefaults` again immediately
+	 * afterwards, either wiping what the constructor had just seeded or seeding it a second time, so
+	 * the constructor's copy never had a surviving consumer. Applying the default wildcard import is
+	 * most of what an interpreter costs to build, so doing it twice was most of what building one
+	 * cost.
 	 *
 	 * @param environment The world to resolve types against, if any.
 	 * @param parent The owning object bound as context, if any.
@@ -194,7 +202,6 @@ class Interp {
 		variables = new Map();
 		declared = new Array();
 
-		setDefaults();
 		initOps();
 	}
 

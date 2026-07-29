@@ -50,6 +50,92 @@ Only same-session pairs appear as verified deltas below.
 
 ## Changes
 
+### The constructor no longer seeds defaults nothing was going to read
+
+The entry below made the default wildcard import cheap to resolve. This one stops resolving it twice.
+
+`Interp.new` ended with `setDefaults()`, and **every one of the five construction sites in the library
+called `setDefaults` again straight afterwards** -- `Module.init`, `Script.start`,
+`ScriptedClass.init`, `ScriptedInterface.init` and the generated instance bridge. Four of them pass
+`wipe: true`, which clears `imports`, `usings` and `variables`, so the constructor's work was thrown
+away; the bridge then copies the class's own tables over the top. The constructor's seeding had no
+surviving consumer anywhere in the library.
+
+Attribution, on one pre-built interpreter, 200,000 calls each:
+
+| | cost |
+| --- | --- |
+| `setDefaults(wipe, with config seeding)` | 2.728us |
+| `setDefaults(wipe, no config seeding)` | 0.047us |
+| `Reflect.makeVarArgs` (the `trace` binding) | 0.007us |
+| five empty collections | 0.016us |
+
+So the seeding is 2.68us of a 4.09us interpreter, and 28% of a 9.4us scripted-class instantiation.
+Two suspects that looked obvious were both wrong and are worth recording: the `trace` closure is
+free, and `Type.createInstance` matches a direct `new` (4.03 against 4.09), so reflection is not the
+cost either.
+
+Verified deltas (same session):
+
+| case | before | after | |
+| --- | --- | --- | --- |
+| `new Interp()` | 3.91 - 4.09us | 1.05 - 1.07us | **3.8x** |
+| `new Interp()` + an explicit `setDefaults()` | 6.48 - 6.84us | 4.04 - 4.21us | **1.6x** |
+| `new Script(...)` + `start()` | 10.84 - 11.32us | 8.22 - 8.28us | -25% |
+| `classNew`, bare class | 9.17 - 9.57us | 6.37 - 6.44us | -31% |
+| `classNew`, four methods | 11.56 - 12.08us | 8.71 - 8.94us | -25% |
+| `newInstBare` / `newInstGuard` / `newInstFields` | 190 / 220 / 244 | 129 / 161 / 186 | -32% / -27% / -24% |
+| the other 29 `Bench` cases | | unchanged | |
+
+`call0` first read +3.8%, which is inside this machine's drift: four alternating runs gave 79/80,
+80/79, 81/80, 81/81. It is timed after construction and the change cannot reach it.
+
+**This changes the public API**, and is the reason the entry is worth reading rather than just the
+diff: a bare `new Interp()` is now unseeded until something calls `setDefaults()`. Everything the
+library hands out -- `Script`, `Module`, `ImportModule`, scripted classes and interfaces -- already
+does it, so only a host driving an `Interp` directly is affected, and it is one line. That host is
+still better off than before the change, since it used to seed twice.
+
+For reference, hscript-improved builds its interpreter in 1.24us, which is the whole of its 2x lead
+on `classNew` (4.70us against our 9.4us). At 1.05us we now construct one faster than it does, and the
+remaining gap is its much cheaper class shape -- fields in a map behind `hget`/`hset` rather than real
+fields on a generated bridge, which is also why it loses 6x on method calls.
+
+### Identifiers sliced out of the source instead of grown a character at a time
+
+The lexer built every identifier with `id += String.fromCharCode(char)`: an allocation per character
+plus a copy of everything read so far, so lexing one was quadratic in its length -- on the most
+common token in any source. `readPos` already indexes the input, so the whole identifier comes out in
+one `substr`. Applied to identifiers, `@metadata` names and `#if` directives; operators are left
+alone, being one to three characters with backtracking that makes the same change fiddly for nothing.
+
+Parse throughput on an 89.8KB, 3401-line source: **21 -> 24 MB/s**, reproducible.
+
+Worth keeping in proportion: a 200KB mod parses in about 8ms either way, so parsing was not the
+bottleneck and this does not make it one.
+
+### A closure no longer copies its captured scope on every call
+
+`buildFunction` built the call frame with `duplicate(capturedLocals)` per invocation, so a script call
+cost O(size of the enclosing scope). A closure now keeps one frame map and reuses it; only re-entry
+takes a copy. Safe because `restore` already puts back every binding the prologue and body shadowed,
+which is the guarantee the enclosing scope relies on.
+
+| case | before | after | |
+| --- | --- | --- | --- |
+| `call_cap20` | 407 | 140 | **2.9x** |
+| `call0` / `callRet` | 85 | 79 | -7% |
+| `call1` | 128 | 119 | -7% |
+| `call` | 142 | 135 | -5% |
+| every other case | | unchanged | |
+
+`call_cap20` now matches plain `call`, so call cost no longer scales with scope size at all. Scripted
+class methods were always exempt, running in a fixed `functionLocals`.
+
+Fixed a latent bug the reuse made reachable: the `inTry` path unwound the frame on a caught exception
+but not its declarations, leaving them on `declared` for an enclosing `restore` to roll back once
+`locals` was the CALLER's scope -- writing a callee's parameters into its caller.
+
 ### The default wildcard import, resolved once per world instead of once per interpreter
 
 Constructing an interpreter cost **44.2us**, and **42.7us of it was `setDefaults`** seeding
