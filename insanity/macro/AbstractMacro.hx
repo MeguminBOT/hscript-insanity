@@ -254,6 +254,34 @@ class AbstractMacro {
 		var opMap:Map<String, String> = [];
 		var opPrinter = new haxe.macro.Printer();
 
+		// Members that get NO field on the wrapper: an `overload` set is skipped below, and an `extern`
+		// one has no runtime field to dispatch to in the first place. That matters because a re-emitted
+		// body (a property setter) can call one by name, and in the wrapper that name resolves to
+		// nothing -- `flixel.math.FlxPoint`'s `set_length` calls its `overload extern inline set(x, y)`
+		// and the generated class failed to compile on it.
+		var dropped:Map<String, Bool> = new Map();
+		for (field in fields) {
+			if (field.access == null)
+				continue;
+			if (field.access.contains(AOverload) || field.access.contains(AExtern))
+				dropped.set(field.name, true);
+		}
+
+		// What the underlying value offers, so a dropped member can be reached through it. An abstract's
+		// `overload extern inline` members are forwarders onto exactly this, which is why redirecting
+		// there reproduces what the abstract itself would have done.
+		var underlying:Map<String, Bool> = new Map();
+		switch (Context.follow(ab.type)) {
+			case TInst(r, _):
+				var c = r.get();
+				while (c != null) {
+					for (f in c.fields.get())
+						underlying.set(f.name, true);
+					c = (c.superClass != null) ? c.superClass.t.get() : null;
+				}
+			default:
+		}
+
 		for (field in fields) {
 			var name = field.name;
 			if (name == '__init__')
@@ -449,6 +477,11 @@ class AbstractMacro {
 											vars;
 										case EConst(CIdent('this')):
 											{expr: EConst(CIdent('__a')), pos: expr.pos};
+										case EConst(CIdent(f)) if (dropped.exists(f) && underlying.exists(f)):
+											// No wrapper field for this one, so go through the value it
+											// forwards to. A call lands here through its own callee
+											// ident, so `set(x, y)` becomes `__a.set(x, y)`.
+											{expr: EField({expr: EConst(CIdent('__a')), pos: expr.pos}, f), pos: expr.pos};
 										default:
 											ExprTools.map(expr, transformThis);
 									}
