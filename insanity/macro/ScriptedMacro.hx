@@ -759,6 +759,21 @@ class ScriptedMacro {
 				if (!__interp.variables.exists(k))
 					__interp.variables.set(k, v);
 
+			// A class's statics live on the CLASS interpreter. `setFields` below merges them into the
+			// scope it builds methods with, so a method could always reach them -- but a field
+			// INITIALIZER is evaluated against this interpreter instead, so `var state:Int = WAITING;`
+			// failed as an unknown identifier while `state = WAITING` inside a method worked. Shared by
+			// reference, so a static stays one value for the class rather than being snapshotted per
+			// instance.
+			for (k => v in base.__vars)
+				if (!__interp.locals.exists(k))
+					__interp.locals.set(k, v);
+
+			// Let a class name itself, so `MyClass.STATIC` resolves from inside `MyClass` the way it does
+			// from anywhere else. Without this the only way in was the unqualified name.
+			if (base.name != null && !__interp.variables.exists(base.name))
+				__interp.variables.set(base.name, base);
+
 			__fields = [];
 			var constructor:Dynamic = null;
 			function setInstanceFields(i:Dynamic) {
