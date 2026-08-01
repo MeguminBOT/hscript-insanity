@@ -62,6 +62,7 @@ class Module {
 	/** The interpreter's variable table (module-level values). */
 	public var variables(get, never):Map<String, Dynamic>;
 
+	/** @return The interpreter's variable table. */
 	inline function get_variables():Map<String, Dynamic> {
 		return interp.variables;
 	}

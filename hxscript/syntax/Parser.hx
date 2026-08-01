@@ -710,8 +710,14 @@ class Parser extends Lexer {
 			case "try":
 				var e = parseExpr();
 				ensureToken(TId("catch"));
-				// One or more catch clauses: the first fills v/t/ecatch, the rest go into
-				// `extra`, matched in declaration order at runtime (typed multi-catch).
+				/**
+				 * Parses one `catch (v:T) expr` clause.
+				 *
+				 * The first clause fills `v`/`t`/`ecatch` and the rest go into `extra`, matched in declaration
+				 * order at runtime (typed multi-catch).
+				 *
+				 * @return The clause's variable, declared type and body.
+				 */
 				function parseCatch():{v:String, t:Null<CType>, expr:Expr} {
 					ensure(TPOpen);
 					var cv = getIdent();
@@ -1066,6 +1072,12 @@ class Parser extends Lexer {
 				push(b);
 				push(a);
 
+				/**
+				 * Parses the return type of a function type after its arguments.
+				 *
+				 * @param args The argument types already parsed.
+				 * @return The complete function type.
+				 */
 				function withReturn(args) {
 					switch token() { // I think it wouldn't hurt if ensure used enumEq
 						case TOp('->'):
@@ -1210,8 +1222,6 @@ class Parser extends Lexer {
 		}
 		return args;
 	}
-
-	// ------------------------ module -------------------------------
 
 	/**
 	 * Parses a whole module (a sequence of top-level declarations).
@@ -1832,8 +1842,7 @@ class Parser extends Lexer {
 		return null;
 	}
 
-	// ------------------------ lexing -------------------------------
-
+	/** Creates a parser with the default grammar flags. */
 	public function new() {
 		super();
 	}
@@ -1850,6 +1859,12 @@ class Parser extends Lexer {
 		fid = uid = 0;
 	}
 
+	/**
+	 * Parses the condition of a `#if` / `#elseif` as a full expression, so comparisons against
+	 * compilation defines work rather than only bare flags.
+	 *
+	 * @return The condition expression.
+	 */
 	override function preproExpr():Expr {
 		return parseExpr();
 	}

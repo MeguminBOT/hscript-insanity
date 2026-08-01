@@ -73,6 +73,11 @@ class SweepProbe {
 		p("compound arr", "{ var a=[1]; a[0] *= 7; a[0]; }", "7");
 		p("num to string", "1 + 2 + 'x' + 1 + 2", "3x12");
 		p("float fmt", "0.5 + 0.25", "0.75");
+		// An exponent used to be applied as `* Math.pow(10, -k)`, which is not correctly rounded, so
+		// `1e-5` and `0.00001` were different doubles.
+		p("neg exponent", "1e-5 == 0.00001", "true");
+		p("pos exponent", "1.5e3", "1500");
+		p("exponent of a fraction", "2.5e-3 == 0.0025", "true");
 		trace("-- preprocessor --");
 		raw("if define", "#if hxscript\nres='yes';\n#else\nres='no';\n#end", "yes");
 		raw("if not def", "#if nope\nres='yes';\n#else\nres='no';\n#end", "no");
@@ -94,6 +99,10 @@ class SweepProbe {
 		roundTrip("tab", "'a\tb'");
 		// `identChars` includes digits, but an identifier cannot start with one, so `$5` is literal.
 		roundTrip("dollar then digit", "'costs $5'");
+		// A cast printed its type through the declaration helper, which prefixes ` : `, so the output
+		// was `cast(v, : T)` and did not parse.
+		roundTrip("cast to type", "cast(5, Float)");
+		roundTrip("check type", "(5 : Float)");
 
 		trace("-- errors --");
 		p("multi-catch", "{ try { throw 5; } catch (s:String) { 'str'; } catch (i:Int) { 'int'; } }", "int");

@@ -459,6 +459,12 @@ class Lexer {
 		return t;
 	}
 
+	/**
+	 * Reads the next token. `token` wraps this to record the token's extent for error positions.
+	 *
+	 * @param interpolateStrings Whether a single-quoted string is scanned for `$` interpolation.
+	 * @return The token.
+	 */
 	function _token(interpolateStrings:Bool = true) {
 		var char;
 		var colOffset:Int = this.columnOffset;
@@ -508,9 +514,11 @@ class Lexer {
 								}
 								if (pow == null)
 									invalidChar(char);
-								if (exp == 0)
-									exp = 10;
-								return TConst(CFloat((Math.pow(10, pow) / exp) * n * 10));
+								var mantissa:Float = (exp > 0) ? n * 10 / exp : n;
+								// 10^k is exact up to k = 22, so DIVIDING by it for a negative exponent is
+								// correctly rounded where multiplying by an inexact 10^-k is not: '1e-5' has
+								// to land on the same double as '0.00001'.
+								return TConst(CFloat(pow < 0 ? mantissa / Math.pow(10, -pow) : mantissa * Math.pow(10, pow)));
 							case ".".code:
 								if (exp > 0) {
 									// in case of '0...'

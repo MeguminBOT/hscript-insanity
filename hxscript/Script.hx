@@ -30,6 +30,7 @@ class Script {
 	/** The interpreter's variable table. */
 	public var variables(get, never):Map<String, Dynamic>;
 
+	/** @return The interpreter's variable table. */
 	inline function get_variables():Map<String, Dynamic> {
 		return interp.variables;
 	}

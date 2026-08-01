@@ -15,6 +15,7 @@ class ScriptedAbstractValue extends AbstractValue {
 	/** The value this box wraps. */
 	public var boxed(get, never):Dynamic;
 
+	/** @return The underlying value this box wraps. */
 	inline function get_boxed():Dynamic {
 		return __a;
 	}

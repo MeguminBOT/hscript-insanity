@@ -92,7 +92,6 @@ class XBench {
 			var status:String = (got == c.x) ? "ok" : "wrong";
 			line(lib, c, status, median(times) * 1000, got);
 		}
-
 	}
 
 	/** Parse throughput, on a source of realistic size. */

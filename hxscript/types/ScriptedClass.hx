@@ -203,13 +203,13 @@ class ScriptedClass implements IScriptedType implements ICustomReflection implem
 					}
 
 					try {
-						interp.locals.get(f).r = (v.expr == null ? null : interp.exprReturn(v.expr, v.type));
+						initField(f, v);
 					} catch (d:Defer) {
 						var signal = (env?.onInitialized ?? module.onInitialized);
 
 						signal.push(function(_) {
 							try {
-								interp.locals.get(f).r = interp.exprReturn(v.expr, v.type);
+								initField(f, v);
 							} catch (e:haxe.Exception) {
 								onExpressionError(e, f, v.expr);
 							}
@@ -226,6 +226,12 @@ class ScriptedClass implements IScriptedType implements ICustomReflection implem
 
 		var foundOverridingFields:Array<String> = [];
 		var inheritedFields:Array<String> = [];
+		/**
+		 * Starts an ancestor's module if it has not run yet, so its field list is readable before this
+		 * class's overrides are resolved against it.
+		 *
+		 * @param extending The class being extended.
+		 */
 		function overrideFieldCheck(extending:Dynamic) {
 			if (extending is ScriptedClass) {
 				var extend:ScriptedClass = cast extending;
@@ -404,6 +410,11 @@ class ScriptedClass implements IScriptedType implements ICustomReflection implem
 			return false;
 
 		var found:Bool = false;
+		/**
+		 * Searches a constructor body for a `super(...)` call.
+		 *
+		 * @param e The expression to search.
+		 */
 		function walk(e:Expr):Void {
 			if (found || e == null)
 				return;
@@ -517,6 +528,11 @@ class ScriptedClass implements IScriptedType implements ICustomReflection implem
 	public function typeGetInstanceFields():Array<String> {
 		var fields:Array<String> = [];
 
+		/**
+		 * Collects a class's instance field names, walking up through its ancestors.
+		 *
+		 * @param c The class or instance to collect from.
+		 */
 		function getFields(c:Dynamic) {
 			if (c is ScriptedClass) {
 				for (field in cast(c, ScriptedClass).decl.fields) {
@@ -585,6 +601,54 @@ class ScriptedClass implements IScriptedType implements ICustomReflection implem
 	}
 
 	/** @return The static field names. */
+	/**
+	 * Evaluates a field's initializer and binds it the way a local `var` is bound.
+	 *
+	 * Goes through `Interp.bindDeclared` so a field declared with an abstract type boxes and records
+	 * its type, exactly as the identical local does. Assigning straight into `r` skipped both, which
+	 * is why an abstract-typed field's methods and operators were unreachable while a local's worked.
+	 *
+	 * @param f The field name.
+	 * @param v The field's declaration.
+	 */
+	function initField(f:String, v:VarDecl):Void {
+		var value:Dynamic = (v.expr == null) ? null : interp.exprReturn(v.expr, v.type);
+		var slot:Variable = interp.locals.get(f);
+		var bound:Variable = interp.bindDeclared(value, v.type);
+
+		slot.r = bound.r;
+		slot.a = bound.a;
+		if (bound.t != null)
+			slot.t = bound.t;
+	}
+
+	/**
+	 * The declared type of a static method's first parameter, for static-extension resolution.
+	 *
+	 * A `using` is otherwise matched by method NAME alone, so `(5).twice()` would reach a `String`
+	 * extension. A script-declared extension still carries its parameter types at runtime, so the
+	 * receiver can be checked against this before the call. Compiled extensions have no such
+	 * information -- see the parity document.
+	 *
+	 * @param name The static method's name.
+	 * @return The first parameter's declared type, or null when it is absent, unannotated, or not a
+	 *         static function at all.
+	 */
+	public function staticArgType(name:String):Null<CType> {
+		for (field in decl.fields) {
+			if (field.name != name || !field.access.contains(AStatic))
+				continue;
+			switch (field.kind) {
+				case KFunction(fun):
+					return (fun.args.length > 0) ? fun.args[0].t : null;
+				case KVar(_):
+					return null;
+			}
+		}
+		return null;
+	}
+
+	/** @return Every field name reflection can see on this instance. */
 	public function reflectListFields():Array<String> {
 		return [for (field in __vars.keys()) field];
 	}
@@ -597,7 +661,8 @@ class ScriptedClass implements IScriptedType implements ICustomReflection implem
 	 * @param expr The initializer expression, if available.
 	 */
 	public dynamic function onExpressionError(error:Dynamic, field:String, ?expr:Expr):Void {
-		trace('Error on field $field of $path: $error');
+		trace('Error on field $field of $path:
+' + describeError(error));
 	}
 
 	/**
@@ -608,6 +673,22 @@ class ScriptedClass implements IScriptedType implements ICustomReflection implem
 	 * @param instance The instance it ran on, if available.
 	 */
 	public dynamic function onInstanceError(error:Dynamic, fun:String, ?instance:IScriptedInstance):Void {
-		trace('Error on function $fun of $path: $error');
+		trace('Error on function $fun of $path:
+' + describeError(error));
+	}
+
+	/**
+	 * Renders a thrown value with its call stack when it has one.
+	 *
+	 * `Script` and `Module` report program failures with `haxe.Exception.details()`, which includes
+	 * the frames; these two hooks interpolated the value instead, so an error inside a field
+	 * initializer or a method arrived with no stack at all -- the least debuggable place to lose it.
+	 *
+	 * @param error The thrown value.
+	 * @return The rendered error, with frames when available.
+	 */
+	public static function describeError(error:Dynamic):String {
+		var ex:haxe.Exception = (error is haxe.Exception) ? cast error : null;
+		return (ex != null) ? ex.details() : Std.string(error);
 	}
 }

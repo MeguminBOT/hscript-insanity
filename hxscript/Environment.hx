@@ -133,6 +133,11 @@ class Environment {
 			all: []
 		};
 
+		/**
+		 * Records every type a module declares, so other modules in this environment can name them.
+		 *
+		 * @param module The module to index.
+		 */
 		function makeTypeInfo(module:Module) {
 			var pack:String = module.pack.join('.');
 

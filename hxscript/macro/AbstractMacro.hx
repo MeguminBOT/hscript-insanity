@@ -82,17 +82,28 @@ class AbstractMacro {
 				mode: INormal
 			});
 		}
-		/* imports.push({
-			path: [for (v in (ab.module + (ab.module != '' ? '.' : '') + ab.name).split('.')) {name: v, pos: pos}],
-			mode: INormal
-		});*/
-
+		/**
+		 * The importable path of a sibling type, or null when it has none.
+		 *
+		 * A private type, a type parameter (a one-character name) and the abstract being built
+		 * itself are all excluded: none of them can be named from the generated wrapper.
+		 *
+		 * @param tt The candidate type.
+		 * @param ty The type whose module is being imported, so it does not import itself.
+		 * @return The dotted path, or null.
+		 */
 		function getTypePath(tt:Dynamic, ?ty:Dynamic) {
 			if (tt.isPrivate || tt.name.length <= 1 || tt.name == ty?.name)
 				return null;
 
 			return (tt.module + (tt.module.length > 0 ? '.' : '') + tt.name);
 		}
+		/**
+		 * Imports every sibling type in a type's module, so the wrapper can name them unqualified.
+		 *
+		 * @param ty The type whose module is pulled in.
+		 * @return Whether every sibling resolved to an importable path.
+		 */
 		function tryImport(ty:Dynamic):Bool {
 			var pack:Array<String> = ty.module.split('.');
 			for (t in Context.getModule(pack.join('.'))) {
@@ -120,7 +131,13 @@ class AbstractMacro {
 
 			return true;
 		}
-		function stripComplex(?t:ComplexType):ComplexType { // just strip the params
+		/**
+		 * Drops type parameters from a type, since they are erased at runtime anyway.
+		 *
+		 * @param t The type to strip, or null.
+		 * @return The parameterless type, or null.
+		 */
+		function stripComplex(?t:ComplexType):ComplexType {
 			if (t == null)
 				return null;
 			return switch (t) {
@@ -132,13 +149,42 @@ class AbstractMacro {
 					throw 'Invalid $t';
 			}
 		}
+		/**
+		 * Converts a typed `Type` back to a `ComplexType` the wrapper can declare.
+		 *
+		 * A single-character name is a type parameter, which has no runtime identity, so it degrades
+		 * to `Dynamic` rather than being emitted as an unresolvable path.
+		 *
+		 * @param t The type to convert.
+		 * @param includeParams Whether to carry type parameters across.
+		 * @return The equivalent complex type.
+		 */
 		function toComplex(t:haxe.macro.Type, includeParams:Bool = false):ComplexType {
+			/**
+			 * Converts a type-parameter list for re-emission.
+			 *
+			 * @param params The parameters to convert.
+			 * @return The converted parameters.
+			 */
+			/**
+			 * Converts a type-parameter list for re-emission.
+			 *
+			 * @param params The parameters to convert.
+			 * @return The converted parameters.
+			 */
 			function toTypeParam(params:Array<haxe.macro.Type>):Array<TypeParam> {
 				return [for (t in params) TPType(toComplex(t))];
 			}
+			/**
+			 * Builds the path for one referenced type, degrading a type parameter to `Dynamic`.
+			 *
+			 * @param r The type reference.
+			 * @param p Its type parameters.
+			 * @return The complex type to emit.
+			 */
 			function stuff(r:Dynamic, p:Array<haxe.macro.Type>) {
 				var ct = r.get();
-				if (ct.name.length <= 1) { // constructible bs
+				if (ct.name.length <= 1) {
 					return macro :Dynamic;
 				} else {
 					return TPath({name: ct.name, pack: ct.pack, params: (includeParams ? toTypeParam(p) : null)});
@@ -154,11 +200,24 @@ class AbstractMacro {
 				default: macro :Dynamic; // throw 'Invalid $t'; TODO tfun??
 			}
 		}
+		/**
+		 * Resolves a complex type through the typer and back, so aliases arrive fully qualified.
+		 *
+		 * @param t The type to resolve, or null.
+		 * @param includeParams Whether to carry type parameters across.
+		 * @return The resolved type, or null.
+		 */
 		function getFullComplex(t:ComplexType, includeParams:Bool = false):ComplexType {
 			if (t == null)
 				return null;
 			return toComplex(t.toType(), includeParams);
 		}
+		/**
+		 * Wraps an expression definition at the build position.
+		 *
+		 * @param expr The definition to position.
+		 * @return The positioned expression.
+		 */
 		function ex(expr:ExprDef):Expr {
 			return {pos: pos, expr: expr};
 		}
@@ -226,6 +285,14 @@ class AbstractMacro {
 		var rabstractT = {name: ab.name, pack: ab.pack};
 		var abstractT = {name: cls.name, pack: ab.pack};
 
+		/**
+		 * Boxes a field access back into the wrapper when the field's type is the abstract itself.
+		 *
+		 * @param expr The access to wrap.
+		 * @param typeIsAbstract Whether the value needs boxing.
+		 * @param ownReturn Whether to emit a `return` around it.
+		 * @return The wrapped expression.
+		 */
 		function afield(expr, typeIsAbstract:Bool, ownReturn:Bool = false) {
 			var newExpr;
 			if (ownReturn) {
@@ -236,9 +303,23 @@ class AbstractMacro {
 
 			return newExpr;
 		}
+		/**
+		 * Builds a method body that returns `expr`, boxed when the return type is the abstract.
+		 *
+		 * @param expr The value to return.
+		 * @param returnIsAbstract Whether the return value needs boxing.
+		 * @param ownReturn Whether `expr` already carries its own `return`.
+		 * @return The method body.
+		 */
 		function func(expr, returnIsAbstract:Bool, ownReturn:Bool = false) {
 			return macro return ${afield(expr, returnIsAbstract, ownReturn)};
 		}
+		/**
+		 * Whether a type names the abstract currently being built.
+		 *
+		 * @param t The type to test, or null.
+		 * @return Whether it is this abstract.
+		 */
 		function matchAbstract(t:ComplexType) {
 			if (t == null)
 				return false;
@@ -362,6 +443,13 @@ class AbstractMacro {
 							continue;
 
 						var typeIsMe:Bool = matchAbstract(t);
+						/**
+						 * Rewrites bare references to the abstract's own fields into private-access paths on the
+						 * implementation class, so a re-emitted body still reaches them from the wrapper.
+						 *
+						 * @param e The expression to rewrite.
+						 * @return The rewritten expression.
+						 */
 						function mapIdent(e:Expr) {
 							return switch (e.expr) {
 								case EConst(CIdent(f)):
@@ -455,6 +543,13 @@ class AbstractMacro {
 							var setterExpr = null;
 							var isSetter = StringTools.startsWith(name, 'set_');
 							if (isSetter) {
+								/**
+								 * Rewrites a setter body for the wrapper: `this` becomes the boxed value `__a`, and local
+								 * `var` types are erased because the wrapper does not carry the abstract's type parameters.
+								 *
+								 * @param expr The setter body.
+								 * @return The rewritten body.
+								 */
 								function transformThis(expr) {
 									return switch (expr.expr) {
 										case EVars(a):
@@ -542,10 +637,6 @@ class AbstractMacro {
 				}
 			}
 		}
-		/*trace('FROM: ' + (macro $b {fromExpr}).toString());
-			trace('TO: ' + (macro $b {toExpr}).toString());
-			trace('--------------------------- finisched'); */
-
 		cls.fields.push({
 			name: 'set_value',
 			pos: pos,

@@ -75,11 +75,27 @@ class ScriptedMacro {
 		var inlinedFields:Array<String> = [];
 		var omittedFields:Array<String> = [];
 
-		// `Type.toComplexType()` renders a sub-module type as `pack.SubType`, dropping the module that
-		// actually holds it (e.g. `pack.SubType` instead of `pack.Module.SubType`), which then fails
-		// to resolve. Rebuild paths from the module so `sub` is filled in, recursing through type
-		// parameters.
+		/**
+		 * Converts a typed `Type` to the `ComplexType` the bridge declares.
+		 *
+		 * `Type.toComplexType()` renders a sub-module type as `pack.SubType`, dropping the module that
+		 * actually holds it (`pack.Module.SubType`), which then fails to resolve. Paths are rebuilt
+		 * from the module so `sub` is filled in, recursing through type parameters.
+		 *
+		 * @param t The type to convert.
+		 * @return The equivalent complex type.
+		 */
 		function toCT(t:Type):ComplexType {
+			/**
+			 * Builds a path from a type's MODULE rather than its package, so a sub-module type keeps its
+			 * qualifier and does not collapse onto a same-named type at the package root.
+			 *
+			 * @param pack The type's package.
+			 * @param module Its module path.
+			 * @param name Its own name.
+			 * @param params Its type parameters.
+			 * @return The qualified path.
+			 */
 			function fromModule(pack:Array<String>, module:String, name:String, params:Array<Type>):ComplexType {
 				var parts:Array<String> = module.split('.');
 				var moduleName:String = parts.pop();
@@ -116,9 +132,15 @@ class ScriptedMacro {
 			}
 		}
 
-		// Whether every type in a signature can be named from generated code. A `private`
-		// type (e.g. openfl.events.EventDispatcher's internal `Listener`) can't be referenced
-		// by path, so a method mentioning one can't be overridden -- it falls through to super.
+		/**
+		 * Whether a type, and everything it is parameterised by, can be named from generated code.
+		 *
+		 * A `private` type (`openfl.events.EventDispatcher`'s internal `Listener`) cannot be referenced
+		 * by path, so a method mentioning one cannot be overridden and falls through to super.
+		 *
+		 * @param t The type to test, or null.
+		 * @return Whether it is nameable.
+		 */
 		function typeAccessible(t:Type):Bool {
 			if (t == null)
 				return true;
@@ -138,7 +160,13 @@ class ScriptedMacro {
 		var hasConstructor:Bool = false;
 		var hasToString:Bool = false;
 
-		// should probably rewrite this later,  with New knowledge
+		/**
+		 * Emits the bridge fields for one class in the chain, binding its type parameters to the
+		 * concrete types the subclass supplied.
+		 *
+		 * @param type The class being bridged.
+		 * @param types The concrete type arguments, if any.
+		 */
 		function setFields(type:ClassType, ?types:Array<Type>) {
 			var typeFields:Array<ClassField> = type.fields.get();
 
@@ -161,8 +189,14 @@ class ScriptedMacro {
 			}
 
 			if (!hasConstructor && (type.constructor != null || type.superClass != null)) {
-				// Dotted path of a static field's owner, module-qualified so sub-module and
-				// abstract-impl types keep the right name (`flixel.math.FlxRect`, not `FlxRect_Impl_`).
+				/**
+				 * The dotted path a static must be reached through, module-qualified so sub-module and
+				 * abstract-impl types keep the right name (`flixel.math.FlxRect`, not `FlxRect_Impl_`).
+				 *
+				 * @param c The declaring class.
+				 * @param fieldName The static's name.
+				 * @return The path segments to emit.
+				 */
 				function staticOwnerPath(c:ClassType, fieldName:String):Array<String> {
 					var parts:Array<String> = c.module.split('.');
 					var moduleName:String = parts.pop();
@@ -177,6 +211,13 @@ class ScriptedMacro {
 					return path;
 				}
 
+				/**
+				 * Re-emits a typed expression as untyped syntax, requalifying every type it names so the
+				 * result compiles in the generated bridge rather than in its original module.
+				 *
+				 * @param e The typed expression.
+				 * @return The re-emittable expression.
+				 */
 				function mapTyped(e:TypedExpr):Expr {
 					return switch (e.expr) {
 						case TNew(c, tp, params):
@@ -226,10 +267,16 @@ class ScriptedMacro {
 					}
 				}
 
-				// Whether a typed initializer references `this` anywhere. Such an initializer can't
-				// be re-emitted into the constructor: either it reads instance state that isn't set
-				// up yet, or (for an inlined abstract like FlxPoint.get) its body assigns to `this`,
-				// which is illegal outside that abstract.
+				/**
+				 * Whether a typed initializer references `this` anywhere.
+				 *
+				 * Such an initializer cannot be re-emitted into the constructor: either it reads instance
+				 * state that is not set up yet, or (for an inlined abstract like `FlxPoint.get`) its body
+				 * assigns to `this`, which is illegal outside that abstract.
+				 *
+				 * @param e The expression to test, or null.
+				 * @return Whether `this` is reached.
+				 */
 				function referencesThis(e:TypedExpr):Bool {
 					if (e == null)
 						return false;
@@ -252,14 +299,27 @@ class ScriptedMacro {
 					return found;
 				}
 
-				// A field initializer is re-emitted unless it touches `this`. Pooled initializers
-				// such as `_lastClipRect = FlxRect.get(Math.NaN)` inline to a block calling PRIVATE
-				// pool helpers -- these MUST run or the field stays null and the sprite crashes in
-				// draw (checkClipRect), so the re-emitted init is wrapped in `@:privateAccess`.
+				/**
+				 * Whether a field initializer can be lifted into the bridge as-is.
+				 *
+				 * A pooled initializer such as `_lastClipRect = FlxRect.get(Math.NaN)` inlines to a block
+				 * calling PRIVATE pool helpers. Those must still run, or the field stays null and the sprite
+				 * crashes in `draw`, so a re-emitted init is wrapped in `@:privateAccess`.
+				 *
+				 * @param e The initializer, or null.
+				 * @return Whether it is safe to re-emit.
+				 */
 				function reemittable(e:TypedExpr):Bool {
 					return e != null && !referencesThis(e);
 				}
 
+				/**
+				 * Collects a class's member initializers, which run before its constructor body and would
+				 * otherwise be lost when the constructor chain is rebuilt.
+				 *
+				 * @param type The class to collect from.
+				 * @return The initializer assignments.
+				 */
 				function fieldInits(type:ClassType):Array<Expr> {
 					var inits:Array<Expr> = [];
 
@@ -291,6 +351,12 @@ class ScriptedMacro {
 					return inits;
 				}
 
+				/**
+				 * Rebuilds a class's constructor as an anonymous function, walking up the superclass chain.
+				 *
+				 * @param type The class whose constructor is rebuilt.
+				 * @return The constructor as a function expression.
+				 */
 				function mapConstructor(type:ClassType):Expr {
 					// A class with no `new` of its own still owns member initializers, and its native
 					// init continues in the superclass. Emit both, otherwise the chain breaks at any
@@ -333,6 +399,13 @@ class ScriptedMacro {
 							expr = fun.expr;
 					}
 
+					/**
+					 * Rewrites a `super(...)` call for the bridge, dropping trailing nulls so an optional argument
+					 * keeps its default instead of being overwritten.
+					 *
+					 * @param e The expression to rewrite.
+					 * @return The rewritten expression.
+					 */
 					function mapSuper(e:Expr) {
 						return switch (e.expr) {
 							case ENew(t, params):
@@ -590,6 +663,12 @@ class ScriptedMacro {
 								var ownParamNames:Array<String> = [for (p in ownParams) p.name];
 
 								var cantInfer:Bool = false;
+								/**
+								 * Substitutes a bound concrete type for a type parameter.
+								 *
+								 * @param t The type to substitute in.
+								 * @return The type with parameters resolved.
+								 */
 								function mapGeneric(t:ComplexType) {
 									switch (t) {
 										case TPath(p):
@@ -776,6 +855,12 @@ class ScriptedMacro {
 
 			__fields = [];
 			var constructor:Dynamic = null;
+			/**
+			 * Binds a native superclass instance's fields as interpreter locals, so a scripted override
+			 * reads and writes the real object rather than a shadow copy.
+			 *
+			 * @param i The native instance.
+			 */
 			function setInstanceFields(i:Dynamic) {
 				var instanceFields:Array<String> = i.instanceFields;
 				if (instanceFields == null)
@@ -797,6 +882,12 @@ class ScriptedMacro {
 
 				__interp.locals.set('super', {r: hxscript.runtime.Mirror.MSuper(superLocals, __constructSuper)});
 			}
+			/**
+			 * Binds a scripted class's own fields as interpreter locals.
+			 *
+			 * @param t The scripted class.
+			 * @param isSuper Whether it is being bound as an ancestor rather than the instance itself.
+			 */
 			function setFields(t:hxscript.types.ScriptedClass, isSuper:Bool = false) {
 				for (field in t.decl.fields) {
 					var f:String = field.name;
@@ -865,8 +956,17 @@ class ScriptedMacro {
 							__interp.locals.get(f).r = __interp.buildFunction(f, fun.args, fun.expr, fun.ret, superLocals);
 
 						case KVar(v):
-							if (__interp.locals.exists(f))
-								__interp.locals.get(f).r = (v.expr == null ? null : __interp.exprReturn(v.expr, v.type));
+							if (__interp.locals.exists(f)) {
+								// Bound the way a local `var` is, so an abstract-typed field boxes and
+								// records its type instead of storing the bare underlying value.
+								var __value:Dynamic = (v.expr == null) ? null : __interp.exprReturn(v.expr, v.type);
+								var __slot:hxscript.runtime.Variable = __interp.locals.get(f);
+								var __bound:hxscript.runtime.Variable = __interp.bindDeclared(__value, v.type);
+								__slot.r = __bound.r;
+								__slot.a = __bound.a;
+								if (__bound.t != null)
+									__slot.t = __bound.t;
+							}
 					}
 
 					__vars.set(f, __interp.locals.get(f));
@@ -879,6 +979,12 @@ class ScriptedMacro {
 					__interp.locals.set('super', {r: hxscript.runtime.Mirror.MSuper(superLocals, constructor ?? __constructSuper)});
 			}
 
+			/**
+			 * Walks the inheritance chain from the top down, binding each ancestor's fields so a subclass
+			 * override shadows the ancestor's rather than the other way round.
+			 *
+			 * @param extending The class or instance being extended.
+			 */
 			function setSuperFields(extending:Dynamic) {
 				if (extending is hxscript.types.ScriptedClass) {
 					var extend:hxscript.types.ScriptedClass = cast extending;

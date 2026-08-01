@@ -149,6 +149,7 @@ class Interp {
 	/** Whether any of `return` / `break` / `continue` is pending, so statement sequences must stop. */
 	var unwinding(get, never):Bool;
 
+	/** @return Whether a `return`, `break` or `continue` is pending. */
 	inline function get_unwinding():Bool
 		return returning || breaking || continuing;
 
@@ -1587,7 +1588,10 @@ class Interp {
 				if (types != null && types.length > 0) {
 					for (type in types) {
 						var t = type.resolve();
-						if (t is Class && !usings.contains(t))
+						// A script-declared class resolves to a `ScriptedClass`, not a `Class`, so gating
+						// on `is Class` alone meant `using` a scripted extension registered nothing and
+						// every call through it failed with `Cannot call`.
+						if ((t is Class || t is ScriptedClass) && !usings.contains(t))
 							usings.push(t);
 						imports.set(type.name, t);
 					}
@@ -1773,7 +1777,6 @@ class Interp {
 						str += " for function '" + name + "'";
 					error(ECustom(str));
 				}
-				// make sure mandatory args are forced
 				var args2 = [];
 				var extraParams = args.length - minParams;
 				var pos = 0;
@@ -1901,6 +1904,12 @@ class Interp {
 
 		var exprCompr:(e:Expr, ?inFor:Bool) -> Dynamic = null;
 
+		/**
+		 * Accumulates one element of a comprehension, choosing an array or a map from whether the
+		 * element is a `=>` pair.
+		 *
+		 * @param e The element expression.
+		 */
 		function forExpr(e:Expr) {
 			var v:Dynamic = exprCompr(e, true);
 
@@ -1994,7 +2003,7 @@ class Interp {
 			}
 
 			switch (t) {
-				case CTPath(path, params): // hell
+				case CTPath(path, params):
 					var fullPath:String = path.join('.');
 
 					if (fullPath == 'Map') { // infer from parameters
@@ -2034,7 +2043,7 @@ class Interp {
 						var p = new Printer();
 						error(ECustom('Map of type <${p.typeToString(params[0])}, ${p.typeToString(params[1])}> is not accepted'));
 					} else {
-						var t:Dynamic = resolve(fullPath); // alias stuff
+						var t:Dynamic = resolve(fullPath);
 
 						if (t is haxe.ds.IntMap || t is haxe.ds.StringMap || t is haxe.ds.ObjectMap || t is haxe.ds.EnumValueMap)
 							return Type.createInstance(t, []);
@@ -2055,6 +2064,11 @@ class Interp {
 	function evalSwitch(e:Expr, cases:Array<{values:Array<Expr>, expr:Expr, ?guard:Expr}>, def:Null<Expr>, void:Bool, mapCompr:Bool):Dynamic {
 		var hasCapture:Bool = false;
 
+		/**
+		 * Sets `hasCapture` if a sub-expression of a pattern binds a name rather than matching a value.
+		 *
+		 * @param e The sub-expression to inspect.
+		 */
 		function iterCapture(e:Expr) {
 			switch (e.e) {
 				case EIdent('_') | EIdent(_.isTypeIdentifier() => false):
@@ -2070,12 +2084,29 @@ class Interp {
 			}
 		}
 
+		/**
+		 * Whether a pattern binds anything, which decides if a `case` needs its own scope.
+		 *
+		 * @param e The pattern.
+		 * @return Whether it captures.
+		 */
 		function checkCapture(e:Expr) {
 			hasCapture = false;
 			e.iter(iterCapture);
 			return hasCapture;
 		}
 
+		/**
+		 * Matches one `case` pattern against a value, binding any captures it declares.
+		 *
+		 * A lower-case identifier is a capture and an upper-case one is a type or constructor, which is
+		 * why an unresolved upper-case name is an error rather than a silent catch-all.
+		 *
+		 * @param e The pattern.
+		 * @param match The value being matched.
+		 * @param deep Whether to descend into sub-patterns.
+		 * @return Whether the pattern matched.
+		 */
 		function testCase(e:Expr, match:Dynamic, deep:Bool = true) {
 			return switch (e.e) {
 				case EIdent(id):
@@ -2254,12 +2285,8 @@ class Interp {
 				declared.push({n: n, old: locals.get(n)});
 
 				var v:Dynamic = (e == null ? null : expr(e, t));
-				if (t != null)
-					v = tryCast(v, t);
-				var l:Variable = (AbstractTools.isAbstract(v) ? {r: v.__a, a: v} : {r: v});
+				var l:Variable = bindDeclared(v, t);
 
-				if (t != null)
-					l.t = t;
 				if (get != null)
 					l.get = get;
 				if (set != null)
@@ -2401,8 +2428,16 @@ class Interp {
 					// to the original so a typed clause matches its real type and the catch var
 					// binds that value. Real exceptions pass through unchanged.
 					var raw:Dynamic = (err is haxe.ValueException) ? (cast(err, haxe.ValueException)).value : err;
-					// Match the value against each clause in order (typed multi-catch); the first
-					// whose declared type accepts it runs, otherwise the error is rethrown.
+					/**
+					 * Runs one `catch` clause with its exception variable bound, restoring the scope afterwards.
+					 *
+					 * Clauses are tried in declaration order (typed multi-catch); the first whose declared type
+					 * accepts the value runs, otherwise the error is rethrown.
+					 *
+					 * @param cn The exception variable's name.
+					 * @param ce The clause body.
+					 * @return The clause's value.
+					 */
 					function runCatch(cn:String, ce:Expr):Dynamic {
 						declared.push({n: cn, old: locals.get(cn)});
 						locals.set(cn, {r: raw});
@@ -2744,6 +2779,61 @@ class Interp {
 		}
 	}
 
+	/**
+	 * Builds the slot for an annotated binding: applies the declared type, boxes an abstract, and
+	 * records the type so later writes are checked against it.
+	 *
+	 * Shared by local `var` declarations and by class/static field initialisation. They used to
+	 * differ -- a field assigned its value straight into `r`, so a field declared with an abstract
+	 * type never boxed and its methods and operators were unreachable, while the identical local did.
+	 *
+	 * @param v The evaluated initial value.
+	 * @param t The declared type, or null when the binding is unannotated.
+	 * @return The slot to store.
+	 */
+	public function bindDeclared(v:Dynamic, ?t:CType):Variable {
+		if (t != null)
+			v = tryCast(v, t);
+
+		var l:Variable = (AbstractTools.isAbstract(v) ? {r: v.__a, a: v} : {r: v});
+		if (t != null)
+			l.t = t;
+		return l;
+	}
+
+	/**
+	 * Whether a value satisfies a declared type, without throwing.
+	 *
+	 * Deliberately implemented ON `tryCast` rather than as a parallel matcher: the check used to
+	 * SELECT a static extension and the check used to ENFORCE an annotation have to agree, and two
+	 * implementations of the same rules drift. Only reached on the extension-resolution path, which
+	 * is already the fallback taken after a direct field lookup failed.
+	 *
+	 * @param v The value to test.
+	 * @param t The declared type, or null (which matches anything).
+	 * @return Whether `v` would pass `tryCast` against `t`.
+	 */
+	function typeMatches(v:Dynamic, ?t:CType):Bool {
+		if (t == null)
+			return true;
+		try {
+			tryCast(v, t);
+			return true;
+		} catch (_:Dynamic)
+			return false;
+	}
+
+	/**
+	 * Coerces a value to a declared type, or throws if it cannot hold it.
+	 *
+	 * This is the single enforcement point for typed mode: annotations, arguments, returns, `cast`
+	 * and abstract boxing all arrive here, and `typeMatches` is the same test without the throw, so
+	 * checking a type and enforcing one cannot drift apart.
+	 *
+	 * @param e The value to coerce.
+	 * @param type The declared type, or null to accept anything.
+	 * @return The value, boxed or widened where the type requires it.
+	 */
 	function tryCast(e:Dynamic, ?type):Dynamic {
 		switch (type) {
 			case null:
@@ -3336,11 +3426,29 @@ class Interp {
 		if (!Reflect.isFunction(fun)) {
 			for (t in usings) {
 				var fun = get(t, f, true);
-				if (Reflect.isFunction(fun)) {
-					try {
-						args.unshift(o);
-						return Reflect.callMethod(t, fun, args);
-					} catch (e:Dynamic) {}
+				if (!Reflect.isFunction(fun))
+					continue;
+
+				// A script-declared extension still carries its parameter types, so the receiver is checked
+				// against the first one rather than by method name alone. Called outside the guard below,
+				// so an error thrown inside it surfaces.
+				var scripted:ScriptedClass = (t is ScriptedClass) ? cast t : null;
+				if (scripted != null) {
+					var argType:CType = scripted.staticArgType(f);
+					if (argType != null && !typeMatches(o, argType))
+						continue;
+
+					args.unshift(o);
+					return Reflect.callMethod(t, fun, args);
+				}
+
+				// A compiled extension has no parameter types at runtime, so a mismatch can only be found
+				// by trying. `o` is shifted back on failure, or the next candidate receives it twice.
+				try {
+					args.unshift(o);
+					return Reflect.callMethod(t, fun, args);
+				} catch (e:Dynamic) {
+					args.shift();
 				}
 			}
 

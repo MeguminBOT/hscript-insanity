@@ -26,12 +26,12 @@ For putting the library into a project in the first place, see the
 | abstracts, scripted and native: `@:op`, `@:arrayAccess`, `from`/`to` | | |
 | typedef aliases | custom metadata (mostly inert) | compile-time type errors / inference |
 | static / instance / `private` / getters-setters | `private` enforcement (opt-in, explicit only) | overload resolution |
-| `using`, `import` (`as` / `.*` / single field) | typed metadata / `untyped` (no-op) | overriding native `inline`/`final`/`@:generic` methods |
+| `using` (typed on scripted classes), `import` (`as` / `.*` / single field) | typed metadata / `untyped` (no-op) | overriding native `inline`/`final`/`@:generic` methods |
 | string interpolation, comprehensions | | interface default methods |
 | optional/default/rest args | | compile-time inlining / DCE |
 | typed multi-catch, closures, `#if` | | |
 | **runtime type enforcement** (`cast`/`is`/var/param/return) | | |
-| **`Int`/`Float` correctness** | | |
+| **`Int`/`Float` correctness** | | type-checking `using` on compiled classes |
 
 ---
 
@@ -41,8 +41,8 @@ Type annotations are **enforced at runtime**, not just parsed. This is gated by 
 which defaults on (`-D hxscript_dynamic` flips the default off, and a host may set it per script
 world). Enforcement flows through a single point, `tryCast` in
 [`hxscript/runtime/Interp.hx`](../hxscript/runtime/Interp.hx), reached at variable declarations,
-**every later write to an annotated variable**, function arguments, function returns, `(e : T)`, and
-`cast(x, T)`:
+**every later write to an annotated variable**, function arguments, function returns, `(e : T)`,
+`cast(x, T)`, and class and static field initialization:
 
 - **`cast(x, T)` is a real checked cast.** In typed mode it throws when `x` is not a `T`, like Haxe's
   safe cast. `x is T` / `Std.isOfType(x, T)` also work for classes, interfaces, scripted enums, and
@@ -53,7 +53,9 @@ world). Enforcement flows through a single point, `tryCast` in
   quietly retyping it. `Int` widens to `Float` where Haxe allows it, and an annotated variable
   applies its abstract's `from` cast on assignment the way it does at declaration. Containers (`Array`, `Map`) and function types (a callable
   is required for `f:Int->Void`) are checked; structural typedefs are checked by field presence, and
-  `private` members are access-checked.
+  `private` members are access-checked. A **class or static field** declared with a type binds
+through the same path a local does (`Interp.bindDeclared`), so an abstract-typed field boxes and
+records its type rather than storing the bare underlying value.
 - **`Int` and `Float` are correct.** Integer arithmetic stays `Int` (so `is Int`, integer map keys,
   and array indices behave), and `/` is always `Float`. One platform caveat: on hxcpp a
   whole-number `Float` boxed in a `Dynamic` reads back as `Int` (`Type.typeof(10/2)` is `TInt`).
@@ -62,8 +64,9 @@ world). Enforcement flows through a single point, `tryCast` in
 What is still missing is everything that needs the *compiler*:
 
 - **No compile-time type errors and no inference.** Mismatches surface as runtime throws, not
-  editor/compile errors. There is no static checker in the
-  library (the upstream one was removed as dead code); adding one is a possible future direction.
+  editor/compile errors. There is no static checker in the library (the upstream one was removed as
+  dead code). [checker.md](checker.md) is the design for one: what it could prove without
+  inference, what it could not, and why the boundary sits there.
 - **No overload resolution.** Haxe's method overloading and implicit conversions at call boundaries
   don't exist.
 - **`untyped` is a no-op**, there is nothing to suppress.
@@ -219,6 +222,31 @@ the `createEnum` fix, see the note on that method in
 
 ---
 
+## Static extensions
+
+A `using` works on a script-declared class and on a compiled one, but only one of the two can be
+type-checked.
+
+Two placement rules come first, and both match Haxe. A `using` has to appear **before any
+declaration** in the script, and it cannot name a class the *same script* declares: the extension
+has to be compiled, or declared in another `Module` in the same `Environment`. Reaching for a
+locally-declared one fails at parse time with `import and using may not appear after a
+declaration`, which reads like a placement error rather than the scoping one it is.
+
+A **script-declared** extension still has its declaration at runtime, so the receiver is checked
+against the first parameter's declared type (`ScriptedClass.staticArgType`, then
+`Interp.typeMatches`) before the call. Several extensions may therefore share a method name, and
+`(5).twice()` reaches the one that accepts an `Int` rather than whichever registered first.
+`typeMatches` is `tryCast` without the throw, deliberately: the test that *selects* an extension
+and the test that *enforces* an annotation cannot drift apart.
+
+A **compiled** extension's parameter types do not exist at runtime, so there is nothing to check
+it against. A mismatch can only be found by calling and failing, which is what happens. The
+practical consequence: a compiled extension whose name collides with another may be tried first
+and rejected on an exception, and a compiled extension that throws internally on a legitimate
+call is indistinguishable from one that did not apply. Prefer script-declared extensions where
+the name is not unique.
+
 ## What has parity
 
 For reference, the following behave like Haxe:
@@ -230,7 +258,8 @@ For reference, the following behave like Haxe:
 - typedef aliases to named types;
 - `static` / instance / `private` / getters & setters (`get`/`set`/`null`/`never`/`default`/
   `dynamic`), `final` fields;
-- `using` static extensions;
+- `using` static extensions, **selected by receiver type** when the extension is declared in a
+  script (see below);
 - `import`, normal, `as` alias, wildcard `.*`, and single static field / enum constructor;
 - string interpolation (`'$ident'`, `'${expr}'`), array and map comprehensions;
 - optional, default, and rest (`...`) arguments;

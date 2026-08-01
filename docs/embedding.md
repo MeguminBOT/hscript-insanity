@@ -149,6 +149,22 @@ s.onProgramError = function(e) log(e.message);
 s.start();   // returns null, sets s.failed
 ```
 
+`e.message` is the message alone. For the **call stack** with it, across script boundaries and into
+your own code, use `haxe.Exception.details()` or `hxscript.types.ScriptedClass.describeError(e)`,
+which does that and passes a non-exception value through unchanged:
+
+```haxe
+s.onProgramError = function(e) log(ScriptedClass.describeError(e));
+```
+
+A scripted class's own hooks (`onExpressionError`, `onInstanceError`, `onStaticError`) render
+through that same function, so an error in a field initializer or a method arrives with its frames
+rather than as a bare value.
+
+One gap: a method declared in a `Module` runs on that module's interpreter, and each interpreter
+owns its own stack with no link to its caller, so that frame does not appear in the calling
+script's trace.
+
 **Parse errors are different, and this is a sharp edge.** Parsing happens inside the constructor, so
 a handler assigned afterwards is already too late. The program is left null:
 
@@ -369,9 +385,34 @@ section 4).
 Type annotations are enforced at runtime by default: a wrong-typed assignment, argument or return
 throws rather than silently proceeding. `Config.typedMode = false` (or `-D hxscript_dynamic`) turns
 that off and leaves everything dynamic. Numeric correctness (`Int` staying `Int`) is unconditional.
+
+A class or static field declared with a type is bound exactly as the identical local is, so an
+abstract-typed field boxes and a later write to it is checked against the declared type.
 See [`parity.md`](parity.md#1-typed-by-default-with-a-dynamic-escape-hatch).
 
-## 12. Things that will bite you
+## 12. Printing scripts back to source
+
+`hxscript.syntax.Printer` turns a parsed AST back into source, for both expressions and
+**module declarations** (classes, interfaces, enums, typedefs, abstracts, imports, `using`,
+module-level fields). That makes it usable for a formatter, a migration tool that rewrites
+scripts, or for showing a user what their script parsed as.
+
+```haxe
+import hxscript.syntax.Expr;   // for the EDecl constructor
+
+var parser = new hxscript.syntax.Parser();
+parser.allowTypes = parser.allowJSON = parser.allowMetadata = true;
+
+var printer = new hxscript.syntax.Printer();
+for (d in parser.parseModule(source, 'MyScript.hx', 0, ['my', 'pack']))
+	trace(printer.exprToString({e: EDecl(d), pos: d.pos}));
+```
+
+The bar it is held to is **round-trip**, not readability: printing, reparsing and printing
+again produces the same text. Output is not formatted to any house style, and comments are not
+preserved, since the parser does not keep them.
+
+## 13. Things that will bite you
 
 - **Dead code elimination.** With `-dce std`, methods your own code never calls statically are
   stripped from the build, and a script reaching one by reflection gets `Cannot call null`. It looks
@@ -388,7 +429,9 @@ See [`parity.md`](parity.md#1-typed-by-default-with-a-dynamic-escape-hatch).
   motivated it.
 - **Native abstracts need a build macro** to have any runtime form:
   `@:build(hxscript.macro.AbstractMacro.build())`. Without it, scripts see nothing usable. Abstracts
-  declared *in scripts* need no setup.
+  declared *in scripts* need no setup. An abstract-typed **field** boxes the same way a local does,
+  so `public var dist:Meters = 5.0` on a scripted class reaches the abstract's methods and
+  operators.
 - **Build macros hold type paths as strings**, which the compiler cannot check for you. If you rename
   a bridged base or move a package, nothing fails at compile time; it fails when a script asks.
 
@@ -443,4 +486,6 @@ instance methods. The runtime itself references those, so they are never candida
 - [`performance.md`](performance.md) covers what is fast, what is not, and how to measure a change
   without fooling yourself.
 - [`../example/`](../example) is the worked version of this guide, and is runnable.
+- [`checker.md`](checker.md) is the design for a pre-run static checker, and the reasons it is not
+  built.
 - [`../test/`](../test) holds the suites, which double as executable documentation of behaviour.

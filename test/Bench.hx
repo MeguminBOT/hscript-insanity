@@ -94,8 +94,7 @@ class Bench {
 		hxscript.Config.blacklist.set(ByType, ['sys.io.File', 'sys.io.Process', 'Sys']);
 		hxscript.Config.blacklist.set(ByPackage(true), ['sys', 'haxe.macro', 'cpp']);
 
-		var cls = "class S { public var x:Int = 0; private var h:Int = 1; public function new() {}"
-			+ " public function m(v) return v; }\n";
+		var cls = "class S { public var x:Int = 0; private var h:Int = 1; public function new() {}" + " public function m(v) return v; }\n";
 		bench("fieldGuard", "var o = {a: 1, b: 2}; var i = 0; var s = 0; while (i < 200000) { s += o.a; i++; } s;");
 		bench("methodGuard", "var arr = [1]; var i = 0; while (i < 100000) { arr.indexOf(1); i++; } i;");
 		bench("instFieldGuard", cls + "var p = new S(); var i = 0; var s = 0; while (i < 100000) { s += p.x; i++; } s;");

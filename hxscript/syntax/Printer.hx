@@ -37,6 +37,7 @@ class Printer {
 	/** Current block nesting depth. */
 	var level:Int;
 
+	/** Creates a printer. Output state is reset per call, so one instance can be reused. */
 	public function new() {}
 
 	/**
@@ -141,6 +142,206 @@ class Printer {
 	}
 
 	/**
+	 * Prints a module-level declaration as source.
+	 *
+	 * The bar for this is ROUND-TRIP, not readability: printing a parsed module, reparsing the
+	 * output and printing it again has to produce the same text, so anything dropped here shows up
+	 * as a difference rather than as silently missing source.
+	 *
+	 * @param d The declaration to print.
+	 */
+	function decl(d:ModuleDecl) {
+		switch (d.d) {
+			case DPackage(path):
+				add('package');
+				if (path != null && path.length > 0)
+					add(' ' + path.join('.'));
+				add(';');
+			case DImport(path, mode):
+				add('import ' + path.join('.'));
+				switch (mode) {
+					case INormal:
+					case IAsName(alias): add(' as ' + alias);
+					case IAll: add('.*');
+				}
+				add(';');
+			case DUsing(path):
+				add('using ' + path.join('.') + ';');
+			case DField(f):
+				meta(f.meta);
+				if (f.isPrivate)
+					add('private ');
+				fieldBody(f.name, f.kind);
+			case DClass(c):
+				typeHead(c.meta, c.isPrivate, c.isExtern ? 'extern class' : 'class', c.name, c.params);
+				if (c.extend != null) {
+					add(' extends ');
+					type(c.extend);
+				}
+				for (i in c.implement) {
+					add(' implements ');
+					type(i);
+				}
+				fieldBlock(c.fields);
+			case DInterface(c):
+				typeHead(c.meta, c.isPrivate, 'interface', c.name, c.params);
+				// An interface's bases parse into `extend`/`implement` the same way a class's do.
+				if (c.extend != null) {
+					add(' extends ');
+					type(c.extend);
+				}
+				for (i in c.implement) {
+					add(' extends ');
+					type(i);
+				}
+				fieldBlock(c.fields);
+			case DEnum(e):
+				typeHead(e.meta, e.isPrivate, 'enum', e.name, e.params);
+				add(' {');
+				level++;
+				tabs += '	';
+				// `names` carries declaration order; `constructs` is a map and does not.
+				for (n in e.names) {
+					var c:EnumFieldDecl = e.constructs.get(n);
+					if (c == null)
+						continue;
+					add('\n' + tabs);
+					meta(c.meta);
+					add(c.name);
+					if (c.arguments != null && c.arguments.length > 0)
+						args(c.arguments);
+					add(';');
+				}
+				level--;
+				tabs = tabs.substr(1);
+				add('\n' + tabs + '}');
+			case DTypedef(t):
+				typeHead(t.meta, t.isPrivate, 'typedef', t.name, t.params);
+				add(' = ');
+				type(t.t);
+				add(';');
+			case DAbstract(a):
+				typeHead(a.meta, a.isPrivate, 'abstract', a.name, a.params);
+				if (a.underlying != null) {
+					add('(');
+					type(a.underlying);
+					add(')');
+				}
+				for (f in a.from) {
+					add(' from ');
+					type(f);
+				}
+				for (t in a.to) {
+					add(' to ');
+					type(t);
+				}
+				fieldBlock(a.fields);
+		}
+	}
+
+	/** Prints `meta name<params>` for a type declaration. */
+	function typeHead(m:Metadata, isPrivate:Bool, keyword:String, name:String, params:Array<String>) {
+		meta(m);
+		if (isPrivate)
+			add('private ');
+		add(keyword + ' ' + name);
+		if (params != null && params.length > 0)
+			add('<' + params.join(', ') + '>');
+	}
+
+	/** Prints a metadata list, each entry trailed by a space. */
+	function meta(m:Metadata) {
+		if (m == null)
+			return;
+		for (entry in m) {
+			add('@' + entry.name);
+			if (entry.params != null && entry.params.length > 0) {
+				add('(');
+				for (i => p in entry.params) {
+					if (i > 0)
+						add(', ');
+					expr(p);
+				}
+				add(')');
+			}
+			add(' ');
+		}
+	}
+
+	/** Prints a parenthesised argument list. */
+	function args(list:Array<Argument>) {
+		add('(');
+		for (i => a in list) {
+			if (i > 0)
+				add(', ');
+			if (a.rest)
+				add('...');
+			if (a.opt && a.value == null)
+				add('?');
+			add(a.name);
+			addType(a.t);
+			if (a.value != null) {
+				add(' = ');
+				expr(a.value);
+			}
+		}
+		add(')');
+	}
+
+	/** Prints a field's `function`/`var` body, shared by class fields and module-level fields. */
+	function fieldBody(name:String, kind:FieldKind) {
+		switch (kind) {
+			case KFunction(f):
+				add('function ' + name);
+				args(f.args);
+				addType(f.ret);
+				if (f.expr != null) {
+					add(' ');
+					expr(f.expr);
+				} else
+					add(';');
+
+			case KVar(v):
+				add((v.isFinal == true ? 'final ' : 'var ') + name);
+				// A property's accessors sit between the name and the type.
+				if (v.get != null || v.set != null)
+					add('(' + (v.get ?? 'default') + ', ' + (v.set ?? 'default') + ')');
+				addType(v.type);
+				if (v.expr != null) {
+					add(' = ');
+					expr(v.expr);
+				}
+				add(';');
+		}
+	}
+
+	/** Prints a braced, indented field list. */
+	function fieldBlock(fields:Array<FieldDecl>) {
+		add(' {');
+		level++;
+		tabs += '	';
+		for (f in fields) {
+			add('\n' + tabs);
+			meta(f.meta);
+			for (a in f.access) {
+				add(switch (a) {
+					case APublic: 'public ';
+					case APrivate: 'private ';
+					case AInline: 'inline ';
+					case ADynamic: 'dynamic ';
+					case AOverride: 'override ';
+					case AStatic: 'static ';
+					case AMacro: 'macro ';
+				});
+			}
+			fieldBody(f.name, f.kind);
+		}
+		level--;
+		tabs = tabs.substr(1);
+		add('\n' + tabs + '}');
+	}
+
+	/**
 	 * Prints a ` : Type` suffix, or nothing when the type is null.
 	 *
 	 * @param t The optional type annotation.
@@ -198,7 +399,7 @@ class Printer {
 		}
 		switch (e.e) {
 			case EDecl(d):
-				add('decl'); // TODO: declarations aren't printed back to source yet
+				decl(d);
 			case EUsing(path):
 				add('using ${path.join('.')}');
 			case EImport(path, INormal):
@@ -482,7 +683,7 @@ class Printer {
 				add("(");
 				expr(e);
 				add(" : ");
-				addType(t);
+				type(t);
 				add(")");
 			case ECast(e, t):
 				if (t == null) {
@@ -491,8 +692,8 @@ class Printer {
 				} else {
 					add("cast(");
 					expr(e);
-					add(",");
-					addType(t);
+					add(", ");
+					type(t);
 					add(")");
 				}
 		}

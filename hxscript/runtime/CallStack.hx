@@ -24,6 +24,7 @@ class CallStack {
 	/** Number of frames on the stack. */
 	public var length(get, never):Int;
 
+	/** @return The number of frames. */
 	inline function get_length():Int
 		return stack.length;
 
@@ -47,6 +48,7 @@ class CallStack {
 		return b.toString();
 	}
 
+	/** Creates an empty stack. */
 	public function new() {
 		stack = [];
 	}

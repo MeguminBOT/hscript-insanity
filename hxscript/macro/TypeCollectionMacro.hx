@@ -35,10 +35,30 @@ class TypeCollectionMacro {
 			var _c:Map<String, Dynamic> = [];
 			var map:Array<Dynamic> = [];
 
+			/**
+			 * Looks up an already-recorded type by module and name.
+			 *
+			 * @param m The module path.
+			 * @param s The type name.
+			 * @return The recorded info, or null.
+			 */
 			function findTypeInfo(m:String, s:String) {
 				return _c['$m.$s'];
 			}
+			/**
+			 * Records one module type in the table scripts resolve names against.
+			 *
+			 * @param type The type to record.
+			 * @return Its entry.
+			 */
 			function getTypeInfo(type:haxe.macro.ModuleType) {
+				/**
+				 * Builds or updates a single type entry.
+				 *
+				 * @param k The kind (`class`, `enum`, `typedef`, `abstract`).
+				 * @param d The type being described.
+				 * @return The entry.
+				 */
 				function makeTypeInfo(k:String, d:Dynamic) {
 					var info:TypeInfo = (findTypeInfo(d.module, d.name) ?? {
 						kind: k,

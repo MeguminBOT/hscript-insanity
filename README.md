@@ -178,6 +178,7 @@ variables and imports.
 - [Performance](docs/performance.md) -- what has been optimised, and how to measure without fooling
   yourself.
 - [Benchmarks](docs/benchmarks.md) -- six libraries in this family on identical scripts.
+- [Static checking](docs/checker.md) -- the design for a pre-run checker, and its limits.
 - [Tests](test) -- the suites, which double as executable documentation of behaviour.
 
 ## To-do
@@ -194,20 +195,24 @@ constructor, methods, properties, statics, `from`/`to`, operators, enum abstract
 
 **Typed mode**: runtime enforcement on variables, arguments, returns and `cast`; primitives as
 `is`/`cast` targets; `Int`/`Float` numeric correctness; container and function-type checking;
-structural typedef shape checking; `private` access enforcement.
+structural typedef shape checking; `private` access enforcement. A class or static field declared
+with a type binds exactly as the identical local does, so an abstract-typed field boxes.
+
+**Static extensions**: a `using` on a script-declared class registers, and the receiver is checked
+against the extension's first parameter, so several extensions can share a method name. Compiled
+extensions still cannot be checked -- see below.
+
+**Printing**: `Printer` prints every module declaration, and printing round-trips through a reparse.
 
 Not done:
 
-- [ ] **Static checking before a script runs.** Upstream's `Checker` was removed as dead code; a
-      replacement would work off the compiled type table. Large.
-- [ ] **Abstract-typed class fields.** A local `var v:MyAbstract` boxes, but a class or static field
-      declared with an abstract type does not.
-- [ ] **Module exception call stack.** A script error and a module error currently report the same
-      way.
-- [ ] **`using` on scripted classes matches by method name alone**, so `(5).twice()` can reach a
-      `String` extension. Compiled extensions cannot be checked at all -- see below.
-- [ ] **`Printer` module declarations.** Expressions round-trip; class, enum and typedef
-      declarations are not printed.
+- [ ] **Static checking before a script runs.** Designed but not built: see
+      [checker.md](docs/checker.md) for what it could prove without inference, what it could not, and
+      why the boundary sits there.
+- [ ] **Call-stack frames across interpreters.** A method declared in a module runs on that module's
+      interpreter, and each interpreter owns its own stack with no link to its caller, so the frame
+      does not appear in the calling script's trace. Errors themselves now carry their frames
+      wherever they are reported; this is the remaining half.
 
 ## Impossible to add
 
