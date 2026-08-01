@@ -3,17 +3,25 @@
 How to put hxscript into a Haxe project: running scripts, giving them access to your game,
 letting them subclass your classes, and the things that will bite you.
 
-[`example/`](../example) is a complete worked version of everything below: a small turn-based RPG
+[`example/`](../examples/battle) is a complete worked version of everything below: a small turn-based RPG
 whose creatures, bosses and status effects are all loaded from scripts. Run it, then read
-`example/game/Mods.hx`, which is the entire integration in one short file.
+`examples/battle/game/Mods.hx`, which is the entire integration in one short file.
 
 ```
-haxe -cp . -cp example -main Main --macro include('bridges') --macro macros.BridgeMacro.generate() --interp
+haxe -cp src -cp examples/battle -main Main \
+  --macro include('bridges') --macro macros.BridgeMacro.generate() \
+  --macro macros.AbstractsMacro.generate() --macro include('game') --interp
 ```
 
 For what a script can and cannot do once it is running, see [`parity.md`](parity.md).
 
 ## 1. Install
+
+```
+haxelib install hxscript
+```
+
+or, to track the repository rather than a release:
 
 ```
 haxelib git hxscript https://github.com/MeguminBOT/hxscript
@@ -34,7 +42,7 @@ library has:
 <haxeflag name="--macro" value="macros.BridgeMacro.generate()" />
 ```
 
-[`example/Project.xml`](../example/Project.xml) is a complete one, including shipping the scripts as
+[`examples/battle/Project.xml`](../examples/battle/Project.xml) is a complete one, including shipping the scripts as
 assets so they sit beside the executable.
 
 ## 2. Run a script
@@ -269,7 +277,7 @@ for (base in BASES) {
 ```
 
 Give each bridge its own module: defined as a sub-type of a shared module, it could only ever be
-named through that module. `example/macros/BridgeMacro.hx` is the whole thing, and the example runs
+named through that module. `examples/battle/macros/BridgeMacro.hx` is the whole thing, and the example runs
 both forms side by side (`Entity` by hand, `Component` generated) so the difference is visible.
 
 Adding a scriptable base then costs one line. Keep the list to what scripts actually subclass: the
@@ -352,7 +360,7 @@ Two things to know:
   (`Field name should be declared with 'override' since it is inherited`), which is usually a
   collision with something ordinary like `name`.
 
-`example/scripts/Combat.hx` declares all four in one module, and `Elementalist.hx` uses them
+`examples/battle/scripts/Combat.hx` declares all four in one module, and `Elementalist.hx` uses them
 together.
 
 ## 9. Reloading
@@ -364,7 +372,7 @@ env.snapshot(); // preserves statics marked @:snapshot across the reload
 env = null;
 ```
 
-Track file modification times to decide when to do it. `ScriptRegistry` in the Psych Engine
+Track file modification times to decide when to do it. A registry
 integration is a worked example: a path-to-timestamp map, a `stale()` check, and a rebuild.
 
 ## 10. Locking scripts down
@@ -481,11 +489,16 @@ instance methods. The runtime itself references those, so they are never candida
 
 ## Where to go next
 
+- [`advanced.md`](advanced.md) is the next step up: generating bridges with a macro, making native
+  abstracts visible to scripts, subclassing the interpreter, and every surface for binding your
+  API.
 - [`parity.md`](parity.md) covers what scripts can do compared to real Haxe, and the deliberate
   divergences.
 - [`performance.md`](performance.md) covers what is fast, what is not, and how to measure a change
   without fooling yourself.
-- [`../example/`](../example) is the worked version of this guide, and is runnable.
+- [`../examples/battle/`](../examples/battle) is the worked version of this guide, and is runnable.
+- [`../examples/workbench/`](../examples/workbench) is the other use of the library: a coding
+  environment where the program itself is written in script, with list/test/run/watch over it.
 - [`checker.md`](checker.md) is the design for a pre-run static checker, and the reasons it is not
   built.
 - [`../test/`](../test) holds the suites, which double as executable documentation of behaviour.

@@ -14,14 +14,14 @@ import sys.io.File;
  * The whole embedding layer: everything the host has to do to make scripts work. Four steps, and
  * `setup` runs them once.
  *
- * See [docs/embedding.md](../../docs/embedding.md) for what each one is doing and why.
+ * See [docs/embedding.md](../../../docs/embedding.md) for what each one is doing and why.
  */
 class Mods {
 	/** The world every loaded script and type lives in. */
 	public static var world:Environment;
 
 	/** Names scripts can use without importing them. */
-	static final GLOBALS:Array<String> = ['game.Entity', 'game.Component', 'game.Battle'];
+	static final GLOBALS:Array<String> = ['game.Entity', 'game.Component', 'game.Battle', 'game.Damage'];
 
 	/**
 	 * Loads every script in a folder and starts them as one world.
@@ -29,6 +29,11 @@ class Mods {
 	 * @param dir The folder to read `.hx` files from.
 	 */
 	public static function setup(dir:String):Void {
+		// 0. Use our interpreter, so scripts can name the running battle's members directly.
+		//    Set before any Module or Script is built: each one instantiates this class once, at
+		//    construction, so changing it later leaves the already-built ones on the old one.
+		Config.interpClass = ModInterp;
+
 		// 1. Let scripts name the game's types without importing them. Anything else compiled into
 		//    the program is still reachable with an explicit `import`.
 		//    A global import that cannot resolve throws out of the Script constructor uncaught, so

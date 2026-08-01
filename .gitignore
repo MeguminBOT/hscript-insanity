@@ -1,3 +1,5 @@
 __pycache__/
 *.pyc
 bin/
+bin_bench/
+hxscript.zip

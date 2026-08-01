@@ -28,6 +28,15 @@
 	<haxeflag name="--macro" value="include('bridges')" />
 	<haxeflag name="--macro" value="macros.BridgeMacro.generate()" />
 
+	<!--
+		Native abstracts have no runtime form, so a script handed one sees nothing. AbstractsMacro
+		applies hxscript's wrapper build macro to every abstract under `game` from outside, which is
+		how you cover abstracts in libraries you do not own. The include is not optional: metadata on
+		a type nothing compiled references does nothing, because the type is never typed.
+	-->
+	<haxeflag name="--macro" value="macros.AbstractsMacro.generate()" />
+	<haxeflag name="--macro" value="include('game')" />
+
 	<!-- The scripts are content, not code: they are read at runtime, so they ship beside the app. -->
 	<assets path="scripts" rename="scripts" />
 

@@ -18,12 +18,12 @@ import openfl.text.TextFormat;
  *
  * Runs either way. As a console program, with nothing but the compiler:
  *
- *     haxe -cp . -cp example -main Main --macro include('bridges') --macro macros.BridgeMacro.generate() --interp
+ *     haxe -cp src -cp examples/battle -main Main --macro include('bridges') --macro macros.BridgeMacro.generate() --interp
  *
  * or as a Lime/OpenFL application, which is the shape a game actually builds in, and where the same
  * log is drawn into a window:
  *
- *     cd example && lime test windows
+ *     cd examples/battle && lime test windows
  */
 class Main #if openfl extends Sprite #end {
 	static function main():Void {
@@ -85,7 +85,7 @@ class Main #if openfl extends Sprite #end {
 	 * @return The folder to load scripts from.
 	 */
 	static function scriptFolder():String {
-		for (dir in ['scripts', 'example/scripts'])
+		for (dir in ['scripts', 'examples/battle/scripts'])
 			if (sys.FileSystem.exists(dir))
 				return dir;
 

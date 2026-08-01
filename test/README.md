@@ -6,13 +6,13 @@ library, and check the results, so they exercise the interpreter the way a host 
 Run one on the eval target:
 
 ```
-haxe -cp test -cp . -main ReturnTest --interp
+haxe -cp test -cp src -main ReturnTest --interp
 ```
 
 Run it compiled, which is what matters for anything performance or coercion related:
 
 ```
-haxe -cp test -cp . -main ReturnTest -cpp bin && ./bin/ReturnTest.exe
+haxe -cp test -cp src -main ReturnTest -cpp bin && ./bin/ReturnTest.exe
 ```
 
 | file | covers |

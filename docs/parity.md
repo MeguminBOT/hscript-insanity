@@ -40,7 +40,7 @@ For putting the library into a project in the first place, see the
 Type annotations are **enforced at runtime**, not just parsed. This is gated by `Config.typedMode`,
 which defaults on (`-D hxscript_dynamic` flips the default off, and a host may set it per script
 world). Enforcement flows through a single point, `tryCast` in
-[`hxscript/runtime/Interp.hx`](../hxscript/runtime/Interp.hx), reached at variable declarations,
+[`src/hxscript/runtime/Interp.hx`](../src/hxscript/runtime/Interp.hx), reached at variable declarations,
 **every later write to an annotated variable**, function arguments, function returns, `(e : T)`,
 `cast(x, T)`, and class and static field initialization:
 
@@ -78,7 +78,7 @@ annotations are ignored and only abstract `from`/`to` casts apply.
 
 - **Generics are erased.** `class Pool<T>` parses and runs, but parameter *names* are kept and
   *constraints are dropped*; every `T` resolves to `Dynamic`. See the note on
-  `params:Array<String>` in [`hxscript/syntax/Expr.hx`](../hxscript/syntax/Expr.hx). There is no
+  `params:Array<String>` in [`src/hxscript/syntax/Expr.hx`](../src/hxscript/syntax/Expr.hx). There is no
   generic type safety.
 - **Anonymous-structure typedefs are checked by shape *and* by field type.** `typedef Foo = {x:Int}`
   (named or inline `{x:Int}`) works for `is`, `cast`, and variable/argument annotations. A value has
@@ -107,7 +107,7 @@ qualified or bare.
 
 The implementation is the one Haxe itself uses: every method becomes a static taking the boxed value
 as its first argument, named `this` (`ScriptedAbstract` in
-[`hxscript/types/ScriptedAbstract.hx`](../hxscript/types/ScriptedAbstract.hx)). That makes `this` an
+[`src/hxscript/types/ScriptedAbstract.hx`](../src/hxscript/types/ScriptedAbstract.hx)). That makes `this` an
 ordinary parameter, so argument binding, scoping and `return` all behave, and a constructor's
 `this = v` is just a write to it.
 
@@ -126,7 +126,7 @@ Limits worth knowing:
   scripted abstract, bare (every field of the boxed value) or with a list of names.
 
 Native (compiled) abstracts *are* bridged via
-[`hxscript/macro/AbstractMacro.hx`](../hxscript/macro/AbstractMacro.hx): static and instance fields,
+[`src/hxscript/macro/AbstractMacro.hx`](../src/hxscript/macro/AbstractMacro.hx): static and instance fields,
 `from`/`to` casts, and operator overloading all work. The build macro records which method serves
 each operator and the interpreter dispatches `a + b` to it, so scripts get the same results the
 compiled code does. `@:forward` is the exception: it is honoured on a scripted abstract but not on a
@@ -151,7 +151,7 @@ identity.
 ## 4. Overriding native (bridged) methods has holes
 
 Scripts extend curated native bases through generated bridges
-([`hxscript/macro/ScriptedMacro.hx`](../hxscript/macro/ScriptedMacro.hx)). A native
+([`src/hxscript/macro/ScriptedMacro.hx`](../src/hxscript/macro/ScriptedMacro.hx)). A native
 method **cannot be overridden** when it is:
 
 - **`inline`**, which Haxe forbids overriding outright. (Not because the method has no runtime form:
@@ -174,7 +174,7 @@ and never reaches that stage.
 - **Access control is partial.** `private` is enforced in typed mode (or when `Config.strictAccess` is
   set), but only for members marked `private` *explicitly*. **Unmarked members are public**, unlike
   Haxe, where the default is stricter. See `checkAccess` in
-  [`hxscript/runtime/Interp.hx`](../hxscript/runtime/Interp.hx).
+  [`src/hxscript/runtime/Interp.hx`](../src/hxscript/runtime/Interp.hx).
 - **Custom metadata is inert.** Only a handful are honored: `@:bypassAccessor`, `@:snapshot`,
   `@:safe`, `@:enumAbstract`, `@:enum`, `@:keep`, `@:coreType`. Anything else parses and does nothing.
 - **Interfaces carry no default implementations**, signatures only.
@@ -217,7 +217,7 @@ Scripted types are ordinary **class instances**, not native `Class<T>` / `Enum<T
 runtime objects. Any interop path that hard-types a parameter or return as one of those will coerce a
 scripted instance to `null` at the call boundary (this is what broke bare enum construction before
 the `createEnum` fix, see the note on that method in
-[`hxscript/runtime/Interp.hx`](../hxscript/runtime/Interp.hx)). Keep scripted-type boundaries
+[`src/hxscript/runtime/Interp.hx`](../src/hxscript/runtime/Interp.hx)). Keep scripted-type boundaries
 `Dynamic`.
 
 ---

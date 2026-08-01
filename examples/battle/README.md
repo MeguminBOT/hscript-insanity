@@ -4,20 +4,24 @@ A small turn-based RPG with the library embedded in it. The host owns the rules;
 fights in them is loaded from `scripts/` at runtime.
 
 ```
-haxe -cp . -cp example -main Main --macro include('bridges') --macro macros.BridgeMacro.generate() --interp
+haxe -cp src -cp examples/battle -main Main \
+  --macro include('bridges') --macro macros.BridgeMacro.generate() \
+  --macro macros.AbstractsMacro.generate() --macro include('game') --interp
 ```
 
 or compiled:
 
 ```
-haxe -cp . -cp example -main Main --macro include('bridges') --macro macros.BridgeMacro.generate() -cpp bin && ./bin/Main.exe
+haxe -cp src -cp examples/battle -main Main \
+  --macro include('bridges') --macro macros.BridgeMacro.generate() \
+  --macro macros.AbstractsMacro.generate() --macro include('game') -cpp bin && ./bin/Main.exe
 ```
 
 or as a Lime/OpenFL application, which is the shape a game actually builds in. The same battle, with
 the log drawn into a window:
 
 ```
-cd example && lime test windows
+cd examples/battle && lime test windows
 ```
 
 `Project.xml` is the point of that third one: it shows the wiring in the form a real project uses,
@@ -37,8 +41,11 @@ nothing but the compiler.
 | `game/Mods.hx` | **the embedding layer**: the entire integration, four steps and a discovery helper |
 | `bridges/` | the manual form of a scripting bridge: one empty class, hand-written, for `Entity` |
 | `macros/BridgeMacro.hx` | the generated form of the same thing, used here for `Component` |
+| `game/Damage.hx` | a **native abstract**, with no `@:build` on it |
+| `macros/AbstractsMacro.hx` | applies hxscript's wrapper macro to it **from outside**, the way you cover a library you do not own |
+| `game/ModInterp.hx` | a **custom interpreter**, so scripts name the running battle's members bare |
 | `Project.xml` | the Lime/OpenFL build, showing the same wiring as a game project declares it |
-| `scripts/` | the content: three party members, four enemies, two components, and a module of shared types |
+| `scripts/` | the content: two party members, four enemies, two components, and a module of shared types |
 
 `game/Mods.hx` is the file to read first. It is short, and it is the whole job.
 
@@ -47,7 +54,10 @@ nothing but the compiler.
 - **`Slime`** splits into two of itself the first time it is hurt, and puts the halves into the
   battle. A script changing the shape of the fight, with the host knowing nothing about slimes.
 - **`Bandit`** replaces the default turn with a real decision: finish a target it can kill this
-  turn, otherwise hit the healthiest.
+  turn, otherwise hit the healthiest. It is also the host-extension file: `log(...)` and `round`
+  are the battle's members named bare (the custom interpreter), and `Damage` is a native abstract
+  with working operators and methods (the abstract macro). Drop either macro from the build and
+  this script is what fails.
 - **`HiveQueen`** is the boss. It attaches a component to itself in its constructor, alternates
   attacks on a timer, summons plain native entities, and changes behaviour when its own health drops.
 - **`Cleric`** and **`Rogue`** are party members, because scripts are not only for enemies. The
@@ -113,4 +123,4 @@ change in the log. Edit a script, run again, and diff.
 
 ---
 
-For how the embedding works step by step, see [`../docs/embedding.md`](../docs/embedding.md).
+For how the embedding works step by step, see [`../../docs/embedding.md`](../../docs/embedding.md).
