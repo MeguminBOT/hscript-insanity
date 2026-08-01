@@ -3190,12 +3190,13 @@ class Interp {
 
 	/**
 	 * Rejects reads/writes of a script-declared `private` member from outside the declaring class.
+	 * Access is automatically given if the read/write site has the `@:privateAccess` metadata.
 	 * Active when either `Config.strictAccess` or `Config.typedMode` is on (typed mode enforces access
 	 * the way Haxe does); native fields carry no access information at runtime and are never checked.
 	 *
 	 * @param o The object being accessed.
 	 * @param f The field name.
-	 * @throws InterpException If the field is private and the caller isn't in the declaring class.
+	 * @throws InterpException If the field is private, the caller isn't in the declaring class, and @:privateAccess is not used.
 	 */
 	inline function checkAccess(o:Dynamic, f:String):Void {
 		if (!Config.strictAccess && !Config.typedMode)
@@ -3207,6 +3208,9 @@ class Interp {
 
 		var declaring:ScriptedClass = owner.privateOwnerOf(f);
 		if (declaring == null)
+			return;
+
+		if(getMeta(':privateAccess') != null)
 			return;
 
 		if (ownerClass == null || !ownerClass.isOrExtends(declaring))
