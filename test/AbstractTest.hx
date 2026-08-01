@@ -1,4 +1,4 @@
-import insanity.Script;
+import hxscript.Script;
 
 /**
  * Native abstracts seen from a script: construction, field and static access, method calls, and

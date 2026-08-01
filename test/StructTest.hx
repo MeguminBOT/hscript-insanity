@@ -1,5 +1,5 @@
-import insanity.Script;
-import insanity.Config;
+import hxscript.Script;
+import hxscript.Config;
 
 /**
  * Structural typedefs and inline anonymous-structure annotations: field presence, field types,

@@ -1,4 +1,4 @@
-import insanity.Script;
+import hxscript.Script;
 
 /**
  * Interpreter micro-benchmark. Each case isolates one hot path so an optimization can be
@@ -90,9 +90,9 @@ class Bench {
 		// The configuration a host actually ships: `private` enforced, and a non-empty blacklist. Both
 		// sit on paths that run per field access and per type resolution, so the cost of turning them
 		// on is measured rather than assumed. Re-runs the cases above so the pairs line up.
-		insanity.Config.strictAccess = true;
-		insanity.Config.blacklist.set(ByType, ['sys.io.File', 'sys.io.Process', 'Sys']);
-		insanity.Config.blacklist.set(ByPackage(true), ['sys', 'haxe.macro', 'cpp']);
+		hxscript.Config.strictAccess = true;
+		hxscript.Config.blacklist.set(ByType, ['sys.io.File', 'sys.io.Process', 'Sys']);
+		hxscript.Config.blacklist.set(ByPackage(true), ['sys', 'haxe.macro', 'cpp']);
 
 		var cls = "class S { public var x:Int = 0; private var h:Int = 1; public function new() {}"
 			+ " public function m(v) return v; }\n";

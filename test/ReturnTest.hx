@@ -1,4 +1,4 @@
-import insanity.Script;
+import hxscript.Script;
 
 class ReturnTest {
 	static var pass = 0;

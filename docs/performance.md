@@ -143,7 +143,7 @@ independent of how fast that library is otherwise:
 | hscript-improved | none |
 | RuleScript | 1.27x |
 | hscript / hscript-iris | 1.29x |
-| upstream insanity | 1.36x |
+| upstream hxscript | 1.36x |
 
 Fixed a latent bug the reuse made reachable: the `inTry` path unwound the frame on a caught exception
 but not its declarations, leaving them on `declared` for an enclosing `restore` to roll back once

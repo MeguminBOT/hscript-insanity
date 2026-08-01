@@ -1,16 +1,16 @@
-# hscript-insanity
+# hxscript
 
 Parse and evaluate Haxe at runtime, with enough of the language intact that a script can declare
 classes, enums, typedefs and abstracts, and extend your compiled ones.
 
-A fork of [inky03/hscript-insanity](https://github.com/inky03/hscript-insanity), itself an
+A fork of [inky03/hxscript](https://github.com/inky03/hxscript), itself an
 experimental fork of [hscript](https://github.com/HaxeFoundation/hscript). Upstream drew on
 [hscript-iris](https://github.com/pisayesiwsi/hscript-iris) and
 [RuleScript](https://github.com/Kriptel/RuleScript); both are worth a look.
 
 What this fork adds on top of upstream:
 
-- **Type annotations enforced at runtime**, with `-D insanity_dynamic` to turn it off, and `Int`
+- **Type annotations enforced at runtime**, with `-D hxscript_dynamic` to turn it off, and `Int`
   versus `Float` kept correct regardless.
 - **Abstracts that work**, declared in a script or compiled into the host: operators, array access
   and `from`/`to` conversions, plus `@:forward` on scripted ones.
@@ -21,7 +21,7 @@ What this fork adds on top of upstream:
 
 Still a work in progress: the [TO-DO](#to-do) lists what is implemented and what is missing, and
 [parity.md](docs/parity.md) is honest about where scripts diverge from real Haxe. Pull requests
-welcome at [this fork](https://github.com/MeguminBOT/hscript-insanity/pulls).
+welcome at [this fork](https://github.com/MeguminBOT/hxscript/pulls).
 
 ## Documentation
 
@@ -35,12 +35,12 @@ welcome at [this fork](https://github.com/MeguminBOT/hscript-insanity/pulls).
 
 ## Features & Amendments
 
-### Simple [`Script`](insanity/Script.hx) class
+### Simple [`Script`](hxscript/Script.hx) class
 
 Allows you to load code from a string, give it a name, and run it easily!
 
 ```hx
-import insanity.Script;
+import hxscript.Script;
 
 var script:Script = new Script('
 function testFunction(a, b, c)
@@ -57,7 +57,7 @@ You can also edit the `variables` map in a `Script` to define custom globals on 
 By default, `this` and `script` are defined as the `Script` instance, and `interp` as the instance's interpreter.
 
 
-### Scripted modules and types (with [`Module`](insanity/Module.hx) and [`Environment`](insanity/Environment.hx))
+### Scripted modules and types (with [`Module`](hxscript/Module.hx) and [`Environment`](hxscript/Environment.hx))
 
 > [!WARNING]
 > This feature is experimental and still incomplete!
@@ -99,21 +99,21 @@ such as (maybe expectedly) not being importable in other scripts !
 */
 ```
 
-To make a Haxe class extendable for scripting, extend it and implement the `insanity.IScripted` interface, like the following example:
+To make a Haxe class extendable for scripting, extend it and implement the `hxscript.IScripted` interface, like the following example:
 
 ```hx
 class BaseThing {
 	// ...
 }
 
-class ScriptedThing extends BaseThing implements insanity.IScripted {}
+class ScriptedThing extends BaseThing implements hxscript.IScripted {}
 ```
 
 You can also edit the `variables` map in a `Module` or `Environment` to define custom globals on subtypes and submodules, respectively.<br>
 By default, `module` is defined as the `Module` instance in modules, and `interp` as the class interpreter in scripted classes.
 
 If you want to import other sub-modules within your module, you may do so by changing the `subModules` array!<br>
-Import modules (i.e. `import.hx`) are also supported and may be added via the [`ImportModule`](insanity/Module.hx) class.
+Import modules (i.e. `import.hx`) are also supported and may be added via the [`ImportModule`](hxscript/Module.hx) class.
 
 Currently , the following types can be scripted:
 - [Classes](https://haxe.org/manual/types-class-instance.html)
@@ -126,9 +126,9 @@ Scripted abstracts are supported: they box their underlying value, and their met
 (NOTE: currently only most behavior is properly implemented from extending classes. while i dont see why implement the interface in the base class, some things might have to be promptly fixed to correctly support them ...)
 
 
-### Global script configs (with [`Config`](insanity/Config.hx))
+### Global script configs (with [`Config`](hxscript/Config.hx))
 
-[`insanity.Config`](insanity/Config.hx) allows you to define custom behaviors in scripts, such as...
+[`hxscript.Config`](hxscript/Config.hx) allows you to define custom behaviors in scripts, such as...
 - Proxying or blacklisting types, modules and packages,
 - swapping the default interpreter class,
 - defining preprocessors for conditionals,
@@ -152,7 +152,7 @@ trace(5 is Int);      // true
 
 Numeric arithmetic is corrected too: integer math keeps the `Int` type (so `is Int`, integer map keys, and array indices behave), while `/` is always `Float`, matching Haxe.
 
-Enforcement is controlled by [`Config.typedMode`](insanity/Config.hx), which defaults on. Set it to `false` (or compile with `-D insanity_dynamic`) to fall back to fully dynamic behavior, where type annotations are ignored.
+Enforcement is controlled by [`Config.typedMode`](hxscript/Config.hx), which defaults on. Set it to `false` (or compile with `-D hxscript_dynamic`) to fall back to fully dynamic behavior, where type annotations are ignored.
 
 > [!NOTE]
 > On the hxcpp target, a whole-number `Float` stored in a `Dynamic` reads back as `Int` (for example `Type.typeof(10 / 2)` is `TInt`). This is a platform trait and is harmless.
@@ -162,7 +162,7 @@ Enforcement is controlled by [`Config.typedMode`](insanity/Config.hx), which def
 
 > [!WARNING]
 > This feature is very experimental. Use with caution! <br>
-> Add the `@:build(insanity.macro.AbstractMacro.build())` metadata to your abstracts to make them usable in Hscript.
+> Add the `@:build(hxscript.macro.AbstractMacro.build())` metadata to your abstracts to make them usable in Hscript.
 
 Importing abstracts and abstract features are *mostly* supported.
 
@@ -203,7 +203,7 @@ trace(get({hi: 123}, 'hi'));
 You can also import type alias typedefs, and module level fields!<br>
 (Due to type parameters being mostly stripped at runtime, adding support for importing anonymous structure typedefs is not very practical)
 
-All compile-time type information is accessible in [`insanity.types.TypeCollection.main`](insanity/types/TypeCollection.hx).
+All compile-time type information is accessible in [`hxscript.types.TypeCollection.main`](hxscript/types/TypeCollection.hx).
 
 
 ### Using (static extension)
@@ -348,7 +348,7 @@ Called from Main.main (Main.hx line 10 column 3)
 
 ## Conditionals & defines
 
-Scripts now include the default compilation defines / preprocessor values by default, and you can add custom defines in [`Config`](insanity/Config.hx).<br>
+Scripts now include the default compilation defines / preprocessor values by default, and you can add custom defines in [`Config`](hxscript/Config.hx).<br>
 Comparisons are now also supported in conditionals!
 
 ```haxe
@@ -443,7 +443,7 @@ var map:Map<Int, String> = [for (i in 0 ... 5) i => 'number ${i}'];
 - [X] runtime type enforcement (variable / argument / return / `cast`)
 - [X] `Int` / `Float` / `Bool` as `is` / `cast` targets
 - [X] `Int` / `Float` numeric correctness
-- [X] `Config.typedMode` toggle (`-D insanity_dynamic`)
+- [X] `Config.typedMode` toggle (`-D hxscript_dynamic`)
 - [X] container (`Array` / `Map`) and function-type checking
 - [X] structural typedef shape checking
 - [X] `private` access enforcement (with typed mode)

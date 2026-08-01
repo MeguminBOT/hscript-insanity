@@ -1,4 +1,4 @@
-import insanity.Script;
+import hxscript.Script;
 
 class SweepProbe {
 	static var gaps = 0;
@@ -39,10 +39,10 @@ class SweepProbe {
 	 * @param source The script source to round-trip.
 	 */
 	static function roundTrip(name:String, source:String) {
-		var parser = new insanity.syntax.Parser();
+		var parser = new hxscript.syntax.Parser();
 		parser.allowTypes = parser.allowJSON = parser.allowMetadata = true;
 
-		var printed:String = new insanity.syntax.Printer().exprToString(parser.parseScript(source, "rt"));
+		var printed:String = new hxscript.syntax.Printer().exprToString(parser.parseScript(source, "rt"));
 
 		function run(src:String):String {
 			var s = new Script("res = " + src, "rt");
@@ -74,10 +74,10 @@ class SweepProbe {
 		p("num to string", "1 + 2 + 'x' + 1 + 2", "3x12");
 		p("float fmt", "0.5 + 0.25", "0.75");
 		trace("-- preprocessor --");
-		raw("if define", "#if insanity\nres='yes';\n#else\nres='no';\n#end", "yes");
+		raw("if define", "#if hxscript\nres='yes';\n#else\nres='no';\n#end", "yes");
 		raw("if not def", "#if nope\nres='yes';\n#else\nres='no';\n#end", "no");
-		raw("elseif", "#if nope\nres='a';\n#elseif insanity\nres='b';\n#else\nres='c';\n#end", "b");
-		raw("nested pp", "#if insanity\n#if nope\nres='x';\n#else\nres='y';\n#end\n#end", "y");
+		raw("elseif", "#if nope\nres='a';\n#elseif hxscript\nres='b';\n#else\nres='c';\n#end", "b");
+		raw("nested pp", "#if hxscript\n#if nope\nres='x';\n#else\nres='y';\n#end\n#end", "y");
 		trace("-- strings / lexer --");
 		p("escapes", "'a\tb\nc'.length", "5");
 		p("unicode esc", "'\u0041'", "A");

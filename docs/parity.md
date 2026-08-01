@@ -1,6 +1,6 @@
 # Haxe parity: what is and isn't supported
 
-HscriptInsanity is a **tree-walking interpreter**, not a compiler. It parses Haxe-shaped source
+hxScript is a **tree-walking interpreter**, not a compiler. It parses Haxe-shaped source
 and evaluates it directly, so it reaches a large slice of the language, classes, interfaces,
 enums, typedefs, `using`, closures, comprehensions. It also runs **typed by default**: declared
 types on variables, parameters, returns, and `cast(x, T)` are enforced at runtime (see section 1).
@@ -38,9 +38,9 @@ For putting the library into a project in the first place, see the
 ## 1. Typed by default, with a dynamic escape hatch
 
 Type annotations are **enforced at runtime**, not just parsed. This is gated by `Config.typedMode`,
-which defaults on (`-D insanity_dynamic` flips the default off, and a host may set it per script
+which defaults on (`-D hxscript_dynamic` flips the default off, and a host may set it per script
 world). Enforcement flows through a single point, `tryCast` in
-[`insanity/runtime/Interp.hx`](../insanity/runtime/Interp.hx), reached at variable declarations,
+[`hxscript/runtime/Interp.hx`](../hxscript/runtime/Interp.hx), reached at variable declarations,
 **every later write to an annotated variable**, function arguments, function returns, `(e : T)`, and
 `cast(x, T)`:
 
@@ -68,14 +68,14 @@ What is still missing is everything that needs the *compiler*:
   don't exist.
 - **`untyped` is a no-op**, there is nothing to suppress.
 
-Setting `Config.typedMode = false` (or `-D insanity_dynamic`) reverts to fully-dynamic behavior:
+Setting `Config.typedMode = false` (or `-D hxscript_dynamic`) reverts to fully-dynamic behavior:
 annotations are ignored and only abstract `from`/`to` casts apply.
 
 ## 2. Type parameters and structural types erase
 
 - **Generics are erased.** `class Pool<T>` parses and runs, but parameter *names* are kept and
   *constraints are dropped*; every `T` resolves to `Dynamic`. See the note on
-  `params:Array<String>` in [`insanity/syntax/Expr.hx`](../insanity/syntax/Expr.hx). There is no
+  `params:Array<String>` in [`hxscript/syntax/Expr.hx`](../hxscript/syntax/Expr.hx). There is no
   generic type safety.
 - **Anonymous-structure typedefs are checked by shape *and* by field type.** `typedef Foo = {x:Int}`
   (named or inline `{x:Int}`) works for `is`, `cast`, and variable/argument annotations. A value has
@@ -104,7 +104,7 @@ qualified or bare.
 
 The implementation is the one Haxe itself uses: every method becomes a static taking the boxed value
 as its first argument, named `this` (`ScriptedAbstract` in
-[`insanity/types/ScriptedAbstract.hx`](../insanity/types/ScriptedAbstract.hx)). That makes `this` an
+[`hxscript/types/ScriptedAbstract.hx`](../hxscript/types/ScriptedAbstract.hx)). That makes `this` an
 ordinary parameter, so argument binding, scoping and `return` all behave, and a constructor's
 `this = v` is just a write to it.
 
@@ -123,7 +123,7 @@ Limits worth knowing:
   scripted abstract, bare (every field of the boxed value) or with a list of names.
 
 Native (compiled) abstracts *are* bridged via
-[`insanity/macro/AbstractMacro.hx`](../insanity/macro/AbstractMacro.hx): static and instance fields,
+[`hxscript/macro/AbstractMacro.hx`](../hxscript/macro/AbstractMacro.hx): static and instance fields,
 `from`/`to` casts, and operator overloading all work. The build macro records which method serves
 each operator and the interpreter dispatches `a + b` to it, so scripts get the same results the
 compiled code does. `@:forward` is the exception: it is honoured on a scripted abstract but not on a
@@ -148,7 +148,7 @@ identity.
 ## 4. Overriding native (bridged) methods has holes
 
 Scripts extend curated native bases through generated bridges
-([`insanity/macro/ScriptedMacro.hx`](../insanity/macro/ScriptedMacro.hx)). A native
+([`hxscript/macro/ScriptedMacro.hx`](../hxscript/macro/ScriptedMacro.hx)). A native
 method **cannot be overridden** when it is:
 
 - **`inline`**, which Haxe forbids overriding outright. (Not because the method has no runtime form:
@@ -171,7 +171,7 @@ and never reaches that stage.
 - **Access control is partial.** `private` is enforced in typed mode (or when `Config.strictAccess` is
   set), but only for members marked `private` *explicitly*. **Unmarked members are public**, unlike
   Haxe, where the default is stricter. See `checkAccess` in
-  [`insanity/runtime/Interp.hx`](../insanity/runtime/Interp.hx).
+  [`hxscript/runtime/Interp.hx`](../hxscript/runtime/Interp.hx).
 - **Custom metadata is inert.** Only a handful are honored: `@:bypassAccessor`, `@:snapshot`,
   `@:safe`, `@:enumAbstract`, `@:enum`, `@:keep`, `@:coreType`. Anything else parses and does nothing.
 - **Interfaces carry no default implementations**, signatures only.
@@ -214,7 +214,7 @@ Scripted types are ordinary **class instances**, not native `Class<T>` / `Enum<T
 runtime objects. Any interop path that hard-types a parameter or return as one of those will coerce a
 scripted instance to `null` at the call boundary (this is what broke bare enum construction before
 the `createEnum` fix, see the note on that method in
-[`insanity/runtime/Interp.hx`](../insanity/runtime/Interp.hx)). Keep scripted-type boundaries
+[`hxscript/runtime/Interp.hx`](../hxscript/runtime/Interp.hx)). Keep scripted-type boundaries
 `Dynamic`.
 
 ---

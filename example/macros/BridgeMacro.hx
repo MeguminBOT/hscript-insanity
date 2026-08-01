@@ -45,7 +45,7 @@ class BridgeMacro {
 					name: name,
 					pos: pos,
 					meta: [{name: ':keep', pos: pos}],
-					kind: TDClass(superPath, [{pack: ['insanity'], name: 'IScripted'}], false, false, false),
+					kind: TDClass(superPath, [{pack: ['hxscript'], name: 'IScripted'}], false, false, false),
 					fields: []
 				}
 			]);

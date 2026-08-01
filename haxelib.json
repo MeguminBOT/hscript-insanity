@@ -1,6 +1,6 @@
 {
-	"name": "hscript-insanity",
-	"url": "https://github.com/MeguminBOT/hscript-insanity",
+	"name": "hxscript",
+	"url": "https://github.com/MeguminBOT/hxscript",
 	"description": "Experimental feature extension fork of HaxeFoundation/hscript",
 	"license": "MIT",
 	"version": "0.0.1",

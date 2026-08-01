@@ -11,14 +11,14 @@
 		in the shape a real project uses.
 	-->
 
-	<meta title="Scriptable Battle" package="dev.hscriptinsanity.battle" version="1.0.0" company="hscript-insanity" />
+	<meta title="Scriptable Battle" package="dev.hxscript.battle" version="1.0.0" company="hxscript" />
 	<app main="Main" path="export" file="ScriptableBattle" />
 
 	<source path="." />
 
 	<haxelib name="lime" />
 	<haxelib name="openfl" />
-	<haxelib name="hscript-insanity" />
+	<haxelib name="hxscript" />
 
 	<!--
 		Bridges are what let a script write `class Slime extends Entity`, and nothing in the program

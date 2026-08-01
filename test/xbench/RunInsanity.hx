@@ -1,6 +1,6 @@
-import insanity.Script;
+import hxscript.Script;
 
-/** Runner for hscript-insanity, used for both this fork and the upstream library. */
+/** Runner for hxscript, used for both this fork and the upstream library. */
 class RunInsanity {
 	static function main():Void {
 		XBench.run(Sys.args()[0], prepare, exec);

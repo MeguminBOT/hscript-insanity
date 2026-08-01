@@ -1,11 +1,11 @@
 package game;
 
-import insanity.Config;
-import insanity.Environment;
-import insanity.Module;
-import insanity.syntax.Expr.ImportMode;
-import insanity.types.ScriptedClass;
-import insanity.types.TypeCollection;
+import hxscript.Config;
+import hxscript.Environment;
+import hxscript.Module;
+import hxscript.syntax.Expr.ImportMode;
+import hxscript.types.ScriptedClass;
+import hxscript.types.TypeCollection;
 import game.Entity;
 import sys.FileSystem;
 import sys.io.File;

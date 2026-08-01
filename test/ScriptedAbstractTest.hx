@@ -1,4 +1,4 @@
-import insanity.Script;
+import hxscript.Script;
 
 /**
  * Script-declared abstracts: construction, methods, properties, statics, implicit boxing at an

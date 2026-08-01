@@ -1,4 +1,4 @@
-import insanity.Script;
+import hxscript.Script;
 
 class GapProbe {
 	static function p(n:String, b:String, want:String) {

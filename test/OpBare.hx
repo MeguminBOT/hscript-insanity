@@ -2,7 +2,7 @@
  * Fixture abstract for `AbstractTest` declaring no operators at all, so comparing or combining two
  * of them has to fall back to the values they box rather than to wrapper identity.
  */
-@:build(insanity.macro.AbstractMacro.build())
+@:build(hxscript.macro.AbstractMacro.build())
 abstract OpBare(Int) from Int to Int {
 	/**
 	 * Wraps an underlying value.

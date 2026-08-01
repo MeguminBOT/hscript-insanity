@@ -1,6 +1,6 @@
 # Embedding the library in your game
 
-How to put hscript-insanity into a Haxe project: running scripts, giving them access to your game,
+How to put hxscript into a Haxe project: running scripts, giving them access to your game,
 letting them subclass your classes, and the things that will bite you.
 
 [`example/`](../example) is a complete worked version of everything below: a small turn-based RPG
@@ -16,18 +16,18 @@ For what a script can and cannot do once it is running, see [`parity.md`](parity
 ## 1. Install
 
 ```
-haxelib git hscript-insanity https://github.com/MeguminBOT/hscript-insanity
+haxelib git hxscript https://github.com/MeguminBOT/hxscript
 ```
 
-Then add the library to your build (`-lib hscript-insanity` in an hxml, or
-`<haxelib name="hscript-insanity" />` in a Project.xml). Nothing else is required to start: the table
+Then add the library to your build (`-lib hxscript` in an hxml, or
+`<haxelib name="hxscript" />` in a Project.xml). Nothing else is required to start: the table
 of compiled types that scripts resolve names against builds itself the first time it is used.
 
 In a Lime or OpenFL project that is three lines, and they are the only build-level requirement the
 library has:
 
 ```xml
-<haxelib name="hscript-insanity" />
+<haxelib name="hxscript" />
 
 <!-- keeps the scripting bridges in the build; see section 6 -->
 <haxeflag name="--macro" value="include('bridges')" />
@@ -112,7 +112,7 @@ Every type compiled into your program is reachable by an explicit `import` in a 
 Haxe behaves. To make a name resolve bare, register it as a global import:
 
 ```haxe
-import insanity.syntax.Expr.ImportMode;
+import hxscript.syntax.Expr.ImportMode;
 
 Config.globalImports.set("game.Entity", INormal);
 ```
@@ -171,14 +171,14 @@ This is the part worth understanding, because it is what turns "run some express
 "mods extend the game".
 
 Declare a bridge: an empty class extending the base you want scriptable, implementing
-`insanity.IScripted`.
+`hxscript.IScripted`.
 
 ```haxe
 package bridges;
 
 import game.Entity;
 
-class ScriptedEntity extends Entity implements insanity.IScripted {}
+class ScriptedEntity extends Entity implements hxscript.IScripted {}
 ```
 
 That is the whole declaration. The `@:autoBuild` on the interface generates an override of every
@@ -246,7 +246,7 @@ for (base in BASES) {
 		name: 'Scripted' + superPath.name,
 		pos: pos,
 		meta: [{name: ':keep', pos: pos}],
-		kind: TDClass(superPath, [{pack: ['insanity'], name: 'IScripted'}], false, false, false),
+		kind: TDClass(superPath, [{pack: ['hxscript'], name: 'IScripted'}], false, false, false),
 		fields: []
 	}]);
 }
@@ -367,7 +367,7 @@ section 4).
 ## 11. Typed mode
 
 Type annotations are enforced at runtime by default: a wrong-typed assignment, argument or return
-throws rather than silently proceeding. `Config.typedMode = false` (or `-D insanity_dynamic`) turns
+throws rather than silently proceeding. `Config.typedMode = false` (or `-D hxscript_dynamic`) turns
 that off and leaves everything dynamic. Numeric correctness (`Int` staying `Int`) is unconditional.
 See [`parity.md`](parity.md#1-typed-by-default-with-a-dynamic-escape-hatch).
 
@@ -387,7 +387,7 @@ See [`parity.md`](parity.md#1-typed-by-default-with-a-dynamic-escape-hatch).
   one before giving up. Flixel 6.2 turning `FlxG.sound.playMusic` into this form is the case that
   motivated it.
 - **Native abstracts need a build macro** to have any runtime form:
-  `@:build(insanity.macro.AbstractMacro.build())`. Without it, scripts see nothing usable. Abstracts
+  `@:build(hxscript.macro.AbstractMacro.build())`. Without it, scripts see nothing usable. Abstracts
   declared *in scripts* need no setup.
 - **Build macros hold type paths as strings**, which the compiler cannot check for you. If you rename
   a bridged base or move a package, nothing fails at compile time; it fails when a script asks.

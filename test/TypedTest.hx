@@ -1,5 +1,5 @@
-import insanity.Script;
-import insanity.Config;
+import hxscript.Script;
+import hxscript.Config;
 
 class TypedTest {
 	static var pass = 0;

@@ -1,4 +1,4 @@
-import insanity.Script;
+import hxscript.Script;
 
 class RangeTest {
 	static var pass = 0;

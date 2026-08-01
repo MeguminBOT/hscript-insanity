@@ -1,4 +1,4 @@
-import insanity.Script;
+import hxscript.Script;
 
 class ClassProbe {
 	static function p(n:String, decl:String, expr:String, want:String) {

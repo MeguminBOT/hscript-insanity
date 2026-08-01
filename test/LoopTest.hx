@@ -1,4 +1,4 @@
-import insanity.Script;
+import hxscript.Script;
 
 class LoopTest {
 	static var pass = 0;
