@@ -99,6 +99,11 @@ class Battle {
 	 * @param maxRounds How many rounds to allow before calling it a draw.
 	 */
 	public function run(maxRounds:Int):Void {
+		// What ModInterp resolves a script's bare identifiers against, so `log(...)` and `round`
+		// reach this battle. Cleared afterwards: a stale context would keep the finished fight
+		// reachable and silently answer names that should have failed.
+		ModInterp.context = this;
+
 		while (!over && round < maxRounds) {
 			round++;
 			log('\n-- round $round --');
@@ -116,5 +121,7 @@ class Battle {
 		}
 
 		log('\n== ' + (over ? (living(true).length > 0 ? 'the party wins' : 'the party falls') : 'a draw') + ' ==');
+
+		ModInterp.context = null;
 	}
 }

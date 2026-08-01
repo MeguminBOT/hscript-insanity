@@ -33,7 +33,7 @@ build() { # name, classpath, main, [extra hxml]
 }
 
 echo "building..." >&2
-build ours "$ROOT" RunInsanity >/dev/null
+build ours "$ROOT/src" RunInsanity >/dev/null
 build upstream "$LIBS/insanity-upstream" RunInsanity >/dev/null
 build hscript "$LIBS/hscript" RunHscript >/dev/null
 build improved "$LIBS/improved" RunHscript >/dev/null

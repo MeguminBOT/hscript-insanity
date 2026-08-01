@@ -1,9 +1,23 @@
 {
 	"name": "hxscript",
 	"url": "https://github.com/MeguminBOT/hxscript",
-	"description": "Experimental feature extension fork of HaxeFoundation/hscript",
+	"description": "A Haxe interpreter. It parses Haxe-shaped source and evaluates it directly, with enough of the language intact that a script can declare classes, enums, typedefs and abstracts, and extend the ones your application already compiled.",
 	"license": "MIT",
-	"version": "0.0.1",
-	"releasenote": "Hi!!",
-	"contributors": ["emi3"]
+	"tags": [
+		"hscript",
+		"parser",
+		"interpreter",
+		"scripting",
+		"script",
+		"macro",
+		"cross",
+		"utility",
+		"game"
+	],
+	"version": "1.0.0",
+	"releasenote": "First release. A Haxe interpreter with runtime type enforcement, script-declared classes, enums, typedefs and abstracts, static extensions, module declarations and call stacks across script boundaries.",
+	"contributors": [
+		"MeguminBOT"
+	],
+	"classPath": "src"
 }

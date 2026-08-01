@@ -7,7 +7,7 @@ attributed to a specific change rather than to "things feel faster".
 ## Running it
 
 ```
-haxe -cp test -cp . -main Bench -cpp bin_bench && ./bin_bench/Bench.exe
+haxe -cp test -cp src -main Bench -cpp bin_bench && ./bin_bench/Bench.exe
 ```
 
 Measure on **hxcpp**, not `--interp`. The interpreted target hides exactly the costs that matter here

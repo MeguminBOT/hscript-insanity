@@ -1,5 +1,12 @@
 # hxScript
 
+[![haxelib](https://badgen.net/haxelib/v/hxscript?label=haxelib&color=orange)](https://lib.haxe.org/p/hxscript)
+[![downloads](https://badgen.net/haxelib/d/hxscript?label=downloads)](https://lib.haxe.org/p/hxscript)
+[![license](https://badgen.net/github/license/MeguminBOT/hxscript)](LICENSE)
+[![last commit](https://badgen.net/github/last-commit/MeguminBOT/hxscript)](https://github.com/MeguminBOT/hxscript/commits/main)
+[![stars](https://badgen.net/github/stars/MeguminBOT/hxscript)](https://github.com/MeguminBOT/hxscript/stargazers)
+[![Haxe](https://badgen.net/badge/Haxe/4.3+/orange)](https://haxe.org/)
+
 A Haxe interpreter. It parses Haxe-shaped source and evaluates it directly, with enough of the
 language intact that a script can declare classes, enums, typedefs and abstracts, and extend the
 ones your application already compiled.
@@ -41,6 +48,12 @@ script.call('run');   // MyScript:10: hello, world!
 ## Install
 
 ```
+haxelib install hxscript
+```
+
+or track the repository, for the unreleased state:
+
+```
 haxelib git hxscript https://github.com/MeguminBOT/hxscript
 ```
 
@@ -49,8 +62,13 @@ is required: the table of compiled types that scripts resolve names against buil
 use.
 
 The [embedding guide](docs/embedding.md) covers the rest -- exposing your API, letting scripts
-subclass your classes, and the things that will bite you. [`example/`](example) is a complete worked
-version: a small turn-based RPG whose creatures, bosses and status effects are all scripts.
+subclass your classes, and the things that will bite you.
+
+Two worked examples, both runnable: [`examples/battle/`](examples/battle) is a small turn-based RPG
+whose creatures, bosses and status effects are all scripts, and
+[`examples/workbench/`](examples/workbench) is a coding environment where you write, test and run
+any number of scripts with no rebuild -- the program it ships is a playable game written entirely
+in script.
 
 ## How it differs from hscript
 
@@ -166,19 +184,23 @@ Called from script test/TestScript.hxs (test/TestScript.hxs line 4 column 1)
 Called from Main.main (Main.hx line 10 column 3)
 ```
 
-[`Config`](hxscript/Config.hx) sets the global behaviour: proxying or blacklisting types, modules and
+[`Config`](src/hxscript/Config.hx) sets the global behaviour: proxying or blacklisting types, modules and
 packages, swapping the interpreter class, preprocessor values for conditionals, and predefined
 variables and imports.
 
 ## Documentation
 
 - **[Embedding guide](docs/embedding.md)** -- putting the library in a project, worked end to end in
-  [`example/`](example).
+  [`examples/battle/`](examples/battle).
+- **[Macros, a custom interpreter, and binding your API](docs/advanced.md)** -- generating bridges,
+  making native abstracts visible, subclassing `Interp`, and every surface for handing your API over.
 - [Parity with Haxe](docs/parity.md) -- what scripts can and cannot do, and why.
 - [Performance](docs/performance.md) -- what has been optimised, and how to measure without fooling
   yourself.
 - [Benchmarks](docs/benchmarks.md) -- six libraries in this family on identical scripts.
 - [Static checking](docs/checker.md) -- the design for a pre-run checker, and its limits.
+- [Examples](examples) -- [`battle/`](examples/battle) embeds the library in a game;
+  [`workbench/`](examples/workbench) writes the whole program in script.
 - [Tests](test) -- the suites, which double as executable documentation of behaviour.
 
 ## To-do
