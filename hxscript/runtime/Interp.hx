@@ -3209,6 +3209,9 @@ class Interp {
 		if (declaring == null)
 			return;
 
+		if(getMeta(':privateAccess') != null)
+			return;
+
 		if (ownerClass == null || !ownerClass.isOrExtends(declaring))
 			error(ECustom('Cannot access private field $f of ${declaring.path}'));
 	}
