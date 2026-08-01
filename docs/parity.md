@@ -173,10 +173,12 @@ and never reaches that stage.
 
 - **Access control is partial.** `private` is enforced in typed mode (or when `Config.strictAccess` is
   set), but only for members marked `private` *explicitly*. **Unmarked members are public**, unlike
-  Haxe, where the default is stricter. See `checkAccess` in
+  Haxe, where the default is stricter. `@:privateAccess` waives the check at the call site, as in
+  Haxe. See `checkAccess` in
   [`src/hxscript/runtime/Interp.hx`](../src/hxscript/runtime/Interp.hx).
-- **Custom metadata is inert.** Only a handful are honored: `@:bypassAccessor`, `@:snapshot`,
-  `@:safe`, `@:enumAbstract`, `@:enum`, `@:keep`, `@:coreType`. Anything else parses and does nothing.
+- **Custom metadata is inert.** Only a handful are honored: `@:privateAccess`, `@:bypassAccessor`,
+  `@:snapshot`, `@:safe`, `@:enumAbstract`, `@:enum`, `@:keep`, `@:coreType`. Anything else parses
+  and does nothing.
 - **Interfaces carry no default implementations**, signatures only.
 - **No `@:structInit` or `@:multiType`.** `Map` is the one special-cased multi-type
   (its implementation is picked from the key type). `@:op` and `@:arrayAccess` are honored on native

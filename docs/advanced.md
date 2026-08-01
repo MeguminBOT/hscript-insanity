@@ -389,7 +389,7 @@ blacklists the interpreter's own machinery and every script using `Std` dies wit
 | --- | --- | --- |
 | `interpClass` | `Interp` | the interpreter subclass to instantiate |
 | `typedMode` | on (`-D hxscript_dynamic` flips it) | enforce declared types at runtime |
-| `strictAccess` | `false` | enforce `private` on script-declared members. Only explicit `private` counts; unmarked members stay public, unlike Haxe, because existing scripts rely on it |
+| `strictAccess` | `false` | enforce `private` on script-declared members. Not the only gate: the check runs when this **or** `typedMode` is set, and `typedMode` defaults on, so `private` is enforced out of the box. Only explicit `private` counts; unmarked members stay public, unlike Haxe, because existing scripts rely on it. `@:privateAccess` waives it at the call site |
 | `preprocessorValues` | host defines + `hxscript` | what `#if` in a script sees |
 | `typeProxy` | `Std`, `Type`, `Reflect` (+ `Math` on hl) | swap a type name for a stand-in class |
 | `globalVariables` | `null`/`true`/`false`, `Int`/`Float`/`Bool` tokens | values in every interpreter |

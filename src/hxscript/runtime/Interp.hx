@@ -3210,7 +3210,7 @@ class Interp {
 		if (declaring == null)
 			return;
 
-		if(getMeta(':privateAccess') != null)
+		if (getMeta(':privateAccess') != null)
 			return;
 
 		if (ownerClass == null || !ownerClass.isOrExtends(declaring))

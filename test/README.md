@@ -27,6 +27,7 @@ haxe -cp test -cp src -main ReturnTest -cpp bin && ./bin/ReturnTest.exe
 | `AbstractTest` | native abstracts: construction, fields, statics, and `@:op` operator dispatch |
 | `ScriptedAbstractTest` | script-declared abstracts: construction, members, implicit boxing, operators, conversions |
 | `UsingTest` | static extensions on scripted classes: registration, selection by receiver type, errors inside an extension |
+| `AccessTest` | `private` on scripted members: the enforcement gate, unmarked members staying public, and `@:privateAccess` |
 | `PrinterTest` | `Printer` on module declarations, checked by print-reparse-print stability |
 | `FieldBindTest` | that a typed class or static field binds as the identical local does, and that field errors carry a stack |
 | `SweepProbe` | numeric edges, the `#if` preprocessor, string and regex handling, error handling, imports and `using` |

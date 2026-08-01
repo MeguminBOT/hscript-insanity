@@ -20,6 +20,11 @@ class Config {
 	 * outside the declaring class (or a subclass) errors instead of succeeding.
 	 * Only explicit `private` counts -- scripts treat unmarked members as public,
 	 * unlike Haxe, because every existing script relies on that.
+	 *
+	 * This flag is not the only way enforcement turns on: `checkAccess` runs when
+	 * EITHER this or `typedMode` is set, and `typedMode` defaults on. Leaving this
+	 * `false` therefore does not disable the check; both have to be off for that.
+	 * An access can still be waived at the call site with `@:privateAccess`.
 	 */
 	public static var strictAccess:Bool = false;
 
