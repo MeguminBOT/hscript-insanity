@@ -280,7 +280,7 @@ class TypeProxy {
 	 */
 	public static inline function enumConstructor(e:Dynamic):String {
 		if (e is ICustomEnumValueType)
-			return cast(e, ICustomEnumValueType).constructor;
+			return cast(e, ICustomEnumValueType).constructorName;
 
 		return Type.enumConstructor(e);
 	}
@@ -380,7 +380,7 @@ interface ICustomEnumValueType extends ICustomType {
 	public var index:Int;
 
 	/** The value's constructor name. */
-	public var constructor:String;
+	public var constructorName:String; //It's named `constructorName` because `constructor` isn't a valid name on JS
 
 	/** The value's constructor arguments. */
 	public var arguments:Array<Dynamic>;
