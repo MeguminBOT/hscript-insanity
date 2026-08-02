@@ -173,6 +173,46 @@ class Interp {
 	/** The interpreter whose `private` access is currently being checked. */
 	static var accessingInterp:Interp = null;
 
+	/**
+	 * Whether anything in the process declares a property with a `null` accessor.
+	 *
+	 * `accessingInterp` exists for one purpose: `readLocal` and `writeLocal` compare it against the
+	 * slot's owning interpreter to reject reads and writes of `(null, _)` and `(_, null)` properties
+	 * from outside their class. Those two comparisons are its only readers.
+	 *
+	 * Keeping it current is not free. Every scripted class builds its own interpreter, so a call
+	 * into another class rewrites this static going in and again coming back -- two writes per
+	 * call, each with hxcpp's write barrier, measured at about 205ns apiece and accounting for the
+	 * whole 19% gap between a same-class and a cross-class call.
+	 *
+	 * Almost no script declares a `null` accessor, so almost no script needs any of it. Tracking
+	 * stays off until one is actually declared, at which point the guarded write resumes and the
+	 * checks behave exactly as before. A slot can only be read after the class declaring it has
+	 * been initialised, and initialisation evaluates expressions, so the static is always current
+	 * by the time either reader can run.
+	 */
+	static var trackAccess:Bool = false;
+
+	/** Turns on interpreter tracking if this accessor is one the access checks care about. */
+	public static inline function noteAccessor(accessor:String):Void {
+		if (accessor == 'null') {
+			trackAccess = true;
+		}
+	}
+
+	/**
+	 * Counts how often evaluation crosses from one interpreter to another.
+	 *
+	 * Every scripted class builds its own `Interp`, so a call into another class flips this static
+	 * on the way in and again on the way back, and each flip is a static write with the write
+	 * barrier that implies. This counter is here to confirm that the flips actually track the gap
+	 * between same-class and cross-class call costs before anything is restructured around that
+	 * theory. Compiled out unless `-D hxscript_profile` is set.
+	 */
+	#if hxscript_profile
+	public static var interpSwitches:Int = 0;
+	#end
+
 	/** The current source position, updated as expressions are evaluated. */
 	var position:Position = {origin: 'hscript', line: 0};
 
@@ -2349,8 +2389,12 @@ class Interp {
 		// statics holding object references, so an unconditional store pays hxcpp's write barrier on
 		// every node evaluated. A load and a compare do not. They stay separate tests because
 		// `environment` is a public field a host can reassign under a running interpreter.
-		if (accessingInterp != this)
+		if (trackAccess && accessingInterp != this) {
 			accessingInterp = this;
+			#if hxscript_profile
+			interpSwitches++;
+			#end
+		}
 		if (Type.environment != environment)
 			Type.environment = environment;
 
@@ -2393,10 +2437,14 @@ class Interp {
 				var v:Dynamic = (e == null ? null : expr(e, t));
 				var l:Variable = bindDeclared(v, t);
 
-				if (get != null)
+				if (get != null) {
 					l.get = get;
-				if (set != null)
+					noteAccessor(get);
+				}
+				if (set != null) {
 					l.set = set;
+					noteAccessor(set);
+				}
 				if (isFinal)
 					l.isFinal = isFinal;
 
@@ -2564,10 +2612,20 @@ class Interp {
 						base = captures.get(id);
 					} else {
 						var l:Variable = locals.get(id);
-						if (l != null)
+						if (l != null) {
 							base = readLocal(l, id);
-						else if (isResolvable(id))
-							base = resolve(id);
+						} else {
+							// One read per table, not `exists` on both followed by `get` on both.
+							// `isResolvable` and `resolve` ask the same two maps the same question, so
+							// every qualified name was hashed four times to learn what two lookups
+							// settle. A name that really is absent leaves `base` null and falls through
+							// to the general path below, which is where its error belongs anyway.
+							var found:Dynamic = imports.get(id);
+							if (found == null)
+								found = variables.get(id);
+							if (found != null)
+								base = resolveMirror(found);
+						}
 					}
 
 					if (base != null)
