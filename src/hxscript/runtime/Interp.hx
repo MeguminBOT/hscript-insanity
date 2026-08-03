@@ -2824,7 +2824,7 @@ class Interp {
 				}
 
 				if (rt is Class || rt is ScriptedClass || rt is ScriptedInterface || rt is Enum || rt is ScriptedEnum)
-					return Std.isOfType(v, rt) || isCompiledAs(rt, v);
+					return Std.isOfType(v, rt);
 
 				return true;
 			default:
@@ -3006,11 +3006,8 @@ class Interp {
 							return e;
 						}
 						if ((t is Class || t is ScriptedClass || t is ScriptedInterface || t is Enum || t is ScriptedEnum)
-							&& !Std.isOfType(e, t)) {
-							if (isCompiledAs(t, e))
-								return e;
+							&& !Std.isOfType(e, t))
 							return error(ECustom('${AbstractTools.resolveName(e)} should be $path'));
-						}
 						return e;
 				}
 			case CTAnon(fields):
@@ -3618,28 +3615,6 @@ class Interp {
 	 * @param args Constructor arguments.
 	 * @return The new instance.
 	 */
-	/**
-	 * Whether a value is an instance of the compiled class standing in for a scripted one.
-	 *
-	 * `cnew` builds the compiled class where the host has one, so a value annotated with the scripted
-	 * type holds an instance of a native class instead, and the ordinary check would reject it.
-	 *
-	 * @param t The declared type.
-	 * @param e The value being checked.
-	 * @return True when the value is that type's compiled form.
-	 */
-	inline function isCompiledAs(t:Dynamic, e:Dynamic):Bool {
-		#if hxscript_cppia
-		if (environment == null || !(t is ScriptedClass))
-			return false;
-
-		var native:Class<Dynamic> = environment.compiled.get((cast t : ScriptedClass).path);
-		return native != null && Std.isOfType(e, native);
-		#else
-		return false;
-		#end
-	}
-
 	function cnew(cl:String, args:Array<Dynamic>):Dynamic {
 		var c = Tools.resolve(cl, environment);
 
