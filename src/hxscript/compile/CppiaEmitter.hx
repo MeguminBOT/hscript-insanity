@@ -532,9 +532,7 @@ class CppiaEmitter {
 					case CFloat(f):
 						w.token('f');
 						w.str(Std.string(f));
-					case CString(s, interp):
-						if (interp == true && s.indexOf('$') >= 0)
-							throw new CppiaUnsupported('string interpolation', e.pos);
+					case CString(s, _):
 						w.token('s');
 						w.str(s);
 					case CReg(pattern, modifiers):
@@ -935,8 +933,15 @@ class CppiaEmitter {
 			return;
 		}
 
-		if (op == '...')
-			throw new CppiaUnsupported('interval operator outside a for loop', pos);
+		if (op == '...') {
+			w.pos(line);
+			w.token('NEW');
+			w.type('IntIterator');
+			w.int(2);
+			expr(e1);
+			expr(e2);
+			return;
+		}
 
 		throw new CppiaUnsupported('operator ' + op, pos);
 	}
