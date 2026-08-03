@@ -3,3 +3,4 @@ __pycache__/
 bin/
 bin_bench/
 hxscript.zip
+export_classes.info

@@ -1,0 +1,321 @@
+package hxscript.compile;
+
+#if hxscript_cppia
+import haxe.ds.StringMap;
+import hxscript.syntax.Expr;
+
+/**
+ * Rewrites captured-and-mutated locals so closures match Haxe semantics.
+ *
+ * cppia captures by value, copying the outer variable into the closure's frame, so later writes on
+ * either side are invisible to the other. A local that is both captured and assigned therefore
+ * becomes a one-element array and every mention of it becomes an element access, letting the closure
+ * share the cell.
+ *
+ * Selection is by name rather than by binding, so sibling scopes reusing a name are all boxed.
+ */
+class CppiaCapture {
+	var boxed:StringMap<Bool>;
+
+	function new() {
+		boxed = new StringMap();
+	}
+
+	/**
+	 * Boxes whatever needs boxing in a function body.
+	 *
+	 * @param args The function's arguments, which are locals too.
+	 * @param body The body to rewrite.
+	 * @return The rewritten body, and the argument names needing a cell on entry.
+	 */
+	public static function transform(args:Array<Argument>, body:Expr):{body:Expr, boxedArgs:Array<String>} {
+		var self:CppiaCapture = new CppiaCapture();
+		var prepared:Expr = self.desugar(body);
+
+		var assigned:StringMap<Bool> = new StringMap();
+		var captured:StringMap<Bool> = new StringMap();
+		var locals:StringMap<Bool> = new StringMap();
+
+		for (a in args)
+			locals.set(a.name, true);
+
+		self.collect(prepared, assigned, captured, locals, false);
+
+		var any:Bool = false;
+		for (name in locals.keys()) {
+			if (assigned.exists(name) && captured.exists(name)) {
+				self.boxed.set(name, true);
+				any = true;
+			}
+		}
+
+		if (!any)
+			return {body: prepared, boxedArgs: []};
+
+		var boxedArgs:Array<String> = [];
+		for (a in args) {
+			if (self.boxed.exists(a.name))
+				boxedArgs.push(a.name);
+		}
+
+		return {body: self.rewrite(prepared), boxedArgs: boxedArgs};
+	}
+
+	/**
+	 * Gathers which names are written, which are seen from inside a nested function, and which are
+	 * locals.
+	 *
+	 * @param e The subtree to scan.
+	 * @param assigned Receives every name that is written.
+	 * @param captured Receives every name mentioned inside a nested function.
+	 * @param locals Receives every declared local.
+	 * @param inFunction Whether this subtree sits inside a nested function.
+	 */
+	function collect(e:Expr, assigned:StringMap<Bool>, captured:StringMap<Bool>, locals:StringMap<Bool>, inFunction:Bool):Void {
+		if (e == null)
+			return;
+
+		switch (e.e) {
+			case EIdent(v):
+				if (inFunction)
+					captured.set(v, true);
+
+			case EVar(n, _, init, _, _, _):
+				locals.set(n, true);
+				collect(init, assigned, captured, locals, inFunction);
+
+			case EBinop(op, e1, e2):
+				if (op == '='
+					|| (op.length > 1 && op.charAt(op.length - 1) == '=' && op != '==' && op != '!=' && op != '>=' && op != '<=')) {
+					switch (e1.e) {
+						case EIdent(v):
+							assigned.set(v, true);
+						case _:
+					}
+				}
+				collect(e1, assigned, captured, locals, inFunction);
+				collect(e2, assigned, captured, locals, inFunction);
+
+			case EUnop(op, _, inner):
+				if (op == '++' || op == '--') {
+					switch (inner.e) {
+						case EIdent(v):
+							assigned.set(v, true);
+						case _:
+					}
+				}
+				collect(inner, assigned, captured, locals, inFunction);
+
+			case EFunction(fargs, fbody, fname, _, _):
+				if (fname != null)
+					locals.set(fname, true);
+				for (a in fargs)
+					locals.set(a.name, true);
+				collect(fbody, assigned, captured, locals, true);
+
+			case EFor(v, it, body):
+				locals.set(v, true);
+				collect(it, assigned, captured, locals, inFunction);
+				collect(body, assigned, captured, locals, inFunction);
+
+			case ETry(body, v, _, ecatch, extra):
+				locals.set(v, true);
+				collect(body, assigned, captured, locals, inFunction);
+				collect(ecatch, assigned, captured, locals, inFunction);
+				if (extra != null) {
+					for (x in extra) {
+						locals.set(x.v, true);
+						collect(x.expr, assigned, captured, locals, inFunction);
+					}
+				}
+
+			case _:
+				each(e, function(child:Expr):Void {
+					collect(child, assigned, captured, locals, inFunction);
+				});
+		}
+	}
+
+	/** Rewrites every mention of a boxed name into an access on its cell. */
+	function rewrite(e:Expr):Expr {
+		if (e == null)
+			return null;
+
+		switch (e.e) {
+			case EIdent(v):
+				if (!boxed.exists(v))
+					return e;
+				return {e: EArray(e, {e: EConst(CInt(0)), pos: e.pos}), pos: e.pos};
+
+			case EVar(n, t, init, get, set, isFinal):
+				var value:Expr = rewrite(init);
+				if (!boxed.exists(n))
+					return {e: EVar(n, t, value, get, set, isFinal), pos: e.pos};
+
+				var cell:Expr = {e: EArrayDecl(value == null ? [] : [value]), pos: e.pos};
+				return {e: EVar(n, null, cell, get, set, isFinal), pos: e.pos};
+
+			case EFunction(fargs, fbody, fname, ret, id):
+				var shadowed:Array<String> = [];
+				for (a in fargs) {
+					if (boxed.exists(a.name)) {
+						boxed.remove(a.name);
+						shadowed.push(a.name);
+					}
+				}
+
+				var out:Expr = {e: EFunction(fargs, rewrite(fbody), fname, ret, id), pos: e.pos};
+
+				for (name in shadowed)
+					boxed.set(name, true);
+
+				return out;
+
+			case _:
+				return mapChildren(e, rewrite);
+		}
+	}
+
+	/** Visits every child expression of a node. */
+	function each(e:Expr, f:Expr->Void):Void {
+		switch (e.e) {
+			case EConst(_) | EIdent(_) | EBreak | EContinue | EImport(_, _) | EUsing(_) | EDecl(_):
+			case EVar(_, _, init, _, _, _):
+				f(init);
+			case EParent(inner) | EThrow(inner) | ECast(inner, _) | ECheckType(inner, _) | EUnop(_, _, inner) | EField(inner, _, _):
+				f(inner);
+			case EReturn(inner):
+				f(inner);
+			case EMeta(_, margs, inner):
+				for (a in margs)
+					f(a);
+				f(inner);
+			case EBlock(list) | EArrayDecl(list):
+				for (x in list)
+					f(x);
+			case EBinop(_, e1, e2):
+				f(e1);
+				f(e2);
+			case ECall(callee, params):
+				f(callee);
+				for (p in params)
+					f(p);
+			case ENew(_, params):
+				for (p in params)
+					f(p);
+			case EIf(c, e1, e2):
+				f(c);
+				f(e1);
+				f(e2);
+			case ETernary(c, e1, e2):
+				f(c);
+				f(e1);
+				f(e2);
+			case EWhile(c, body) | EDoWhile(c, body):
+				f(c);
+				f(body);
+			case EFor(_, it, body):
+				f(it);
+				f(body);
+			case EForGen(it, body):
+				f(it);
+				f(body);
+			case EArray(arr, index):
+				f(arr);
+				f(index);
+			case EObject(fields):
+				for (fl in fields)
+					f(fl.e);
+			case EFunction(_, body, _, _, _):
+				f(body);
+			case ETry(body, _, _, ecatch, extra):
+				f(body);
+				f(ecatch);
+				if (extra != null) {
+					for (x in extra)
+						f(x.expr);
+				}
+			case ESwitch(cond, cases, defaultExpr):
+				f(cond);
+				for (c in cases) {
+					for (v in c.values)
+						f(v);
+					if (c.guard != null)
+						f(c.guard);
+					f(c.expr);
+				}
+				f(defaultExpr);
+		}
+	}
+
+	/**
+	 * Splits a named local function into a declaration and an assignment, so a self-recursive one
+	 * becomes an assigned local that boxing can then give a cell to.
+	 *
+	 * @param e The subtree to rewrite.
+	 * @return The rewritten subtree.
+	 */
+	function desugar(e:Expr):Expr {
+		if (e == null)
+			return null;
+
+		switch (e.e) {
+			case EBlock(list):
+				var out:Array<Expr> = [];
+				for (item in list) {
+					switch (item.e) {
+						case EFunction(fargs, fbody, fname, ret, id) if (fname != null):
+							out.push({e: EVar(fname, null, null, null, null, false), pos: item.pos});
+							var value:Expr = {e: EFunction(fargs, desugar(fbody), null, ret, id), pos: item.pos};
+							out.push({e: EBinop('=', {e: EIdent(fname), pos: item.pos}, value), pos: item.pos});
+						case _:
+							out.push(desugar(item));
+					}
+				}
+				return {e: EBlock(out), pos: e.pos};
+
+			case _:
+				return mapChildren(e, desugar);
+		}
+	}
+
+	/** Rebuilds a node with every child mapped, preserving every field the node carries. */
+	function mapChildren(e:Expr, rewrite:Expr->Expr):Expr {
+		var d:ExprDef = switch (e.e) {
+			case EConst(_) | EIdent(_) | EBreak | EContinue | EImport(_, _) | EUsing(_) | EDecl(_): e.e;
+			case EParent(inner): EParent(rewrite(inner));
+			case EThrow(inner): EThrow(rewrite(inner));
+			case ECast(inner, t): ECast(rewrite(inner), t);
+			case ECheckType(inner, t): ECheckType(rewrite(inner), t);
+			case EUnop(op, pre, inner): EUnop(op, pre, rewrite(inner));
+			case EField(inner, fi, maybe): EField(rewrite(inner), fi, maybe);
+			case EReturn(inner): EReturn(rewrite(inner));
+			case EMeta(n, margs, inner): EMeta(n, [for (a in margs) rewrite(a)], rewrite(inner));
+			case EBlock(list): EBlock([for (x in list) rewrite(x)]);
+			case EArrayDecl(list): EArrayDecl([for (x in list) rewrite(x)]);
+			case EBinop(op, e1, e2): EBinop(op, rewrite(e1), rewrite(e2));
+			case ECall(callee, params): ECall(rewrite(callee), [for (p in params) rewrite(p)]);
+			case ENew(cl, params): ENew(cl, [for (p in params) rewrite(p)]);
+			case EIf(c, e1, e2): EIf(rewrite(c), rewrite(e1), rewrite(e2));
+			case ETernary(c, e1, e2): ETernary(rewrite(c), rewrite(e1), rewrite(e2));
+			case EWhile(c, body): EWhile(rewrite(c), rewrite(body));
+			case EDoWhile(c, body): EDoWhile(rewrite(c), rewrite(body));
+			case EFor(v, it, body): EFor(v, rewrite(it), rewrite(body));
+			case EForGen(it, body): EForGen(rewrite(it), rewrite(body));
+			case EArray(arr, index): EArray(rewrite(arr), rewrite(index));
+			case EObject(fields): EObject([for (fl in fields) {name: fl.name, e: rewrite(fl.e)}]);
+			case EVar(n, t, init, get, set, isFinal): EVar(n, t, rewrite(init), get, set, isFinal);
+			case EFunction(fargs, body, n, ret, id): EFunction(fargs, rewrite(body), n, ret, id);
+			case ETry(body, v, t, ecatch, extra):
+				ETry(rewrite(body), v, t, rewrite(ecatch), extra == null ? null : [for (x in extra) {v: x.v, t: x.t, expr: rewrite(x.expr)}]);
+			case ESwitch(cond, cases, defaultExpr):
+				ESwitch(rewrite(cond), [
+					for (c in cases)
+						{values: [for (v in c.values) rewrite(v)], expr: rewrite(c.expr), guard: c.guard == null ? null : rewrite(c.guard)}
+				], rewrite(defaultExpr));
+		}
+
+		return {e: d, pos: e.pos};
+	}
+}
+#end
