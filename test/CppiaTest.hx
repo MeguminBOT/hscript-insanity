@@ -17,9 +17,10 @@ class CppiaTest {
 	static var refused:Int = 0;
 
 	public static function main():Void {
-		#if cppia_jit
+		// Always on, because it is a different code path: an expression the JIT has no generator for
+		// emits nothing at all rather than falling back, so a construct can pass every test here and
+		// still do nothing in a host that turned the JIT on.
 		cpp.cppia.Host.enableJit(true);
-		#end
 
 		check('int literal', 'return 7;', '7');
 		check('arithmetic', 'return 6 * 7 - 2;', '40');

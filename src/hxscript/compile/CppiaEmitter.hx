@@ -24,6 +24,7 @@ class CppiaEmitter {
 		'EReg',
 		'Float',
 		'Int',
+		'IntIterator',
 		'Lambda',
 		'Math',
 		'Reflect',
@@ -634,22 +635,7 @@ class CppiaEmitter {
 				expr(body);
 
 			case EFor(v, it, body):
-				switch (it.e) {
-					case EBinop('...', _, _):
-						w.pos(line);
-						w.token('FOR');
-						pushScope();
-						var id:Int = declareVar(v);
-						w.str(v);
-						w.int(id);
-						w.bool(false);
-						w.unknownType();
-						emitIterable(it);
-						expr(body);
-						popScope();
-					case _:
-						emitForIn(v, it, body, e.pos);
-				}
+				expr(forAsWhile(v, it, body, e.pos));
 
 			case EForGen(it, body):
 				expr(keyValueLoop(it, body, e.pos));
@@ -851,79 +837,58 @@ class CppiaEmitter {
 	}
 
 	/**
-	 * Emits the subject of a `for`, lowering a `...` range to an `IntIterator` since cppia has no
-	 * interval expression.
+	 * Lowers a `for` into a `while` over an iterator.
 	 *
-	 * @param it The iterable expression.
-	 */
-	function emitIterable(it:Expr):Void {
-		switch (it.e) {
-			case EBinop('...', low, high):
-				w.pos(it.pos == null ? 0 : it.pos.line);
-				w.token('NEW');
-				w.type('IntIterator');
-				w.int(2);
-				expr(low);
-				expr(high);
-			case _:
-				expr(it);
-		}
-	}
-
-	/**
-	 * Emits a `for` over something other than a range.
+	 * cppia's own loop expression has no JIT implementation: the base code generator traces the
+	 * node's name and emits nothing, so with the JIT on the loop silently does not run at all. The
+	 * Haxe compiler lowers `for` the same way and never produces one, which is why the gap goes
+	 * unnoticed.
 	 *
-	 * cppia's loop requires a real iterator, so the subject is bound to a temporary and tested once
-	 * per loop for a `hasNext` field, falling back to `iterator()`.
+	 * The loop variable is declared inside the body so every pass rebinds it, which is what the loop
+	 * expression did and what a closure made in the body expects.
+	 *
+	 * A range needs no iterator test; anything else is bound to a temporary and asked once whether it
+	 * is already an iterator, since only a static type could answer that and there is none here.
 	 *
 	 * @param v The loop variable name.
-	 * @param it The iterable expression.
+	 * @param it The subject.
 	 * @param body The loop body.
-	 * @param pos Where the loop starts.
+	 * @param pos Where the loop appears.
+	 * @return An equivalent `while` loop.
 	 */
-	function emitForIn(v:String, it:Expr, body:Expr, pos:Position):Void {
-		var tmp:String = '`for' + (nextVarId++);
-		var subject:Expr = {e: EIdent(tmp), pos: pos};
+	function forAsWhile(v:String, it:Expr, body:Expr, pos:Position):Expr {
+		var outer:Array<Expr> = [];
+		var name:String = tempName('it');
+		var ref:Expr = {e: EIdent(name), pos: pos};
 
-		var probe:Expr = {
-			e: ECall({e: EField({e: EIdent('Reflect'), pos: pos}, 'field'), pos: pos}, [subject, {e: EConst(CString('hasNext')), pos: pos}]),
-			pos: pos
-		};
-		var isIterator:Expr = {e: EBinop('!=', probe, {e: EIdent('null'), pos: pos}), pos: pos};
-		var asIterator:Expr = {e: ECall({e: EField(subject, 'iterator'), pos: pos}, []), pos: pos};
-		var chosen:Expr = {e: ETernary(isIterator, subject, asIterator), pos: pos};
+		switch (it.e) {
+			case EBinop('...', low, high):
+				outer.push({e: EVar(name, null, {e: ENew('IntIterator', [low, high]), pos: pos}, null, null, false), pos: pos});
 
-		w.pos(pos == null ? 0 : pos.line);
-		w.token('BLOCK');
-		pushScope();
-		w.int(2);
-		w.newline();
+			case _:
+				var subject:String = tempName('sub');
+				var subjectRef:Expr = {e: EIdent(subject), pos: pos};
 
-		w.pos(pos == null ? 0 : pos.line);
-		w.token('TVARS');
-		w.int(1);
-		var tmpId:Int = declareVar(tmp);
-		w.token('VARDECLI');
-		w.str(tmp);
-		w.int(tmpId);
-		w.bool(false);
-		w.unknownType();
-		w.unknownType();
-		expr(it);
-		w.newline();
+				var probe:Expr = {
+					e: ECall({e: EField({e: EIdent('Reflect'), pos: pos}, 'field'), pos: pos}, [subjectRef, {e: EConst(CString('hasNext')), pos: pos}]),
+					pos: pos
+				};
+				var chosen:Expr = {
+					e: ETernary({e: EBinop('!=', probe, {e: EIdent('null'), pos: pos}), pos: pos}, subjectRef,
+						{e: ECall({e: EField(subjectRef, 'iterator'), pos: pos}, []), pos: pos}),
+					pos: pos
+				};
 
-		w.pos(pos == null ? 0 : pos.line);
-		w.token('FOR');
-		var id:Int = declareVar(v);
-		w.str(v);
-		w.int(id);
-		w.bool(false);
-		w.unknownType();
-		expr(chosen);
-		expr(body);
-		w.newline();
+				outer.push({e: EVar(subject, null, it, null, null, false), pos: pos});
+				outer.push({e: EVar(name, null, chosen, null, null, false), pos: pos});
+		}
 
-		popScope();
+		var step:Expr = {e: ECall({e: EField(ref, 'next'), pos: pos}, []), pos: pos};
+		var inner:Expr = {e: EBlock([{e: EVar(v, null, step, null, null, false), pos: pos}, body]), pos: pos};
+		var test:Expr = {e: ECall({e: EField(ref, 'hasNext'), pos: pos}, []), pos: pos};
+
+		outer.push({e: EWhile(test, inner), pos: pos});
+		return {e: EBlock(outer), pos: pos};
 	}
 
 	function emitBinop(op:String, e1:Expr, e2:Expr, pos:Position):Void {
