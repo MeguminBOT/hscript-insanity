@@ -165,10 +165,14 @@ class ScriptedClass implements IScriptedType implements ICustomReflection implem
 			switch (field.kind) {
 				default:
 				case KVar(v):
-					if (v.get != null)
+					if (v.get != null) {
 						l.get = v.get;
-					if (v.set != null)
+						Interp.noteAccessor(v.get);
+					}
+					if (v.set != null) {
 						l.set = v.set;
+						Interp.noteAccessor(v.set);
+					}
 					if (v.isFinal != null)
 						l.isFinal = v.isFinal;
 			}

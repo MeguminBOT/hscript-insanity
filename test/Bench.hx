@@ -9,7 +9,32 @@ import hxscript.Script;
 class Bench {
 	static var reps:Int = 3;
 
-	static function bench(name:String, src:String):Void {
+	/**
+	 * Multiplies every case's loop count, passed as the first command line argument.
+	 *
+	 * At the default counts the quickest cases finish in tens of milliseconds, which is the same
+	 * order as the machine's own run-to-run drift, so a change worth a couple of percent cannot be
+	 * separated from noise. Raising this until each case runs for something closer to a second is
+	 * what makes small effects measurable. Defaults to 1 so the usual numbers are unchanged.
+	 */
+	static var scale:Int = 1;
+
+	static var loopBound:EReg = ~/i < ([0-9]+)/g;
+
+	/** Rewrites `i < N` bounds in a case's source by `scale`. */
+	static function scaled(src:String):String {
+		if (scale <= 1) {
+			return src;
+		}
+
+		return loopBound.map(src, function(r:EReg):String {
+			return "i < " + (Std.parseInt(r.matched(1)) * scale);
+		});
+	}
+
+	static function bench(name:String, rawSrc:String):Void {
+		var src:String = scaled(rawSrc);
+
 		// warm up (parse + first run), then take the best of `reps` to cut scheduler noise
 		var best:Float = 1e9;
 		for (i in 0...reps) {
@@ -30,7 +55,15 @@ class Bench {
 	}
 
 	static function main():Void {
-		trace("-- interpreter micro-benchmark (best of " + reps + ") --");
+		var arg:String = Sys.args()[0];
+		if (arg != null) {
+			var n:Null<Int> = Std.parseInt(arg);
+			if (n != null && n > 0) {
+				scale = n;
+			}
+		}
+
+		trace("-- interpreter micro-benchmark (best of " + reps + ", scale x" + scale + ") --");
 
 		bench("arith", "var x = 0; var i = 0; while (i < 300000) { x += i * 2 - 1; i++; } x;");
 		bench("locals", "var a = 1; var b = 2; var c = 3; var i = 0; while (i < 300000) { a = b + c; i++; } a;");

@@ -128,7 +128,21 @@ class Interp {
 	var hasCaptures:Bool = false;
 
 	/** Variables declared in the current scope, with their shadowed previous bindings, for restoration. */
-	var declared:Array<{n:String, old:Variable}>;
+	/**
+	 * Held as two parallel arrays rather than one array of `{n, old}` pairs.
+	 *
+	 * An entry is pushed for every variable declaration, every function parameter and every caught
+	 * exception, which makes this one of the most frequently written structures in the interpreter.
+	 * A pair object meant an allocation per binding; two typed arrays mean none at all.
+	 *
+	 * A `@:structInit` class was tried here first and measured 3.1% SLOWER than the anonymous
+	 * structure, because these entries are written once and read once, so there is no repeated
+	 * field access to win back the allocation. Removing the object entirely is the version that
+	 * pays. The two arrays are always pushed and popped together and so always have equal length.
+	 */
+	var declaredNames:Array<String>;
+
+	var declaredOld:Array<Variable>;
 
 	/** The value returned by the currently-returning function. */
 	var returnValue:Dynamic;
@@ -158,6 +172,46 @@ class Interp {
 
 	/** The interpreter whose `private` access is currently being checked. */
 	static var accessingInterp:Interp = null;
+
+	/**
+	 * Whether anything in the process declares a property with a `null` accessor.
+	 *
+	 * `accessingInterp` exists for one purpose: `readLocal` and `writeLocal` compare it against the
+	 * slot's owning interpreter to reject reads and writes of `(null, _)` and `(_, null)` properties
+	 * from outside their class. Those two comparisons are its only readers.
+	 *
+	 * Keeping it current is not free. Every scripted class builds its own interpreter, so a call
+	 * into another class rewrites this static going in and again coming back -- two writes per
+	 * call, each with hxcpp's write barrier, measured at about 205ns apiece and accounting for the
+	 * whole 19% gap between a same-class and a cross-class call.
+	 *
+	 * Almost no script declares a `null` accessor, so almost no script needs any of it. Tracking
+	 * stays off until one is actually declared, at which point the guarded write resumes and the
+	 * checks behave exactly as before. A slot can only be read after the class declaring it has
+	 * been initialised, and initialisation evaluates expressions, so the static is always current
+	 * by the time either reader can run.
+	 */
+	static var trackAccess:Bool = false;
+
+	/** Turns on interpreter tracking if this accessor is one the access checks care about. */
+	public static inline function noteAccessor(accessor:String):Void {
+		if (accessor == 'null') {
+			trackAccess = true;
+		}
+	}
+
+	/**
+	 * Counts how often evaluation crosses from one interpreter to another.
+	 *
+	 * Every scripted class builds its own `Interp`, so a call into another class flips this static
+	 * on the way in and again on the way back, and each flip is a static write with the write
+	 * barrier that implies. This counter is here to confirm that the flips actually track the gap
+	 * between same-class and cross-class call costs before anything is restructured around that
+	 * theory. Compiled out unless `-D hxscript_profile` is set.
+	 */
+	#if hxscript_profile
+	public static var interpSwitches:Int = 0;
+	#end
 
 	/** The current source position, updated as expressions are evaluated. */
 	var position:Position = {origin: 'hscript', line: 0};
@@ -201,7 +255,8 @@ class Interp {
 		usings = new Array();
 		captures = new Map();
 		variables = new Map();
-		declared = new Array();
+		declaredNames = new Array();
+		declaredOld = new Array();
 
 		initOps();
 	}
@@ -982,7 +1037,8 @@ class Interp {
 		try {
 			stack.stack.resize(0);
 			frameLocals = null;
-			declared = new Array();
+			declaredNames = new Array();
+			declaredOld = new Array();
 
 			return exprReturn(expr);
 		} catch (e:haxe.Exception) {
@@ -1099,13 +1155,14 @@ class Interp {
 	 * @param old The `declared` length to roll back to (the scope's starting mark).
 	 */
 	function restore(old:Int) {
-		while (declared.length > old) {
-			var d = declared.pop();
+		while (declaredNames.length > old) {
+			var n:String = declaredNames.pop();
+			var previous:Variable = declaredOld.pop();
 
-			if (d.old == null) {
-				locals.remove(d.n);
+			if (previous == null) {
+				locals.remove(n);
 			} else {
-				locals.set(d.n, d.old);
+				locals.set(n, previous);
 			}
 		}
 	}
@@ -1798,7 +1855,7 @@ class Interp {
 					args2 = args2.concat(args.slice(params.length));
 				args = args2;
 			}
-			var old = declared.length;
+			var old = declaredNames.length;
 
 			// A closure is nearly always running one invocation at a time, so it reuses its own frame.
 			// Only re-entry -- recursion, or a callback that calls back into the same closure -- needs a
@@ -1828,7 +1885,8 @@ class Interp {
 			for (i in 0...params.length) {
 				var name:String = params[i].name;
 
-				declared.push({n: name, old: locals.get(name)});
+				declaredNames.push(name);
+				declaredOld.push(locals.get(name));
 
 				if (i == params.length - 1 && hasRest) {
 					locals.set(name, {r: args.slice(params.length - 1)});
@@ -1876,7 +1934,8 @@ class Interp {
 
 		if (name != null) {
 			if (stack.length > 1) { // function-in-function is a local function
-				declared.push({n: name, old: locals.get(name)});
+				declaredNames.push(name);
+				declaredOld.push(locals.get(name));
 				var ref:Variable = {r: f};
 				locals.set(name, ref);
 				capturedLocals.set(name, ref); // allow self-recursion
@@ -2239,13 +2298,103 @@ class Interp {
 	 * @param mapCompr Whether this is evaluated inside a map comprehension (affects `k => v` handling).
 	 * @return The expression's value.
 	 */
+	/**
+	 * Evaluates a `try`/`catch`, kept out of `expr` deliberately.
+	 *
+	 * `expr` is size-bound on hxcpp: it is one enormous switch, and every line inside it competes
+	 * for registers and instruction cache with the handful of node kinds that actually run in a
+	 * loop. This was the largest cold body still inline, and it also declared a closure, which
+	 * costs the enclosing function further. Moving it out shrinks the hot path without changing
+	 * a single thing about what it does.
+	 */
+	@:noinline function evalTry(e:Expr, n:String, t:Null<CType>, ecatch:Expr, extra:Array<{v:String, t:Null<CType>, expr:Expr}>):Dynamic {
+		var old = declaredNames.length;
+		var oldTry = inTry;
+		try {
+			inTry = true;
+			var v:Dynamic = expr(e);
+			restore(old);
+			inTry = oldTry;
+			return v;
+		} catch (err:Stop) {
+			inTry = oldTry;
+			throw err;
+		} catch (err:Dynamic) {
+			restore(old);
+			inTry = oldTry;
+			// A thrown non-exception value arrives wrapped in a haxe.ValueException; unwrap
+			// to the original so a typed clause matches its real type and the catch var
+			// binds that value. Real exceptions pass through unchanged.
+			var raw:Dynamic = (err is haxe.ValueException) ? (cast(err, haxe.ValueException)).value : err;
+			/**
+			 * Runs one `catch` clause with its exception variable bound, restoring the scope afterwards.
+			 *
+			 * Clauses are tried in declaration order (typed multi-catch); the first whose declared type
+			 * accepts the value runs, otherwise the error is rethrown.
+			 *
+			 * @param cn The exception variable's name.
+			 * @param ce The clause body.
+			 * @return The clause's value.
+			 */
+			function runCatch(cn:String, ce:Expr):Dynamic {
+				declaredNames.push(cn);
+				declaredOld.push(locals.get(cn));
+				locals.set(cn, {r: raw});
+				var rv:Dynamic = expr(ce);
+				restore(old);
+				return rv;
+			}
+			if (catchMatches(raw, t))
+				return runCatch(n, ecatch);
+			if (extra != null)
+				for (c in extra)
+					if (catchMatches(raw, c.t))
+						return runCatch(c.v, c.expr);
+			throw err;
+		}
+	}
+
+	/**
+	 * Evaluates a metadata wrapper, kept out of `expr` for the same reason `evalTry` is.
+	 *
+	 * Metadata never appears inside a loop, so this body only ever competed for registers and
+	 * instruction cache with the node kinds that do.
+	 */
+	@:noinline function evalMeta(meta:String, args:Array<Expr>, e:Expr):Dynamic {
+		// A script-level declaration carries its metadata as a wrapper, since the expression
+		// parser reaches the `@` before the keyword. Hand it to the declaration, which is where
+		// `@:forward`, `@:keep` and the rest are read from.
+		switch (Tools.expr(e)) {
+			case EDecl(decl):
+				attachMeta(decl, {name: meta, params: args});
+			default:
+		}
+
+		var r:Dynamic, old = metas.length;
+		metas.push({name: meta, params: args});
+
+		try {
+			r = expr(e);
+			metas.resize(old);
+		} catch (e:Dynamic) {
+			metas.resize(old);
+			#if neko neko.Lib.rethrow(e); #else throw e; #end
+		}
+
+		return r;
+	}
+
 	public function expr(e:Expr, ?t:CType, void:Bool = false, mapCompr:Bool = false):Dynamic {
 		// Both of these are already what they need to be for every node after the first, and both are
 		// statics holding object references, so an unconditional store pays hxcpp's write barrier on
 		// every node evaluated. A load and a compare do not. They stay separate tests because
 		// `environment` is a public field a host can reassign under a running interpreter.
-		if (accessingInterp != this)
+		if (trackAccess && accessingInterp != this) {
 			accessingInterp = this;
+			#if hxscript_profile
+			interpSwitches++;
+			#end
+		}
 		if (Type.environment != environment)
 			Type.environment = environment;
 
@@ -2282,15 +2431,20 @@ class Interp {
 					return readLocal(l, id);
 				return resolve(id);
 			case EVar(n, t, e, get, set, isFinal):
-				declared.push({n: n, old: locals.get(n)});
+				declaredNames.push(n);
+				declaredOld.push(locals.get(n));
 
 				var v:Dynamic = (e == null ? null : expr(e, t));
 				var l:Variable = bindDeclared(v, t);
 
-				if (get != null)
+				if (get != null) {
 					l.get = get;
-				if (set != null)
+					noteAccessor(get);
+				}
+				if (set != null) {
 					l.set = set;
+					noteAccessor(set);
+				}
 				if (isFinal)
 					l.isFinal = isFinal;
 
@@ -2302,7 +2456,7 @@ class Interp {
 				// unconditionally. Guarding it on whether the scope held any locals meant allocating a
 				// map iterator on entry to every block, function body and loop body, and it also let a
 				// block declared in an empty scope leak its variables out of the block.
-				var old = declared.length;
+				var old = declaredNames.length;
 				var v = null;
 				for (e in exprs) {
 					v = expr(e, void, mapCompr);
@@ -2410,49 +2564,7 @@ class Interp {
 				// non-exception value in haxe.Exception; the catch handler unwraps it back.
 				throw expr(e);
 			case ETry(e, n, t, ecatch, extra):
-				var old = declared.length;
-				var oldTry = inTry;
-				try {
-					inTry = true;
-					var v:Dynamic = expr(e);
-					restore(old);
-					inTry = oldTry;
-					return v;
-				} catch (err:Stop) {
-					inTry = oldTry;
-					throw err;
-				} catch (err:Dynamic) {
-					restore(old);
-					inTry = oldTry;
-					// A thrown non-exception value arrives wrapped in a haxe.ValueException; unwrap
-					// to the original so a typed clause matches its real type and the catch var
-					// binds that value. Real exceptions pass through unchanged.
-					var raw:Dynamic = (err is haxe.ValueException) ? (cast(err, haxe.ValueException)).value : err;
-					/**
-					 * Runs one `catch` clause with its exception variable bound, restoring the scope afterwards.
-					 *
-					 * Clauses are tried in declaration order (typed multi-catch); the first whose declared type
-					 * accepts the value runs, otherwise the error is rethrown.
-					 *
-					 * @param cn The exception variable's name.
-					 * @param ce The clause body.
-					 * @return The clause's value.
-					 */
-					function runCatch(cn:String, ce:Expr):Dynamic {
-						declared.push({n: cn, old: locals.get(cn)});
-						locals.set(cn, {r: raw});
-						var rv:Dynamic = expr(ce);
-						restore(old);
-						return rv;
-					}
-					if (catchMatches(raw, t))
-						return runCatch(n, ecatch);
-					if (extra != null)
-						for (c in extra)
-							if (catchMatches(raw, c.t))
-								return runCatch(c.v, c.expr);
-					throw err;
-				}
+				return evalTry(e, n, t, ecatch, extra);
 			case EObject(fl):
 				var o = {};
 				for (f in fl)
@@ -2463,27 +2575,7 @@ class Interp {
 			case ESwitch(e, cases, def):
 				return evalSwitch(e, cases, def, void, mapCompr);
 			case EMeta(meta, args, e):
-				// A script-level declaration carries its metadata as a wrapper, since the expression
-				// parser reaches the `@` before the keyword. Hand it to the declaration, which is where
-				// `@:forward`, `@:keep` and the rest are read from.
-				switch (Tools.expr(e)) {
-					case EDecl(decl):
-						attachMeta(decl, {name: meta, params: args});
-					default:
-				}
-
-				var r:Dynamic, old = metas.length;
-				metas.push({name: meta, params: args});
-
-				try {
-					r = expr(e);
-					metas.resize(old);
-				} catch (e:Dynamic) {
-					metas.resize(old);
-					#if neko neko.Lib.rethrow(e); #else throw e; #end
-				}
-
-				return r;
+				return evalMeta(meta, args, e);
 			case ECast(e, t):
 				return tryCast(expr(e), t);
 			case ECheckType(e, t):
@@ -2520,10 +2612,20 @@ class Interp {
 						base = captures.get(id);
 					} else {
 						var l:Variable = locals.get(id);
-						if (l != null)
+						if (l != null) {
 							base = readLocal(l, id);
-						else if (isResolvable(id))
-							base = resolve(id);
+						} else {
+							// One read per table, not `exists` on both followed by `get` on both.
+							// `isResolvable` and `resolve` ask the same two maps the same question, so
+							// every qualified name was hashed four times to learn what two lookups
+							// settle. A name that really is absent leaves `base` null and falls through
+							// to the general path below, which is where its error belongs anyway.
+							var found:Dynamic = imports.get(id);
+							if (found == null)
+								found = variables.get(id);
+							if (found != null)
+								base = resolveMirror(found);
+						}
 					}
 
 					if (base != null)
@@ -2941,7 +3043,7 @@ class Interp {
 	 * @param e The body expression.
 	 */
 	function doWhileLoop(econd, e) {
-		var old = declared.length;
+		var old = declaredNames.length;
 		do {
 			if (!loopRun(expr.bind(e)))
 				break;
@@ -2956,7 +3058,7 @@ class Interp {
 	 * @param e The body expression.
 	 */
 	function whileLoop(econd, e) {
-		var old = declared.length;
+		var old = declaredNames.length;
 		while (expr(econd) == true) {
 			if (!loopRun(expr.bind(e)))
 				break;
@@ -3033,8 +3135,9 @@ class Interp {
 	 * @param ef The body callback.
 	 */
 	function forLoop(n, it, ef:Dynamic) {
-		var old = declared.length;
-		declared.push({n: n, old: locals.get(n)});
+		var old = declaredNames.length;
+		declaredNames.push(n);
+		declaredOld.push(locals.get(n));
 
 		var it = makeIterator(expr(it));
 		var next = Reflect.field(it, 'next'),
@@ -3059,9 +3162,11 @@ class Interp {
 	 * @param ef The body callback.
 	 */
 	function forKeyValueLoop(vk, vv, it, ef:Dynamic) {
-		var old = declared.length;
-		declared.push({n: vk, old: locals.get(vk)});
-		declared.push({n: vv, old: locals.get(vv)});
+		var old = declaredNames.length;
+		declaredNames.push(vk);
+		declaredOld.push(locals.get(vk));
+		declaredNames.push(vv);
+		declaredOld.push(locals.get(vv));
 
 		var it = makeKeyValueIterator(expr(it));
 		var next = Reflect.field(it, 'next'),
@@ -3512,7 +3617,15 @@ class Interp {
 	 */
 	function cnew(cl:String, args:Array<Dynamic>):Dynamic {
 		var c = Tools.resolve(cl, environment);
-		c ??= resolve(cl);
+
+		if (c == null) {
+			// A written key type already became a concrete map class while parsing, so `Map` reaching
+			// here is the bare form, which has no class to resolve and decides on its first key.
+			if (cl == 'Map' || cl == 'haxe.ds.Map')
+				return new AnyMap();
+
+			c = resolve(cl);
+		}
 
 		if (canDefer && c is IScriptedType && !c.initialized)
 			throw DDefer;

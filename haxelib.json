@@ -14,8 +14,8 @@
 		"utility",
 		"game"
 	],
-	"version": "1.0.0",
-	"releasenote": "First release. A Haxe interpreter with runtime type enforcement, script-declared classes, enums, typedefs and abstracts, static extensions, module declarations and call stacks across script boundaries.",
+	"version": "1.0.1",
+	"releasenote": "Adds `@:privateAccess`, which waives the private-member check at the access site the way Haxe does (thanks TBar09). Clarifies that `private` enforcement is gated on `strictAccess` OR `typedMode`, so it is on by default rather than opt-in.",
 	"contributors": [
 		"MeguminBOT"
 	],
