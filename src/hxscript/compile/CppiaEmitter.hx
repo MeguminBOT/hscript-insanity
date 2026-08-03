@@ -447,8 +447,8 @@ class CppiaEmitter {
 						emitForIn(v, it, body, e.pos);
 				}
 
-			case EForGen(_, _):
-				throw new CppiaUnsupported('key-value for loops', e.pos);
+			case EForGen(it, body):
+				expr(keyValueLoop(it, body, e.pos));
 
 			case EBreak:
 				w.pos(line);
@@ -514,12 +514,9 @@ class CppiaEmitter {
 				expr(index);
 
 			case EArrayDecl(items):
-				for (item in items) {
-					switch (item.e) {
-						case EBinop('=>', _, _):
-							throw new CppiaUnsupported('map literals', e.pos);
-						case _:
-					}
+				if (items.length > 0 && items[0].e.match(EBinop('=>', _, _))) {
+					expr(mapLiteral(items, e.pos));
+					return;
 				}
 				w.pos(line);
 				w.token('ADEF');
@@ -964,6 +961,105 @@ class CppiaEmitter {
 		}
 
 		throw new CppiaUnsupported('unresolved identifier ' + v, pos);
+	}
+
+	/** A name no script can write, for a temporary the emitter introduces. */
+	inline function tempName(prefix:String):String {
+		return '`' + prefix + (nextVarId++);
+	}
+
+	/**
+	 * Lowers a map literal into a block that builds the map and yields it.
+	 *
+	 * The concrete map is chosen from the key literals, falling back to `AnyMap`, which decides from
+	 * the first key at runtime, when they are not all one kind.
+	 *
+	 * @param items The `key => value` entries.
+	 * @param pos Where the literal appears.
+	 * @return A block expression evaluating to the map.
+	 */
+	function mapLiteral(items:Array<Expr>, pos:Position):Expr {
+		var allString:Bool = true;
+		var allInt:Bool = true;
+
+		for (item in items) {
+			switch (item.e) {
+				case EBinop('=>', key, _):
+					switch (key.e) {
+						case EConst(CString(_, _)): allInt = false;
+						case EConst(CInt(_)): allString = false;
+						case _:
+							allString = false;
+							allInt = false;
+					}
+				case _:
+					throw new CppiaUnsupported('mixed array and map literal', pos);
+			}
+		}
+
+		var mapClass:String = allString ? 'haxe.ds.StringMap' : (allInt ? 'haxe.ds.IntMap' : 'hxscript.runtime.AnyMap');
+
+		var name:String = tempName('map');
+		var target:Expr = {e: EIdent(name), pos: pos};
+		var block:Array<Expr> = [
+			{e: EVar(name, null, {e: ENew(mapClass, []), pos: pos}, null, null, false), pos: pos}
+		];
+
+		for (item in items) {
+			switch (item.e) {
+				case EBinop('=>', key, value):
+					block.push({e: ECall({e: EField(target, 'set'), pos: pos}, [key, value]), pos: pos});
+				case _:
+			}
+		}
+
+		block.push(target);
+		return {e: EBlock(block), pos: pos};
+	}
+
+	/**
+	 * Lowers `for (k => v in it)` into a loop over the subject's key-value iterator.
+	 *
+	 * @param it The `k => v in subject` expression the parser produced.
+	 * @param body The loop body.
+	 * @param pos Where the loop appears.
+	 * @return An equivalent plain `for` loop.
+	 */
+	function keyValueLoop(it:Expr, body:Expr, pos:Position):Expr {
+		var key:String = null;
+		var value:String = null;
+		var subject:Expr = null;
+
+		switch (it.e) {
+			case EBinop('in', pair, iterable):
+				switch (pair.e) {
+					case EBinop('=>', k, v):
+						switch [k.e, v.e] {
+							case [EIdent(kn), EIdent(vn)]:
+								key = kn;
+								value = vn;
+								subject = iterable;
+							case _:
+						}
+					case _:
+				}
+			case _:
+		}
+
+		if (key == null)
+			throw new CppiaUnsupported('key-value for loop', pos);
+
+		var pairName:String = tempName('kv');
+		var pairRef:Expr = {e: EIdent(pairName), pos: pos};
+
+		var inner:Array<Expr> = [
+			{e: EVar(key, null, {e: EField(pairRef, 'key'), pos: pos}, null, null, false), pos: pos},
+			{e: EVar(value, null, {e: EField(pairRef, 'value'), pos: pos}, null, null, false), pos: pos},
+			body
+		];
+
+		var iterator:Expr = {e: ECall({e: EField(subject, 'keyValueIterator'), pos: pos}, []), pos: pos};
+		return {e: EFor(pairName, iterator, {e: EBlock(inner), pos: pos}), pos: pos};
 	}
 
 	/** Whether a name is a constructor of an enum this batch declares. */

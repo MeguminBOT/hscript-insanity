@@ -81,6 +81,14 @@ class CppiaTest {
 		check('switch multi value', 'var a = 3; switch (a) { case 1, 2: return "low"; case 3, 4: return "high"; default: return "?"; }', 'high');
 		check('switch on string', 'var s = "b"; switch (s) { case "a": return "A"; case "b": return "B"; default: return "?"; }', 'B');
 
+		check('map literal, string keys', "var m = ['a' => 1, 'b' => 2]; return m.get('a') + m.get('b');", '3');
+		check('map literal, int keys', 'var m = [1 => "x", 2 => "y"]; return m.get(2);', 'y');
+		check('map literal, exists', "var m = ['a' => 1]; return m.exists('a') && !m.exists('b') ? 'ok' : 'no';", 'ok');
+		check('map literal, empty then set', "var m = ['a' => 1]; m.set('c', 9); return Std.string(m.get('c'));", '9');
+		check('key-value for over map', "var m = ['a' => 1, 'b' => 2]; var t = 0; for (k => v in m) t += v; return t;", '3');
+		check('key-value for keys', "var m = ['a' => 1]; var s = ''; for (k => v in m) s += k; return s;", 'a');
+		check('key-value for over array', 'var a = [10, 20, 30]; var t = 0; for (i => v in a) t += i * v; return t;', '80');
+
 		check('string interpolation, ident', "var n = 5; return 'n is $n';", 'n is 5');
 		check('string interpolation, expr', "var a = 2; var b = 3; return 'sum ${a + b}';", 'sum 5');
 		check('string interpolation, escaped', "var n = 1; return 'cost $$5 for $n';", "cost $5 for 1");
