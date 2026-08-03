@@ -453,6 +453,17 @@ class Interp {
 	 * Adds two values with Haxe semantics: String concatenation when either side is a String,
 	 * otherwise numeric addition promoted like `numArith` (`Int + Int` stays `Int`).
 	 *
+	 * The sum is worked out both ways and the narrow one is only handed back if it agrees, which is
+	 * how a running total declared `Float` survives passing two billion. On hxcpp a `Dynamic` cannot
+	 * tell a whole `Float` from an `Int` -- `3.0` answers true to `is Int`, reports `TInt` from
+	 * `Type.typeof`, and carries the same internal tag as `3` -- so a value the script declared
+	 * `Float` arrives here indistinguishable from an `Int`, and adding it as one wraps into a negative
+	 * number with nothing to say it happened.
+	 *
+	 * Comparing the two results is used rather than the usual sign trick because the operands are not
+	 * always numbers: a boxed abstract can satisfy `is Int` while having no bitwise operators at all,
+	 * and it must come out of here exactly as it went in.
+	 *
 	 * @param a The left operand.
 	 * @param b The right operand.
 	 * @return The concatenated string or the promoted numeric sum.
@@ -461,8 +472,11 @@ class Interp {
 		// Int first. The result is the same whichever order these are tested in -- an operand cannot
 		// be both an Int and a String -- and integer addition is what a script actually spends its
 		// time on, so it should not pay two string checks to get there.
-		if (a is Int && b is Int)
-			return (a : Int) + (b : Int);
+		if (a is Int && b is Int) {
+			var wide:Float = (a : Float) + (b : Float);
+			var narrow:Int = (a : Int) + (b : Int);
+			return (narrow == wide) ? narrow : wide;
+		}
 		if (a is String || b is String)
 			return Std.string(a) + Std.string(b);
 		if (a is AbstractValue || b is AbstractValue)
@@ -471,15 +485,18 @@ class Interp {
 	}
 
 	/**
-	 * Subtracts with Haxe numeric promotion.
+	 * Subtracts with Haxe numeric promotion, widening on overflow for the reasons `numAdd` gives.
 	 *
 	 * @param a The left operand.
 	 * @param b The right operand.
-	 * @return `Int` when both operands are `Int`, otherwise `Float`.
+	 * @return `Int` when both operands are `Int` and the difference fits, otherwise `Float`.
 	 */
 	inline function numSub(a:Dynamic, b:Dynamic):Dynamic {
-		if (a is Int && b is Int)
-			return (a : Int) - (b : Int);
+		if (a is Int && b is Int) {
+			var wide:Float = (a : Float) - (b : Float);
+			var narrow:Int = (a : Int) - (b : Int);
+			return (narrow == wide) ? narrow : wide;
+		}
 		if (a is AbstractValue || b is AbstractValue)
 			return abstractArith("-", a, b);
 		return (a : Float) - (b : Float);
@@ -487,6 +504,12 @@ class Interp {
 
 	/**
 	 * Multiplies with Haxe numeric promotion.
+	 *
+	 * Unlike `+` and `-` this keeps wrapping when two `Int`s overflow, which is deliberate. Wrapping
+	 * multiplication is an idiom -- every hash and seeded random generator is built on it -- and
+	 * promoting would break them for good: a `Float` carries 53 bits of mantissa, so a product past
+	 * that has already lost the low bits the following mask wanted, and no later `&` can recover them.
+	 * Addition cannot lose bits that way, which is why it can afford to promote and this cannot.
 	 *
 	 * @param a The left operand.
 	 * @param b The right operand.
