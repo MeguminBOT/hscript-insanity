@@ -63,6 +63,19 @@ class CppiaEmitter {
 	/** Constructor names of every enum this batch declares, by full type path. */
 	var enumCtors:StringMap<StringMap<Bool>>;
 
+	/** Assignments for the current class's member field initialisers. */
+	var memberInits:Array<Expr>;
+
+	/**
+	 * Static properties declared in this batch, as `class.field`, split by which accessor they have.
+	 *
+	 * A static read links straight to the storage slot, so unlike a member property the accessor is
+	 * never consulted and has to be called outright.
+	 */
+	var staticGetters:StringMap<Bool>;
+
+	var staticSetters:StringMap<Bool>;
+
 	public function new() {
 		w = new CppiaWriter();
 		classCount = 0;
@@ -76,6 +89,9 @@ class CppiaEmitter {
 		memberTypes = new StringMap();
 		staticTypes = new StringMap();
 		enumCtors = new StringMap();
+		staticGetters = new StringMap();
+		staticSetters = new StringMap();
+		memberInits = [];
 		currentClass = '';
 		currentSuper = '';
 
@@ -107,6 +123,18 @@ class CppiaEmitter {
 					var full:String = pack.length > 0 ? pack + '.' + c.name : c.name;
 					typePaths.set(c.name, full);
 					moduleClasses.set(full, true);
+
+					for (f in c.fields) {
+						if (!hasAccess(f, AStatic))
+							continue;
+						switch (f.kind) {
+							case KVar(v):
+								if (v.get == 'get' || v.get == 'dynamic')
+									staticGetters.set(full + '.' + f.name, true);
+								if (v.set == 'set' || v.set == 'dynamic') staticSetters.set(full + '.' + f.name, true);
+							case _:
+						}
+					}
 				case DEnum(en):
 					var full:String = pack.length > 0 ? pack + '.' + en.name : en.name;
 					typePaths.set(en.name, full);
@@ -220,6 +248,18 @@ class CppiaEmitter {
 			}
 		}
 
+		memberInits = [];
+		for (f in c.fields) {
+			if (hasAccess(f, AStatic))
+				continue;
+			switch (f.kind) {
+				case KVar(v) if (v.expr != null):
+					var target:Expr = {e: EField({e: EIdent('this'), pos: pos}, f.name, false), pos: pos};
+					memberInits.push({e: EBinop('=', target, v.expr), pos: pos});
+				case _:
+			}
+		}
+
 		w.newline();
 		w.token(isInterface ? 'INTERFACE' : 'CLASS');
 		w.type(full);
@@ -236,13 +276,54 @@ class CppiaEmitter {
 		classCount++;
 	}
 
+	/**
+	 * Puts the class's member initialisers at the front of its constructor, after any `super` call.
+	 *
+	 * A member `VAR` record's initialiser is only run for statics, so a member field declared with a
+	 * value would otherwise start zeroed.
+	 *
+	 * @param body The constructor body as written.
+	 * @param pos Where the constructor is declared.
+	 * @return The body with the initialisers prepended.
+	 */
+	function withMemberInits(body:Expr, pos:Position):Expr {
+		if (memberInits.length == 0)
+			return body;
+
+		var out:Array<Expr> = [];
+		var rest:Array<Expr> = switch (body.e) {
+			case EBlock(list): list.copy();
+			case _: [body];
+		}
+
+		if (rest.length > 0) {
+			switch (rest[0].e) {
+				case ECall({e: EIdent('super')}, _):
+					out.push(rest.shift());
+				case _:
+			}
+		}
+
+		for (init in memberInits)
+			out.push(init);
+		for (item in rest)
+			out.push(item);
+
+		return {e: EBlock(out), pos: pos};
+	}
+
 	function emitField(f:FieldDecl, isInterface:Bool, pos:Position):Void {
 		var isStatic:Bool = hasAccess(f, AStatic);
 
 		switch (f.kind) {
 			case KFunction(fn):
+				// The loader takes the constructor from the STATIC functions, by the name `new`, so a
+				// constructor written as an ordinary member never runs and the object keeps its
+				// zeroed fields.
+				var isConstructor:Bool = f.name == 'new';
+
 				w.token('FUNCTION');
-				w.bool(isStatic);
+				w.bool(isStatic || isConstructor);
 				w.bool(hasAccess(f, ADynamic));
 				w.str(f.name);
 				w.type(fn.ret == null ? '' : typeName(fn.ret));
@@ -258,20 +339,16 @@ class CppiaEmitter {
 				w.newline();
 
 			case KVar(v):
-				if (v.get != null && v.get != 'default' && v.get != 'null')
-					throw new CppiaUnsupported('property accessors', pos);
-				if (v.set != null && v.set != 'default' && v.set != 'null')
-					throw new CppiaUnsupported('property accessors', pos);
-
 				w.token('VAR');
 				w.bool(isStatic);
-				w.token('N');
-				w.token('N');
+				w.token(accessCode(v.get, pos));
+				w.token(accessCode(v.set, pos));
 				w.bool(false);
 				w.str(f.name);
 				w.type(v.type == null ? '' : typeName(v.type));
 
-				if (v.expr == null) {
+				// A member initialiser moves into the constructor, so only a static keeps one here.
+				if (v.expr == null || !isStatic) {
 					w.int(0);
 				} else {
 					w.int(1);
@@ -284,7 +361,7 @@ class CppiaEmitter {
 	}
 
 	function emitFunctionBody(fn:FunctionDecl, isConstructor:Bool, pos:Position):Void {
-		emitFun(fn.args, fn.expr, fn.ret, pos);
+		emitFun(fn.args, isConstructor ? withMemberInits(fn.expr, pos) : fn.expr, fn.ret, pos);
 	}
 
 	/**
@@ -737,6 +814,17 @@ class CppiaEmitter {
 		var line:Int = pos == null ? 0 : pos.line;
 
 		if (op == '=') {
+			var setter:Null<String> = staticSetterFor(e1);
+			if (setter != null) {
+				w.pos(line);
+				w.token('CALLSTATIC');
+				w.type(setter.substr(0, setter.lastIndexOf('.')));
+				w.str('set_' + setter.substr(setter.lastIndexOf('.') + 1));
+				w.int(1);
+				expr(e2);
+				return;
+			}
+
 			w.pos(line);
 			w.token('SET');
 			expr(e1);
@@ -904,6 +992,15 @@ class CppiaEmitter {
 				return;
 			}
 
+			if (staticGetters.exists(asType + '.' + name)) {
+				w.pos(line);
+				w.token('CALLSTATIC');
+				w.type(asType);
+				w.str('get_' + name);
+				w.int(0);
+				return;
+			}
+
 			w.pos(line);
 			w.token('FSTATIC');
 			w.type(asType);
@@ -958,6 +1055,15 @@ class CppiaEmitter {
 		}
 
 		if (statics.exists(v)) {
+			if (staticGetters.exists(currentClass + '.' + v)) {
+				w.pos(line);
+				w.token('CALLSTATIC');
+				w.type(currentClass);
+				w.str('get_' + v);
+				w.int(0);
+				return;
+			}
+
 			w.pos(line);
 			w.token('FSTATIC');
 			w.type(currentClass);
@@ -1195,6 +1301,53 @@ class CppiaEmitter {
 
 		var iterator:Expr = {e: ECall({e: EField(subject, 'keyValueIterator'), pos: pos}, []), pos: pos};
 		return {e: EFor(pairName, iterator, {e: EBlock(inner), pos: pos}), pos: pos};
+	}
+
+	/**
+	 * Maps a property accessor to the cppia access code for it.
+	 *
+	 * Accessors are written as `V` rather than `C`. Both make the loader resolve `get_<name>` or
+	 * `set_<name>` at link time, but only `V` also registers the field as a native property, and a
+	 * by-name access -- which is how this emitter reads fields -- consults the accessor only for
+	 * those. With `C` the read would silently return the storage slot instead.
+	 *
+	 * @param mode The accessor as written, or null for a plain field.
+	 * @param pos Where the field is declared.
+	 * @return The one-character access code.
+	 */
+	function accessCode(mode:Null<String>, pos:Position):String {
+		return switch (mode) {
+			case null | 'default' | 'null': 'N';
+			case 'get' | 'set' | 'dynamic': 'V';
+			case 'never': 'n';
+			case _: throw new CppiaUnsupported('property accessor ' + mode, pos);
+		}
+	}
+
+	/**
+	 * The `class.field` of the static property an assignment targets, when it targets one.
+	 *
+	 * @param target The left side of the assignment.
+	 * @return The qualified field, or null when the target is not a static property.
+	 */
+	function staticSetterFor(target:Expr):Null<String> {
+		switch (target.e) {
+			case EField(obj, name, _):
+				var owner:Null<String> = typeOf(obj);
+				if (owner == null)
+					return null;
+				var key:String = owner + '.' + name;
+				return staticSetters.exists(key) ? key : null;
+
+			case EIdent(name):
+				if (lookupVar(name) != null || !statics.exists(name))
+					return null;
+				var key:String = currentClass + '.' + name;
+				return staticSetters.exists(key) ? key : null;
+
+			case _:
+				return null;
+		}
 	}
 
 	/** Whether a name is a constructor of an enum this batch declares. */

@@ -85,6 +85,50 @@ class CppiaTest {
 		check('switch multi value', 'var a = 3; switch (a) { case 1, 2: return "low"; case 3, 4: return "high"; default: return "?"; }', 'high');
 		check('switch on string', 'var s = "b"; switch (s) { case "a": return "A"; case "b": return "B"; default: return "?"; }', 'B');
 
+		check('member field initialiser', 'var t = new T(); return t.raw;', '7', '
+			public var raw:Int = 7;
+			public function new() {}
+		');
+		check('static field initialiser', 'return T.base;', '5', 'public static var base:Int = 5;');
+		check('constructor assigns field', 'var t = new T(); return t.raw;', '3', '
+			public var raw:Int = 0;
+			public function new() { raw = 3; }
+		');
+
+		check('property getter', 'var t = new T(); return t.doubled;', '14', '
+			public var raw:Int = 7;
+			public var doubled(get, never):Int;
+			function get_doubled():Int return raw * 2;
+			public function new() {}
+		');
+		check('property setter', 'var t = new T(); t.half = 10; return t.raw;', '5', '
+			public var raw:Int = 0;
+			public var half(never, set):Int;
+			function set_half(v:Int):Int { raw = Std.int(v / 2); return v; }
+			public function new() {}
+		');
+		check('property get and set', 'var t = new T(); t.value = 4; return t.value;', '8', '
+			public var store:Int = 0;
+			public var value(get, set):Int;
+			function get_value():Int return store;
+			function set_value(v:Int):Int { store = v * 2; return v; }
+			public function new() {}
+		');
+		check('static property', 'return T.only;', '42', '
+			public static var only(get, never):Int;
+			static function get_only():Int return 42;
+		');
+		check('static property setter', 'T.scaled = 5; return T.store;', '15', '
+			public static var store:Int = 0;
+			public static var scaled(never, set):Int;
+			static function set_scaled(v:Int):Int { store = v * 3; return v; }
+		');
+		check('static property unqualified', 'return readIt();', '42', '
+			public static var only(get, never):Int;
+			static function get_only():Int return 42;
+			static function readIt():Int return only;
+		');
+
 		check('regex match', 'var r = ~/[0-9]+/; return r.match("abc123") ? "yes" : "no";', 'yes');
 		check('regex no match', 'var r = ~/^[0-9]+$/; return r.match("abc") ? "yes" : "no";', 'no');
 		check('regex matched group', 'var r = ~/([a-z]+)([0-9]+)/; r.match("abc123"); return r.matched(2);', '123');
