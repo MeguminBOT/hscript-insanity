@@ -95,6 +95,14 @@ class CppiaTest {
 		check('switch multi value', 'var a = 3; switch (a) { case 1, 2: return "low"; case 3, 4: return "high"; default: return "?"; }', 'high');
 		check('switch on string', 'var s = "b"; switch (s) { case "a": return "A"; case "b": return "B"; default: return "?"; }', 'B');
 
+		check('module-level function', 'return helper(6);', '12', '', 'function helper(n:Int):Int return n * 2;');
+		check('module-level var', 'return offset;', '9', '', 'var offset:Int = 9;');
+		check('module-level var is writable', 'offset = 4; return offset;', '4', '', 'var offset:Int = 0;');
+		check('module-level function calls another', 'return outer(3);', '9', '', '
+			function inner(n:Int):Int return n * 3;
+			function outer(n:Int):Int return inner(n);
+		');
+
 		check('member field initialiser', 'var t = new T(); return t.raw;', '7', '
 			public var raw:Int = 7;
 			public function new() {}

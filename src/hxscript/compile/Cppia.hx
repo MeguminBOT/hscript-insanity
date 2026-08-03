@@ -42,10 +42,10 @@ class Cppia {
 		for (input in inputs) {
 			var trial:CppiaEmitter = new CppiaEmitter();
 			for (other in inputs)
-				trial.declare(other.decls);
+				trial.declare(other.decls, other.name);
 
 			try {
-				trial.emit(input.decls);
+				trial.emit(input.decls, input.name);
 				trial.finish();
 				accepted.push(input);
 			} catch (e:CppiaUnsupported) {
@@ -58,11 +58,11 @@ class Cppia {
 
 		var emitter:CppiaEmitter = new CppiaEmitter();
 		for (input in inputs)
-			emitter.declare(input.decls);
+			emitter.declare(input.decls, input.name);
 
 		var compiled:Array<String> = [];
 		for (input in accepted) {
-			emitter.emit(input.decls);
+			emitter.emit(input.decls, input.name);
 			compiled.push(input.name);
 		}
 

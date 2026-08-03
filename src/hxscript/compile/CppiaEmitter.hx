@@ -66,6 +66,9 @@ class CppiaEmitter {
 	/** Assignments for the current class's member field initialisers. */
 	var memberInits:Array<Expr>;
 
+	/** Top-level field names, mapped to the synthetic class holding them. */
+	var moduleFields:StringMap<String>;
+
 	/**
 	 * Static properties declared in this batch, as `class.field`, split by which accessor they have.
 	 *
@@ -91,6 +94,7 @@ class CppiaEmitter {
 		enumCtors = new StringMap();
 		staticGetters = new StringMap();
 		staticSetters = new StringMap();
+		moduleFields = new StringMap();
 		memberInits = [];
 		currentClass = '';
 		currentSuper = '';
@@ -105,8 +109,24 @@ class CppiaEmitter {
 	 *
 	 * @param decls The module's declarations.
 	 */
-	public function declare(decls:Array<ModuleDecl>):Void {
+	public function declare(decls:Array<ModuleDecl>, moduleName:String = null):Void {
 		var pack:String = '';
+
+		for (decl in decls) {
+			switch (decl.d) {
+				case DField(m):
+					var owner:String = fieldsClass(decls, moduleName);
+					moduleFields.set(m.name, owner);
+					switch (m.kind) {
+						case KVar(v):
+							if (v.get == 'get' || v.get == 'dynamic')
+								staticGetters.set(owner + '.' + m.name, true);
+							if (v.set == 'set' || v.set == 'dynamic') staticSetters.set(owner + '.' + m.name, true);
+						case _:
+					}
+				case _:
+			}
+		}
 
 		for (decl in decls) {
 			switch (decl.d) {
@@ -155,7 +175,9 @@ class CppiaEmitter {
 	 * @param decls The module's declarations.
 	 * @throws CppiaUnsupported If any declaration has no cppia spelling.
 	 */
-	public function emit(decls:Array<ModuleDecl>):Void {
+	public function emit(decls:Array<ModuleDecl>, moduleName:String = null):Void {
+		emitModuleFields(decls, moduleName);
+
 		var pack:String = '';
 
 		for (decl in decls) {
@@ -173,9 +195,74 @@ class CppiaEmitter {
 					throw new CppiaUnsupported('abstract declarations', decl.pos);
 				case DTypedef(_):
 				case DField(_):
-					throw new CppiaUnsupported('module-level fields', decl.pos);
 			}
 		}
+	}
+
+	/**
+	 * The synthetic class a module's top-level fields become statics of, matching the interpreter's
+	 * own `<name>_Fields_` convention.
+	 *
+	 * @param decls The module's declarations, read for its package.
+	 * @param moduleName The module's name.
+	 * @return The class path, or null when the module has no top-level fields to hold.
+	 */
+	function fieldsClass(decls:Array<ModuleDecl>, moduleName:String):String {
+		var pack:String = '';
+		for (decl in decls) {
+			switch (decl.d) {
+				case DPackage(path):
+					pack = path.join('.');
+				case _:
+			}
+		}
+
+		var short:String = moduleName == null ? 'Module' : moduleName;
+		var dot:Int = short.lastIndexOf('.');
+		if (dot >= 0)
+			short = short.substr(dot + 1);
+
+		return (pack.length > 0 ? pack + '.' : '') + short + '_Fields_';
+	}
+
+	/**
+	 * Emits a module's top-level fields as statics of one synthetic class.
+	 *
+	 * @param decls The module's declarations.
+	 * @param moduleName The module's name.
+	 */
+	function emitModuleFields(decls:Array<ModuleDecl>, moduleName:String):Void {
+		var fields:Array<FieldDecl> = [];
+		var pos:Position = null;
+
+		for (decl in decls) {
+			switch (decl.d) {
+				case DField(m):
+					if (pos == null)
+						pos = decl.pos;
+					fields.push({
+						name: m.name,
+						meta: m.meta,
+						kind: m.kind,
+						access: m.isPrivate ? [AStatic, APrivate] : [AStatic, APublic]
+					});
+				case _:
+			}
+		}
+
+		if (fields.length == 0)
+			return;
+
+		emitClass({
+			name: fieldsClass(decls, moduleName),
+			params: [],
+			meta: [],
+			isPrivate: false,
+			extend: null,
+			implement: [],
+			fields: fields,
+			isExtern: false
+		}, '', false, pos);
 	}
 
 	/** Assembles the finished module. */
@@ -969,6 +1056,15 @@ class CppiaEmitter {
 				for (p in params)
 					expr(p);
 
+			case EIdent(name) if (lookupVar(name) == null && moduleFields.exists(name)):
+				w.pos(line);
+				w.token('CALLSTATIC');
+				w.type(moduleFields.get(name));
+				w.str(name);
+				w.int(params.length);
+				for (p in params)
+					expr(p);
+
 			case _:
 				w.pos(line);
 				w.token('CALL');
@@ -1067,6 +1163,24 @@ class CppiaEmitter {
 			w.pos(line);
 			w.token('FSTATIC');
 			w.type(currentClass);
+			w.str(v);
+			return;
+		}
+
+		if (moduleFields.exists(v)) {
+			var owner:String = moduleFields.get(v);
+			w.pos(line);
+
+			if (staticGetters.exists(owner + '.' + v)) {
+				w.token('CALLSTATIC');
+				w.type(owner);
+				w.str('get_' + v);
+				w.int(0);
+				return;
+			}
+
+			w.token('FSTATIC');
+			w.type(owner);
 			w.str(v);
 			return;
 		}
