@@ -34,13 +34,15 @@ class Cppia {
 	 * @param inputs The modules to compile.
 	 * @return The compiled module, and which inputs were compiled or skipped.
 	 */
-	public static function compile(inputs:Array<CppiaInput>):CppiaResult {
+	public static function compile(inputs:Array<CppiaInput>, ?ambient:Array<String>):CppiaResult {
 		#if hxscript_cppia
 		var skipped:Array<{name:String, reason:String}> = [];
 		var accepted:Array<CppiaInput> = [];
 
 		for (input in inputs) {
 			var trial:CppiaEmitter = new CppiaEmitter();
+			if (ambient != null)
+				trial.ambient(ambient);
 			for (other in inputs)
 				trial.declare(other.decls, other.name);
 
@@ -57,6 +59,8 @@ class Cppia {
 			return {bytes: null, compiled: [], skipped: skipped};
 
 		var emitter:CppiaEmitter = new CppiaEmitter();
+		if (ambient != null)
+			emitter.ambient(ambient);
 		for (input in inputs)
 			emitter.declare(input.decls, input.name);
 

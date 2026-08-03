@@ -104,6 +104,23 @@ class CppiaEmitter {
 	}
 
 	/**
+	 * Registers types the host makes available to every script without an import.
+	 *
+	 * A script written against those names has no `DImport` to resolve them by, so without this the
+	 * emitter cannot place them and refuses the module.
+	 *
+	 * @param paths Full type paths; each is registered under its last segment.
+	 */
+	public function ambient(paths:Array<String>):Void {
+		for (path in paths) {
+			var dot:Int = path.lastIndexOf('.');
+			var short:String = dot < 0 ? path : path.substr(dot + 1);
+			if (!typePaths.exists(short))
+				typePaths.set(short, path);
+		}
+	}
+
+	/**
 	 * Records the types a module declares and imports, without emitting anything. Every module must
 	 * be declared before any is emitted.
 	 *
@@ -998,6 +1015,19 @@ class CppiaEmitter {
 						w.type(asType);
 						w.str(name);
 						w.int(params.length);
+						for (p in params)
+							expr(p);
+						return;
+					}
+
+					if (!moduleClasses.exists(asType)) {
+						w.pos(line);
+						w.token('CALL');
+						w.int(params.length);
+						w.pos(line);
+						w.token('FSTATIC');
+						w.type(asType);
+						w.str(name);
 						for (p in params)
 							expr(p);
 						return;
