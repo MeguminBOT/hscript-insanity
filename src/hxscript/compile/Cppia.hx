@@ -25,17 +25,6 @@ class Cppia {
 		#end
 	}
 
-	/**
-	 * Compiles as many of the given modules as it can.
-	 *
-	 * All modules are declared before any is emitted, so they may refer to each other in any order.
-	 * Emission runs against a throwaway writer first, since a module that failed part-way through
-	 * would otherwise leave a corrupt record behind.
-	 *
-	 * @param inputs The modules to compile.
-	 * @return The compiled module, and which inputs were compiled or skipped.
-	 */
-
 	#if hxscript_cppia
 	/**
 	 * Dotted paths of every type a module declares.
@@ -70,6 +59,9 @@ class Cppia {
 	 * keeps them interpreted together, which is where their dependency already is. Repeats until
 	 * nothing more falls out, since dropping one module can strand another.
 	 *
+	 * Presence is keyed by the CLASSES on offer rather than by module name, since a reference names a
+	 * class and a module may declare several under a name of its own.
+	 *
 	 * @param accepted The modules that compiled on their own.
 	 * @param skipped Receives each module dropped here, with its reason.
 	 * @param uses What each module referenced, by module name.
@@ -78,8 +70,6 @@ class Cppia {
 	static function dropDanglingUsers(accepted:Array<CppiaInput>, skipped:Array<{name:String, reason:String}>,
 			uses:Map<String, Array<String>>):Array<CppiaInput> {
 		while (true) {
-			// Keyed by the CLASSES on offer, not the module names: a reference names a class, and a
-			// module may declare several under a name of its own.
 			var present:Map<String, Bool> = new Map();
 			for (input in accepted)
 				for (path in declaredPaths(input.decls))
@@ -116,6 +106,17 @@ class Cppia {
 	}
 	#end
 
+	/**
+	 * Compiles as many of the given modules as it can.
+	 *
+	 * All modules are declared before any is emitted, so they may refer to each other in any order.
+	 * Emission runs against a throwaway writer first, since a module that failed part-way through
+	 * would otherwise leave a corrupt record behind.
+	 *
+	 * @param inputs The modules to compile.
+	 * @param ambient Types the host makes available without an import.
+	 * @return The compiled module, and which inputs were compiled or skipped.
+	 */
 	public static function compile(inputs:Array<CppiaInput>, ?ambient:Array<String>):CppiaResult {
 		#if hxscript_cppia
 		var skipped:Array<{name:String, reason:String}> = [];
