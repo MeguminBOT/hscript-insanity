@@ -119,9 +119,12 @@ class Cppia {
 	 *        module naming one is left interpreted: cppia resolves a class either inside the module
 	 *        being loaded or as a host class, and a scripted class in another module is neither, so
 	 *        the reference would fail to link and take the batch down with it.
+	 * @param statics Bare names the host answers with a static of its own, each written
+	 *        `name=owner.path::field`. Compiled code has no interpreter to have them injected into,
+	 *        so it reaches them where they really live.
 	 * @return The compiled module, and which inputs were compiled or skipped.
 	 */
-	public static function compile(inputs:Array<CppiaInput>, ?ambient:Array<String>, ?external:Array<String>):CppiaResult {
+	public static function compile(inputs:Array<CppiaInput>, ?ambient:Array<String>, ?external:Array<String>, ?statics:Array<String>):CppiaResult {
 		#if hxscript_cppia
 		var skipped:Array<{name:String, reason:String}> = [];
 		var accepted:Array<CppiaInput> = [];
@@ -134,6 +137,8 @@ class Cppia {
 				trial.ambient(ambient);
 			if (external != null)
 				trial.externals(external);
+			if (statics != null)
+				trial.ambientStatics(statics);
 			for (other in inputs)
 				trial.declare(other.decls, other.name);
 
@@ -157,6 +162,8 @@ class Cppia {
 			emitter.ambient(ambient);
 		if (external != null)
 			emitter.externals(external);
+		if (statics != null)
+			emitter.ambientStatics(statics);
 		for (input in inputs)
 			emitter.declare(input.decls, input.name);
 

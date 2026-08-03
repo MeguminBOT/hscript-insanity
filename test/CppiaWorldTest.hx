@@ -19,6 +19,14 @@ import hxscript.types.ScriptedClass;
 class CppiaWorldTest {
 	static var failures:Int = 0;
 
+	/**
+	 * A helper the host hands every script under a bare name, standing in for the values an engine
+	 * injects into each interpreter.
+	 */
+	public static function bonus(n:Int):Int {
+		return n;
+	}
+
 	/** A class holding static state, set up by one caller and read by another. */
 	static var TABLES:String = 'package w;
 class Tables {
@@ -56,7 +64,7 @@ class Entry {
 		Tables.init();
 		var worker:Worker = new Worker();
 		made = worker;
-		return worker.run(6);
+		return worker.run(6) + bonus(1);
 	}
 }
 ';
@@ -79,8 +87,12 @@ class Entry {
 	/**
 	 * Runs the world twice and compares.
 	 *
+	 * Agreeing while nothing was substituted proves nothing, which is how a compiled path can look
+	 * correct for the whole time it is not being used, so what ran is checked as well as the answer.
+	 *
 	 * @param label How to name the case.
 	 * @param compile Paths the host is asked to compile; the rest stay interpreted.
+	 * @param expectSubstituted Whether the compiled classes should have been the ones that ran.
 	 */
 	static function check(label:String, compile:Array<String>, expectSubstituted:Bool = false):Void {
 		var want:String = run([]);
@@ -93,8 +105,6 @@ class Entry {
 			return;
 		}
 
-		// Agreeing while nothing was substituted proves nothing, which is how a compiled path can
-		// look correct for the whole time it is not being used.
 		if (expectSubstituted != substituted) {
 			failures++;
 			Sys.println('  FAIL ' + label + '   expected substitution=' + expectSubstituted + ', got ' + substituted);
@@ -129,6 +139,8 @@ class Entry {
 				env.addModule(module);
 				modules.push(module);
 			}
+
+			env.variables.set('bonus', bonus);
 
 			for (module in modules)
 				module.init(env);
@@ -173,7 +185,7 @@ class Entry {
 				outside.push(path);
 		}
 
-		var result:CppiaResult = Cppia.compile(inputs, null, outside);
+		var result:CppiaResult = Cppia.compile(inputs, null, outside, ['bonus=CppiaWorldTest::bonus']);
 		if (result.bytes == null)
 			return;
 

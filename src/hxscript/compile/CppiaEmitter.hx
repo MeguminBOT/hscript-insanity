@@ -76,6 +76,9 @@ class CppiaEmitter {
 	/** Scripted classes the host has elsewhere, which this batch cannot reach. */
 	var external:StringMap<Bool>;
 
+	/** Bare names the host answers with a static of its own, as `owner::field`. */
+	var ambientMembers:StringMap<String>;
+
 	/**
 	 * Static properties declared in this batch, as `class.field`, split by which accessor they have.
 	 *
@@ -105,6 +108,7 @@ class CppiaEmitter {
 		memberInits = [];
 		refs = [];
 		external = new StringMap();
+		ambientMembers = new StringMap();
 		currentClass = '';
 		currentSuper = '';
 
@@ -1079,6 +1083,18 @@ class CppiaEmitter {
 				for (p in params)
 					expr(p);
 
+			case EIdent(name) if (lookupVar(name) == null && ambientMembers.exists(name)):
+				var target:String = ambientMembers.get(name);
+				var split:Int = target.indexOf('::');
+
+				w.pos(line);
+				w.token('CALLSTATIC');
+				w.type(target.substr(0, split));
+				w.str(target.substr(split + 2));
+				w.int(params.length);
+				for (p in params)
+					expr(p);
+
 			case _:
 				w.pos(line);
 				w.token('CALL');
@@ -1205,6 +1221,9 @@ class CppiaEmitter {
 			w.type(typePaths.get(v));
 			return;
 		}
+
+		if (emitAmbient(v, pos))
+			return;
 
 		if (currentSuper.length > 0) {
 			w.pos(line);
@@ -1616,6 +1635,49 @@ class CppiaEmitter {
 	public function externals(paths:Array<String>):Void {
 		for (path in paths)
 			external.set(path, true);
+	}
+
+	/**
+	 * Registers bare names the host answers with a static of its own.
+	 *
+	 * A host may hand scripts a name that is neither a local, a field, nor a type -- a helper it
+	 * injects into every interpreter. Compiled code has no interpreter to inject into, so the name
+	 * has to be reached where it really lives.
+	 *
+	 * @param entries Each written `name=owner.path::field`.
+	 */
+	public function ambientStatics(entries:Array<String>):Void {
+		for (entry in entries) {
+			var equals:Int = entry.indexOf('=');
+			if (equals < 0)
+				continue;
+
+			var target:String = entry.substr(equals + 1);
+			if (target.indexOf('::') < 0)
+				continue;
+
+			ambientMembers.set(entry.substr(0, equals), target);
+		}
+	}
+
+	/**
+	 * Emits a read of a host-supplied bare name.
+	 *
+	 * @param name The bare name.
+	 * @param pos Where it appears.
+	 * @return Whether it was one, and has been emitted.
+	 */
+	function emitAmbient(name:String, pos:Position):Bool {
+		var target:Null<String> = ambientMembers.get(name);
+		if (target == null)
+			return false;
+
+		var split:Int = target.indexOf('::');
+		w.pos(pos == null ? 0 : pos.line);
+		w.token('FSTATIC');
+		w.type(target.substr(0, split));
+		w.str(target.substr(split + 2));
+		return true;
 	}
 
 	/** Classes from this batch that the emitted code names. */
