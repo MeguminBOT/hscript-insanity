@@ -3348,6 +3348,8 @@ class Interp {
 			}
 		}
 
+		o = staticHost(o);
+
 		// A scripted abstract's fields are statics taking the boxed value as their `this`, so reading
 		// one has to go through the abstract rather than through the box object.
 		if (o is ScriptedAbstractValue) {
@@ -3430,6 +3432,8 @@ class Interp {
 			throw DDefer;
 
 		checkAccess(o, f);
+
+		o = staticHost(o);
 
 		if (o is ScriptedAbstractValue) {
 			var box:ScriptedAbstractValue = cast o;
@@ -3628,6 +3632,29 @@ class Interp {
 	 * @param e The value being checked.
 	 * @return True when the value is that type's compiled form.
 	 */
+	/**
+	 * The class that owns a scripted class's statics.
+	 *
+	 * A compiled class carries its own statics, so where the host has compiled one there are two
+	 * stores for the same declaration: the interpreter's and the compiled class's. Instances come
+	 * from the compiled class, so its method bodies read the compiled store -- and every static call
+	 * interpreted code makes has to land there too, or one side initialises what the other never
+	 * reads.
+	 *
+	 * @param o The value a field is being read from or written to.
+	 * @return The compiled class standing in for it, or `o` unchanged.
+	 */
+	function staticHost(o:Dynamic):Dynamic {
+		#if hxscript_cppia
+		if (environment != null && o is ScriptedClass) {
+			var native:Class<Dynamic> = environment.compiled.get((cast o : ScriptedClass).path);
+			if (native != null)
+				return native;
+		}
+		#end
+		return o;
+	}
+
 	inline function isCompiledAs(t:Dynamic, e:Dynamic):Bool {
 		#if hxscript_cppia
 		if (environment == null || !(t is ScriptedClass))
