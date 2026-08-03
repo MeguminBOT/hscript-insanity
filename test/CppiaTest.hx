@@ -77,9 +77,23 @@ class CppiaTest {
 		check('enum switch', 'var c = Colour.Green; switch (c) { case Colour.Red: return "r"; case Colour.Green: return "g"; default: return "?"; }', 'g', '',
 			colour);
 		check('enum switch falls to default', 'var c = Colour.Rgb(1, 2, 3); switch (c) { case Colour.Red: return "r"; default: return "d"; }', 'd', '', colour);
-		check('switch on a local as case', 'var k = 2; var a = 2; switch (a) { case k: return "hit"; default: return "miss"; }', 'hit');
+		check('bare ident case captures, not compares', 'var k = 99; var a = 2; switch (a) { case k: return "captured"; default: return "compared"; }',
+			'captured');
+		check('bare ident case rebinds the name', 'var k = 99; var a = 2; switch (a) { case k: return Std.string(k); default: return "no"; }', '2');
+		check('capture with guard that fails', 'var a = 2; switch (a) { case v if (v > 5): return "big"; default: return "small"; }', 'small');
+		check('capture after a literal case', 'var a = 7; switch (a) { case 1: return "one"; case v: return Std.string(v * 2); }', '14');
 		check('switch multi value', 'var a = 3; switch (a) { case 1, 2: return "low"; case 3, 4: return "high"; default: return "?"; }', 'high');
 		check('switch on string', 'var s = "b"; switch (s) { case "a": return "A"; case "b": return "B"; default: return "?"; }', 'B');
+
+		check('case guard taken', 'var a = 5; switch (a) { case v if (v > 3): return "big"; default: return "small"; }', 'big');
+		check('case guard falls through to later case',
+			'var a = 2; switch (a) { case 2 if (false): return "no"; case 2: return "yes"; default: return "?"; }', 'yes');
+		check('case guard falls to default', 'var a = 1; switch (a) { case 1 if (false): return "no"; default: return "d"; }', 'd');
+		check('case guard with multi value', 'var a = 3; switch (a) { case 1, 3 if (a > 2): return "hit"; default: return "miss"; }', 'hit');
+		check('typed catch selects clause', 'try { throw "boom"; } catch (e:Int) { return "int"; } catch (e:String) { return "str"; }', 'str');
+		check('typed catch first match wins', 'try { throw 7; } catch (e:Int) { return "int"; } catch (e:String) { return "str"; }', 'int');
+		check('typed catch falls to dynamic', 'try { throw 1.5; } catch (e:Int) { return "int"; } catch (e:Dynamic) { return "dyn"; }', 'dyn');
+		check('catch binds the value', 'try { throw "x"; } catch (e:String) { return e + "!"; }', 'x!');
 
 		check('null-safe field, present', 'var o = {a: 5}; return o?.a;', '5');
 		check('null-safe field, null', 'var o:Dynamic = null; return o?.a;', 'null');

@@ -16,6 +16,7 @@ import hxscript.syntax.Expr;
  */
 class CppiaCapture {
 	var boxed:StringMap<Bool>;
+	var replacement:Expr;
 
 	function new() {
 		boxed = new StringMap();
@@ -59,6 +60,33 @@ class CppiaCapture {
 		}
 
 		return {body: self.rewrite(prepared), boxedArgs: boxedArgs};
+	}
+
+	/**
+	 * Replaces every mention of a name with another expression.
+	 *
+	 * @param e The subtree to rewrite.
+	 * @param name The name to replace.
+	 * @param with What to put in its place.
+	 * @return The rewritten subtree.
+	 */
+	public static function substitute(e:Expr, name:String, with:Expr):Expr {
+		var self:CppiaCapture = new CppiaCapture();
+		self.boxed.set(name, true);
+		self.replacement = with;
+		return self.replaceIdent(e);
+	}
+
+	function replaceIdent(e:Expr):Expr {
+		if (e == null)
+			return null;
+
+		switch (e.e) {
+			case EIdent(v):
+				return boxed.exists(v) ? replacement : e;
+			case _:
+				return mapChildren(e, replaceIdent);
+		}
 	}
 
 	/**

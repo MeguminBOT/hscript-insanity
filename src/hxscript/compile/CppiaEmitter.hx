@@ -546,23 +546,17 @@ class CppiaEmitter {
 				for (f in fields)
 					expr(f.e);
 
-			case ETry(body, v, _, ecatch, extra):
-				if (extra != null && extra.length > 0)
-					throw new CppiaUnsupported('multiple catch clauses', e.pos);
-
+			case ETry(body, v, t, ecatch, extra):
 				w.pos(line);
 				w.token('TRY');
-				w.int(1);
+				w.int(1 + (extra == null ? 0 : extra.length));
 				expr(body);
 
-				pushScope();
-				var id:Int = declareVar(v);
-				w.str(v);
-				w.int(id);
-				w.bool(false);
-				w.type('');
-				expr(ecatch);
-				popScope();
+				emitCatch(v, t, ecatch);
+				if (extra != null) {
+					for (x in extra)
+						emitCatch(x.v, x.t, x.expr);
+				}
 
 			case ESwitch(cond, cases, defaultExpr):
 				emitSwitch(cond, cases, defaultExpr, e.pos);
@@ -766,8 +760,10 @@ class CppiaEmitter {
 
 	function emitSwitch(cond:Expr, cases:Array<{values:Array<Expr>, expr:Expr, ?guard:Expr}>, defaultExpr:Null<Expr>, pos:Position):Void {
 		for (c in cases) {
-			if (c.guard != null)
-				throw new CppiaUnsupported('case guards', pos);
+			if (c.guard != null || captureName(c) != null) {
+				expr(switchAsChain(cond, cases, defaultExpr, pos));
+				return;
+			}
 			for (v in c.values) {
 				switch (v.e) {
 					case EConst(_) | EIdent(_) | EField(_, _, _):
@@ -969,6 +965,109 @@ class CppiaEmitter {
 		}
 
 		throw new CppiaUnsupported('unresolved identifier ' + v, pos);
+	}
+
+	/**
+	 * Rewrites a switch as an if/else chain, which is how a guard is expressed: cppia's switch has no
+	 * guard slot, and a case whose guard fails must fall through to later cases rather than to the
+	 * default.
+	 *
+	 * @param cond The switch subject.
+	 * @param cases Its cases.
+	 * @param defaultExpr Its default branch, if any.
+	 * @param pos Where the switch appears.
+	 * @return A block evaluating to the same branch the switch would have taken.
+	 */
+	function switchAsChain(cond:Expr, cases:Array<{values:Array<Expr>, expr:Expr, ?guard:Expr}>, defaultExpr:Null<Expr>, pos:Position):Expr {
+		var name:String = tempName('sw');
+		var ref:Expr = {e: EIdent(name), pos: pos};
+
+		var chain:Expr = defaultExpr;
+		var i:Int = cases.length - 1;
+		while (i >= 0) {
+			var c = cases[i];
+			var capture:Null<String> = captureName(c);
+
+			var body:Expr = c.expr;
+			var test:Expr = null;
+
+			if (capture != null) {
+				body = {
+					e: EBlock([{e: EVar(capture, null, ref, null, null, false), pos: pos}, c.expr]),
+					pos: pos
+				};
+				test = {e: EIdent('true'), pos: pos};
+			} else {
+				for (v in c.values) {
+					var eq:Expr = {e: EBinop('==', ref, v), pos: pos};
+					test = test == null ? eq : {e: EBinop('||', test, eq), pos: pos};
+				}
+				if (test == null)
+					test = {e: EIdent('true'), pos: pos};
+			}
+
+			if (c.guard != null) {
+				// A failing guard must fall through to later cases, so the guard belongs in the test,
+				// not in the body. For a capture that means reading the subject directly, since the
+				// name the guard uses is not bound until the branch is taken.
+				var guard:Expr = capture == null ? c.guard : CppiaCapture.substitute(c.guard, capture, ref);
+				test = capture != null ? {e: EParent(guard), pos: pos} : {
+					e: EBinop('&&', {e: EParent(test), pos: pos}, {e: EParent(guard), pos: pos}),
+					pos: pos
+				};
+			}
+
+			chain = {e: EIf(test, body, chain), pos: pos};
+			i--;
+		}
+
+		return {
+			e: EBlock([{e: EVar(name, null, cond, null, null, false), pos: pos}, chain]),
+			pos: pos
+		};
+	}
+
+	/**
+	 * The name a case binds, when its pattern is a bare identifier rather than a value to match.
+	 *
+	 * hxscript treats any such identifier as a capture that always matches and rebinds, so it cannot
+	 * be emitted as an equality test. `true`, `false` and `null` are literals, not captures.
+	 *
+	 * @param c The case to inspect.
+	 * @return The bound name, or null when the case matches by value.
+	 */
+	function captureName(c:{values:Array<Expr>, expr:Expr, ?guard:Expr}):Null<String> {
+		for (v in c.values) {
+			switch (v.e) {
+				case EIdent(name):
+					if (name != 'true' && name != 'false' && name != 'null' && !typePaths.exists(name))
+						return name;
+				case _:
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Emits one catch clause. The loader picks the first whose declared type matches the thrown
+	 * value, so an unannotated clause is written as `Dynamic` and catches everything.
+	 *
+	 * @param v The bound name.
+	 * @param t Its declared type, if annotated.
+	 * @param body The clause body.
+	 */
+	function emitCatch(v:String, t:Null<CType>, body:Expr):Void {
+		pushScope();
+
+		var declared:String = t == null ? '' : typeName(t);
+		var id:Int = declareVar(v, declared);
+		w.str(v);
+		w.int(id);
+		w.bool(false);
+		w.type(declared);
+		expr(body);
+
+		popScope();
 	}
 
 	/**
