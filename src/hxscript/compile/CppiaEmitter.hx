@@ -498,8 +498,12 @@ class CppiaEmitter {
 				emitCall(callee, params, e.pos);
 
 			case EField(obj, f, maybe):
-				if (maybe == true)
-					throw new CppiaUnsupported('null-safe field access', e.pos);
+				if (maybe == true) {
+					expr(nullSafe(obj, function(safe:Expr):Expr {
+						return {e: EField(safe, f, false), pos: e.pos};
+					}, e.pos));
+					return;
+				}
 				emitField2(obj, f, e.pos);
 
 			case EArray(arr, index):
@@ -795,8 +799,12 @@ class CppiaEmitter {
 
 		switch (callee.e) {
 			case EField(obj, name, maybe):
-				if (maybe == true)
-					throw new CppiaUnsupported('null-safe calls', pos);
+				if (maybe == true) {
+					expr(nullSafe(obj, function(safe:Expr):Expr {
+						return {e: ECall({e: EField(safe, name, false), pos: pos}, params), pos: pos};
+					}, pos));
+					return;
+				}
 
 				var asType:Null<String> = typeOf(obj);
 				if (asType != null) {
@@ -961,6 +969,26 @@ class CppiaEmitter {
 		}
 
 		throw new CppiaUnsupported('unresolved identifier ' + v, pos);
+	}
+
+	/**
+	 * Wraps a `?.` access so the subject is evaluated once and only used when it is not null.
+	 *
+	 * @param obj The subject of the access.
+	 * @param use Builds the access from the bound subject.
+	 * @param pos Where the access appears.
+	 * @return A block evaluating to the access, or to null.
+	 */
+	function nullSafe(obj:Expr, use:Expr->Expr, pos:Position):Expr {
+		var name:String = tempName('safe');
+		var ref:Expr = {e: EIdent(name), pos: pos};
+		var isNull:Expr = {e: EBinop('==', ref, {e: EIdent('null'), pos: pos}), pos: pos};
+		var guarded:Expr = {e: ETernary(isNull, {e: EIdent('null'), pos: pos}, use(ref)), pos: pos};
+
+		return {
+			e: EBlock([{e: EVar(name, null, obj, null, null, false), pos: pos}, guarded]),
+			pos: pos
+		};
 	}
 
 	/** A name no script can write, for a temporary the emitter introduces. */

@@ -81,6 +81,18 @@ class CppiaTest {
 		check('switch multi value', 'var a = 3; switch (a) { case 1, 2: return "low"; case 3, 4: return "high"; default: return "?"; }', 'high');
 		check('switch on string', 'var s = "b"; switch (s) { case "a": return "A"; case "b": return "B"; default: return "?"; }', 'B');
 
+		check('null-safe field, present', 'var o = {a: 5}; return o?.a;', '5');
+		check('null-safe field, null', 'var o:Dynamic = null; return o?.a;', 'null');
+		check('null-safe call, present', 'var s = "hi"; return s?.toUpperCase();', 'HI');
+		check('null-safe call, null', 'var s:Dynamic = null; return s?.toUpperCase();', 'null');
+		check('null-safe evaluates subject once', 'var n = 0; var a = [{v: 1}]; return bump(a)?.v;', '1', '
+			static var calls:Int = 0;
+			static function bump(a:Array<Dynamic>):Dynamic {
+				calls++;
+				return a[0];
+			}
+		');
+
 		check('map literal, string keys', "var m = ['a' => 1, 'b' => 2]; return m.get('a') + m.get('b');", '3');
 		check('map literal, int keys', 'var m = [1 => "x", 2 => "y"]; return m.get(2);', 'y');
 		check('map literal, exists', "var m = ['a' => 1]; return m.exists('a') && !m.exists('b') ? 'ok' : 'no';", 'ok');
