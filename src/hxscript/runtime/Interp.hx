@@ -3630,6 +3630,14 @@ class Interp {
 		if (canDefer && c is IScriptedType && !c.initialized)
 			throw DDefer;
 
+		#if hxscript_cppia
+		if (c is ScriptedClass && environment != null) {
+			var native:Class<Dynamic> = environment.compiled.get((cast c : ScriptedClass).path);
+			if (native != null)
+				return HaxeType.createInstance(native, args);
+		}
+		#end
+
 		if (c is ScriptedAbstract)
 			return (cast c : ScriptedAbstract).create(args);
 

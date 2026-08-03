@@ -28,6 +28,18 @@ class Environment {
 	/** Callbacks run once `start` finishes; returning false removes the callback. */
 	public var onInitialized:Array<Map<String, IScriptedType>->Bool> = [];
 
+	#if hxscript_cppia
+	/**
+	 * Native classes to build in place of the scripted ones they were compiled from, keyed by
+	 * scripted path.
+	 *
+	 * A compiled class is only worth having if it is the one that actually runs, and scripts build
+	 * each other with `new`, so the interpreter consults this before constructing a scripted class of
+	 * its own. Empty unless a host has compiled something into it.
+	 */
+	public var compiled:Map<String, Class<Dynamic>> = [];
+	#end
+
 	/**
 	 * Creates a world, optionally seeded with modules, and builds the initial type index.
 	 *
