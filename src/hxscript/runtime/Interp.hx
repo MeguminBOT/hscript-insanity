@@ -3617,7 +3617,15 @@ class Interp {
 	 */
 	function cnew(cl:String, args:Array<Dynamic>):Dynamic {
 		var c = Tools.resolve(cl, environment);
-		c ??= resolve(cl);
+
+		if (c == null) {
+			// A written key type already became a concrete map class while parsing, so `Map` reaching
+			// here is the bare form, which has no class to resolve and decides on its first key.
+			if (cl == 'Map' || cl == 'haxe.ds.Map')
+				return new AnyMap();
+
+			c = resolve(cl);
+		}
 
 		if (canDefer && c is IScriptedType && !c.initialized)
 			throw DDefer;

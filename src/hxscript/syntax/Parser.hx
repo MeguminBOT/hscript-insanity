@@ -690,6 +690,7 @@ class Parser extends Lexer {
 			case "new":
 				var a = new Array();
 				a.push(getIdent());
+				var targs:Array<CType> = null;
 				while (true) {
 					var tk = token();
 					switch (tk) {
@@ -697,13 +698,16 @@ class Parser extends Lexer {
 							a.push(getIdent());
 						case TPOpen:
 							break;
+						case TOp(op) if (op == "<" && targs == null):
+							push(tk);
+							targs = parseTypeArgs();
 						default:
 							unexpected(tk);
 							break;
 					}
 				}
 				var args = parseExprList(TPClose);
-				mk(ENew(a.join("."), args), p1);
+				mk(ENew(mapClassFor(a.join("."), targs), args), p1);
 			case "throw":
 				var e = parseExpr();
 				mk(EThrow(e), p1, pmax(e));
@@ -1031,39 +1035,7 @@ class Parser extends Lexer {
 			case TId(v):
 				push(t);
 				var path = parsePath();
-				var params = null;
-				t = token();
-				switch (t) {
-					case TOp(op):
-						if (op == "<") {
-							params = [];
-							while (true) {
-								switch (token(false)) {
-									case TConst(c):
-										params.push(CTExpr(mk(EConst(c))));
-									case tk:
-										push(tk);
-										params.push(parseType());
-								}
-								t = token();
-								switch (t) {
-									case TComma: continue;
-									case TOp(op):
-										if (op == ">")
-											break;
-										if (op.charCodeAt(0) == ">".code) {
-											tokens.unshift({t: TOp(op.substr(1)), min: tokenMax - op.length - 1, max: tokenMax});
-											break;
-										}
-									default:
-								}
-								unexpected(t);
-								break;
-							}
-						} else push(t);
-					default:
-						push(t);
-				}
+				var params = parseTypeArgs();
 				return parseTypeNext(CTPath(path, params));
 			case TPOpen:
 				var a = token();
@@ -1166,6 +1138,79 @@ class Parser extends Lexer {
 			default:
 				return unexpected(t);
 		}
+	}
+
+	/**
+	 * Resolves `new Map<K, V>()` to the concrete map class its key type selects.
+	 *
+	 * `Map` is a multi-type abstract, so the compiler picks `StringMap`, `IntMap`, `ObjectMap` or
+	 * `EnumValueMap` from the key type and there is no `Map` class to instantiate at runtime. A
+	 * written key type settles it here, for free, at parse time.
+	 *
+	 * Only `String` and `Int` are decided this way. Any other key needs to tell an enum value from a
+	 * plain object, which a name alone cannot do, so it stays `Map` and the runtime picks from the
+	 * first key instead.
+	 *
+	 * @param path The constructed type path.
+	 * @param targs Its written type arguments, or null when it had none.
+	 * @return The class to construct.
+	 */
+	function mapClassFor(path:String, targs:Array<CType>):String {
+		if (targs == null || targs.length == 0 || (path != "Map" && path != "haxe.ds.Map"))
+			return path;
+
+		return switch (targs[0]) {
+			case CTPath(["String"], _): "haxe.ds.StringMap";
+			case CTPath(["Int"], _): "haxe.ds.IntMap";
+			default: path;
+		}
+	}
+
+	/**
+	 * Parses the `<...>` argument list that may follow a type path, or returns null when the next
+	 * token does not open one.
+	 *
+	 * The closing `>` of a nested list arrives glued to its parent's as a single `>>` operator token,
+	 * so the tail is pushed back for the enclosing list to consume.
+	 *
+	 * @return The type arguments, or null when there were none.
+	 */
+	function parseTypeArgs():Array<CType> {
+		var t = token();
+
+		switch (t) {
+			case TOp(op) if (op == "<"):
+			default:
+				push(t);
+				return null;
+		}
+
+		var params:Array<CType> = [];
+		while (true) {
+			switch (token(false)) {
+				case TConst(c):
+					params.push(CTExpr(mk(EConst(c))));
+				case tk:
+					push(tk);
+					params.push(parseType());
+			}
+			t = token();
+			switch (t) {
+				case TComma: continue;
+				case TOp(op):
+					if (op == ">")
+						break;
+					if (op.charCodeAt(0) == ">".code) {
+						tokens.unshift({t: TOp(op.substr(1)), min: tokenMax - op.length - 1, max: tokenMax});
+						break;
+					}
+				default:
+			}
+			unexpected(t);
+			break;
+		}
+
+		return params;
 	}
 
 	/**
