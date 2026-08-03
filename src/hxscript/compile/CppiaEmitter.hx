@@ -49,6 +49,7 @@ class CppiaEmitter {
 	var nextVarId:Int;
 
 	var scopes:Array<StringMap<Int>>;
+	var scopeTypes:Array<StringMap<String>>;
 	var typePaths:StringMap<String>;
 	var moduleClasses:StringMap<Bool>;
 
@@ -56,6 +57,8 @@ class CppiaEmitter {
 	var currentSuper:String;
 	var members:StringMap<Bool>;
 	var statics:StringMap<Bool>;
+	var memberTypes:StringMap<String>;
+	var staticTypes:StringMap<String>;
 
 	/** Constructor names of every enum this batch declares, by full type path. */
 	var enumCtors:StringMap<StringMap<Bool>>;
@@ -65,10 +68,13 @@ class CppiaEmitter {
 		classCount = 0;
 		nextVarId = 1;
 		scopes = [];
+		scopeTypes = [];
 		typePaths = new StringMap();
 		moduleClasses = new StringMap();
 		members = new StringMap();
 		statics = new StringMap();
+		memberTypes = new StringMap();
+		staticTypes = new StringMap();
 		enumCtors = new StringMap();
 		currentClass = '';
 		currentSuper = '';
@@ -194,12 +200,24 @@ class CppiaEmitter {
 		currentSuper = c.extend == null ? '' : typeName(c.extend);
 		members = new StringMap();
 		statics = new StringMap();
+		memberTypes = new StringMap();
+		staticTypes = new StringMap();
 
 		for (f in c.fields) {
-			if (hasAccess(f, AStatic))
+			var declared:String = switch (f.kind) {
+				case KVar(v): v.type == null ? null : typeName(v.type);
+				case KFunction(fn): fn.ret == null ? null : typeName(fn.ret);
+			}
+
+			if (hasAccess(f, AStatic)) {
 				statics.set(f.name, true);
-			else
+				if (declared != null)
+					staticTypes.set(f.name, declared);
+			} else {
 				members.set(f.name, true);
+				if (declared != null)
+					memberTypes.set(f.name, declared);
+			}
 		}
 
 		w.newline();
@@ -294,7 +312,7 @@ class CppiaEmitter {
 			if (a.rest == true)
 				throw new CppiaUnsupported('rest arguments', pos);
 
-			var id:Int = declareVar(a.name);
+			var id:Int = declareVar(a.name, a.t == null ? null : typeName(a.t));
 
 			w.str(a.name);
 			w.int(id);
@@ -485,9 +503,13 @@ class CppiaEmitter {
 				emitField2(obj, f, e.pos);
 
 			case EArray(arr, index):
+				var known:Null<String> = inferType(arr);
 				w.pos(line);
 				w.token('ARRAYI');
-				w.type('Array');
+				// Only an array type may claim the specialised element access. Anything else, including
+				// an unknown type, goes through the dynamic form, which also covers abstracts that
+				// define their own array access.
+				w.type(known != null && known.substr(0, 5) == 'Array' ? known : 'Dynamic');
 				expr(arr);
 				expr(index);
 
@@ -607,7 +629,7 @@ class CppiaEmitter {
 					w.token('TVARS');
 					w.int(1);
 
-					var id:Int = declareVar(n);
+					var id:Int = declareVar(n, t == null ? null : typeName(t));
 					if (init == null) {
 						w.token('VARDECL');
 						w.str(n);
@@ -997,8 +1019,10 @@ class CppiaEmitter {
 	/** The dotted path a type annotation names, or the empty string when it is not a plain path. */
 	function typeName(t:CType):String {
 		switch (t) {
-			case CTPath(path, _):
+			case CTPath(path, params):
 				var joined:String = path.join('.');
+				if (joined == 'Array')
+					return arrayTypeName(params);
 				if (path.length == 1 && typePaths.exists(joined))
 					return typePaths.get(joined);
 				return joined;
@@ -1013,24 +1037,105 @@ class CppiaEmitter {
 		}
 	}
 
+	/**
+	 * Spells an array type the way cppia names its specialisations, so element access reaches the
+	 * typed builtin instead of the boxed one.
+	 *
+	 * Only the suffixes the loader knows may be produced; it throws on any other, so an element type
+	 * it has no spelling for becomes `Array.Object`.
+	 *
+	 * @param params The array's type parameters, if written.
+	 * @return The cppia type name.
+	 */
+	function arrayTypeName(params:Null<Array<CType>>):String {
+		if (params == null || params.length != 1)
+			return 'Array';
+
+		return switch (params[0]) {
+			case CTPath(['Int'], _): 'Array.int';
+			case CTPath(['Bool'], _): 'Array.bool';
+			case CTPath(['Float'], _): 'Array.Float';
+			case CTPath(['String'], _): 'Array.String';
+			case CTPath(['Dynamic'], _) | CTPath(['Any'], _): 'Array';
+			case _: 'Array.Object';
+		}
+	}
+
 	inline function hasAccess(f:FieldDecl, a:FieldAccess):Bool {
 		return f.access.indexOf(a) >= 0;
 	}
 
 	inline function pushScope():Void {
 		scopes.push(new StringMap());
+		scopeTypes.push(new StringMap());
 	}
 
 	inline function popScope():Void {
 		scopes.pop();
+		scopeTypes.pop();
 	}
 
-	function declareVar(name:String):Int {
+	/**
+	 * Binds a name to a fresh variable id.
+	 *
+	 * @param name The variable name.
+	 * @param type Its declared type, if annotated.
+	 * @return The variable id.
+	 */
+	function declareVar(name:String, ?type:String):Int {
 		var id:Int = nextVarId++;
 		if (scopes.length == 0)
 			pushScope();
 		scopes[scopes.length - 1].set(name, id);
+		if (type != null && type.length > 0)
+			scopeTypes[scopeTypes.length - 1].set(name, type);
 		return id;
+	}
+
+	/** The declared type of a local, or null when it had none. */
+	function lookupVarType(name:String):Null<String> {
+		var i:Int = scopeTypes.length - 1;
+		while (i >= 0) {
+			var found:Null<String> = scopeTypes[i].get(name);
+			if (found != null)
+				return found;
+			i--;
+		}
+		return null;
+	}
+
+	/**
+	 * The type an expression is known to produce, used to pick a specialised cppia form.
+	 *
+	 * @param e The expression.
+	 * @return Its type path, or null when not known.
+	 */
+	function inferType(e:Expr):Null<String> {
+		switch (e.e) {
+			case EIdent(v):
+				if (lookupVar(v) != null)
+					return lookupVarType(v);
+				if (members.exists(v))
+					return memberTypes.get(v);
+				if (statics.exists(v))
+					return staticTypes.get(v);
+				return null;
+
+			case EParent(inner):
+				return inferType(inner);
+
+			case EField(obj, f, _):
+				var owner:Null<String> = typeOf(obj);
+				if (owner != null && owner == currentClass)
+					return staticTypes.get(f);
+				return null;
+
+			case ENew(cl, _):
+				return typePaths.exists(cl) ? typePaths.get(cl) : null;
+
+			case _:
+				return null;
+		}
 	}
 
 	function lookupVar(name:String):Null<Int> {
