@@ -380,7 +380,7 @@ interface ICustomEnumValueType extends ICustomType {
 	public var index:Int;
 
 	/** The value's constructor name. */
-	public var constructorName:String; //It's named `constructorName` because `constructor` isn't a valid name on JS
+	public var constructorName:String;
 
 	/** The value's constructor arguments. */
 	public var arguments:Array<Dynamic>;
