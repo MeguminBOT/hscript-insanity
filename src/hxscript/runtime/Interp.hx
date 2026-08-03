@@ -3348,8 +3348,6 @@ class Interp {
 			}
 		}
 
-		o = staticHost(o);
-
 		// A scripted abstract's fields are statics taking the boxed value as their `this`, so reading
 		// one has to go through the abstract rather than through the box object.
 		if (o is ScriptedAbstractValue) {
@@ -3432,8 +3430,6 @@ class Interp {
 			throw DDefer;
 
 		checkAccess(o, f);
-
-		o = staticHost(o);
 
 		if (o is ScriptedAbstractValue) {
 			var box:ScriptedAbstractValue = cast o;
@@ -3524,11 +3520,6 @@ class Interp {
 	 * Calls method `f` on `o`: reads the method and invokes it, falling back to a `using` extension
 	 * method and then to a registered call shim (for inline-extern methods with no runtime form).
 	 *
-	 * The receiver is resolved to its static host first, so the method and the object it is invoked
-	 * against come from the same class. Reading a compiled class's static and calling it against the
-	 * scripted class it stands in for hands the callee a receiver of the wrong kind, which crashes
-	 * rather than failing.
-	 *
 	 * @param o The receiver.
 	 * @param f The method name.
 	 * @param args The call arguments (boxed abstracts are unwrapped first).
@@ -3536,8 +3527,6 @@ class Interp {
 	 * @throws InterpException If no method, extension, or shim can be found.
 	 */
 	function fcall(o:Dynamic, f:String, args:Array<Dynamic>):Dynamic {
-		o = staticHost(o);
-
 		var fun:Dynamic = get(o, f);
 
 		// Std.string must keep abstract wrappers so their custom toString runs; unwrap for everything else.
@@ -3639,29 +3628,6 @@ class Interp {
 	 * @param e The value being checked.
 	 * @return True when the value is that type's compiled form.
 	 */
-	/**
-	 * The class that owns a scripted class's statics.
-	 *
-	 * A compiled class carries its own statics, so where the host has compiled one there are two
-	 * stores for the same declaration: the interpreter's and the compiled class's. Instances come
-	 * from the compiled class, so its method bodies read the compiled store -- and every static call
-	 * interpreted code makes has to land there too, or one side initialises what the other never
-	 * reads.
-	 *
-	 * @param o The value a field is being read from or written to.
-	 * @return The compiled class standing in for it, or `o` unchanged.
-	 */
-	function staticHost(o:Dynamic):Dynamic {
-		#if hxscript_cppia
-		if (environment != null && o is ScriptedClass) {
-			var native:Class<Dynamic> = environment.compiled.get((cast o : ScriptedClass).path);
-			if (native != null)
-				return native;
-		}
-		#end
-		return o;
-	}
-
 	inline function isCompiledAs(t:Dynamic, e:Dynamic):Bool {
 		#if hxscript_cppia
 		if (environment == null || !(t is ScriptedClass))
@@ -3688,14 +3654,6 @@ class Interp {
 
 		if (canDefer && c is IScriptedType && !c.initialized)
 			throw DDefer;
-
-		#if hxscript_cppia
-		if (c is ScriptedClass && environment != null) {
-			var native:Class<Dynamic> = environment.compiled.get((cast c : ScriptedClass).path);
-			if (native != null)
-				return HaxeType.createInstance(native, args);
-		}
-		#end
 
 		if (c is ScriptedAbstract)
 			return (cast c : ScriptedAbstract).create(args);
