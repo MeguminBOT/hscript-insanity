@@ -856,7 +856,7 @@ class CppiaEmitter {
 
 	function emitSwitch(cond:Expr, cases:Array<{values:Array<Expr>, expr:Expr, ?guard:Expr}>, defaultExpr:Null<Expr>, pos:Position):Void {
 		for (c in cases) {
-			if (c.guard != null || captureName(c) != null) {
+			if (c.guard != null || captureName(c) != null || destructure(c) != null) {
 				expr(switchAsChain(cond, cases, defaultExpr, pos));
 				return;
 			}
@@ -1101,11 +1101,35 @@ class CppiaEmitter {
 		while (i >= 0) {
 			var c = cases[i];
 			var capture:Null<String> = captureName(c);
+			var pattern = destructure(c);
 
 			var body:Expr = c.expr;
 			var test:Expr = null;
 
-			if (capture != null) {
+			if (pattern != null) {
+				var bound:Array<Expr> = [];
+				for (b in 0...pattern.binds.length) {
+					var bind:String = pattern.binds[b];
+					if (bind == '_')
+						continue;
+
+					var params:Expr = {
+						e: ECall({e: EField({e: EIdent('Type'), pos: pos}, 'enumParameters'), pos: pos}, [ref]),
+						pos: pos
+					};
+					var element:Expr = {e: EArray(params, {e: EConst(CInt(b)), pos: pos}), pos: pos};
+					bound.push({e: EVar(bind, null, element, null, null, false), pos: pos});
+				}
+
+				bound.push(c.expr);
+				body = {e: EBlock(bound), pos: pos};
+
+				var ctor:Expr = {
+					e: ECall({e: EField({e: EIdent('Type'), pos: pos}, 'enumConstructor'), pos: pos}, [ref]),
+					pos: pos
+				};
+				test = {e: EBinop('==', ctor, {e: EConst(CString(pattern.name)), pos: pos}), pos: pos};
+			} else if (capture != null) {
 				body = {
 					e: EBlock([{e: EVar(capture, null, ref, null, null, false), pos: pos}, c.expr]),
 					pos: pos
@@ -1122,9 +1146,26 @@ class CppiaEmitter {
 
 			if (c.guard != null) {
 				// A failing guard must fall through to later cases, so the guard belongs in the test,
-				// not in the body. For a capture that means reading the subject directly, since the
-				// name the guard uses is not bound until the branch is taken.
-				var guard:Expr = capture == null ? c.guard : CppiaCapture.substitute(c.guard, capture, ref);
+				// not in the body. Anything the pattern binds is not bound yet at that point, so the
+				// guard reads it from the subject instead.
+				var guard:Expr = c.guard;
+
+				if (capture != null) {
+					guard = CppiaCapture.substitute(guard, capture, ref);
+				} else if (pattern != null) {
+					for (b in 0...pattern.binds.length) {
+						var bind:String = pattern.binds[b];
+						if (bind == '_')
+							continue;
+
+						var params:Expr = {
+							e: ECall({e: EField({e: EIdent('Type'), pos: pos}, 'enumParameters'), pos: pos}, [ref]),
+							pos: pos
+						};
+						guard = CppiaCapture.substitute(guard, bind, {e: EArray(params, {e: EConst(CInt(b)), pos: pos}), pos: pos});
+					}
+				}
+
 				test = capture != null ? {e: EParent(guard), pos: pos} : {
 					e: EBinop('&&', {e: EParent(test), pos: pos}, {e: EParent(guard), pos: pos}),
 					pos: pos
@@ -1139,6 +1180,38 @@ class CppiaEmitter {
 			e: EBlock([{e: EVar(name, null, cond, null, null, false), pos: pos}, chain]),
 			pos: pos
 		};
+	}
+
+	/**
+	 * The enum pattern a case destructures, when it does.
+	 *
+	 * @param c The case to inspect.
+	 * @return The constructor name and the names it binds, or null when the case is not a pattern.
+	 */
+	function destructure(c:{values:Array<Expr>, expr:Expr, ?guard:Expr}):Null<{name:String, binds:Array<String>}> {
+		for (v in c.values) {
+			switch (v.e) {
+				case ECall(callee, args):
+					var name:String = switch (callee.e) {
+						case EIdent(n): n;
+						case EField(_, n, _): n;
+						case _: null;
+					}
+					if (name == null)
+						return null;
+
+					var binds:Array<String> = [];
+					for (a in args) {
+						switch (a.e) {
+							case EIdent(bind): binds.push(bind);
+							case _: return null;
+						}
+					}
+					return {name: name, binds: binds};
+				case _:
+			}
+		}
+		return null;
 	}
 
 	/**

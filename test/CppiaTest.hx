@@ -77,6 +77,16 @@ class CppiaTest {
 		check('enum switch', 'var c = Colour.Green; switch (c) { case Colour.Red: return "r"; case Colour.Green: return "g"; default: return "?"; }', 'g', '',
 			colour);
 		check('enum switch falls to default', 'var c = Colour.Rgb(1, 2, 3); switch (c) { case Colour.Red: return "r"; default: return "d"; }', 'd', '', colour);
+		check('enum destructure binds parameters',
+			'var c = Colour.Rgb(1, 2, 3); switch (c) { case Rgb(r, g, b): return Std.string(r + g + b); default: return "no"; }', '6', '', colour);
+		check('enum destructure picks the right constructor',
+			'var c = Colour.Green; switch (c) { case Rgb(r, g, b): return "rgb"; case Colour.Green: return "green"; default: return "?"; }', 'green', '',
+			colour);
+		check('enum destructure skips wildcards',
+			'var c = Colour.Rgb(4, 5, 6); switch (c) { case Rgb(_, g, _): return Std.string(g); default: return "no"; }', '5', '', colour);
+		check('enum destructure with guard',
+			'var c = Colour.Rgb(1, 2, 3); switch (c) { case Rgb(r, g, b) if (r > 9): return "big"; case Rgb(r, g, b): return "small"; default: return "?"; }',
+			'small', '', colour);
 		check('bare ident case captures, not compares', 'var k = 99; var a = 2; switch (a) { case k: return "captured"; default: return "compared"; }',
 			'captured');
 		check('bare ident case rebinds the name', 'var k = 99; var a = 2; switch (a) { case k: return Std.string(k); default: return "no"; }', '2');
