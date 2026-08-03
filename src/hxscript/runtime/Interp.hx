@@ -3524,6 +3524,11 @@ class Interp {
 	 * Calls method `f` on `o`: reads the method and invokes it, falling back to a `using` extension
 	 * method and then to a registered call shim (for inline-extern methods with no runtime form).
 	 *
+	 * The receiver is resolved to its static host first, so the method and the object it is invoked
+	 * against come from the same class. Reading a compiled class's static and calling it against the
+	 * scripted class it stands in for hands the callee a receiver of the wrong kind, which crashes
+	 * rather than failing.
+	 *
 	 * @param o The receiver.
 	 * @param f The method name.
 	 * @param args The call arguments (boxed abstracts are unwrapped first).
@@ -3531,6 +3536,8 @@ class Interp {
 	 * @throws InterpException If no method, extension, or shim can be found.
 	 */
 	function fcall(o:Dynamic, f:String, args:Array<Dynamic>):Dynamic {
+		o = staticHost(o);
+
 		var fun:Dynamic = get(o, f);
 
 		// Std.string must keep abstract wrappers so their custom toString runs; unwrap for everything else.
