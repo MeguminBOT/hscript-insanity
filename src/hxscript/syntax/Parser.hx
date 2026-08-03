@@ -1196,7 +1196,8 @@ class Parser extends Lexer {
 			}
 			t = token();
 			switch (t) {
-				case TComma: continue;
+				case TComma:
+					continue;
 				case TOp(op):
 					if (op == ">")
 						break;

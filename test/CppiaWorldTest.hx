@@ -22,9 +22,12 @@ class CppiaWorldTest {
 	/**
 	 * A helper the host hands every script under a bare name, standing in for the values an engine
 	 * injects into each interpreter.
+	 *
+	 * The trailing optional is the point of it: a host static links by exact arity, so a call that
+	 * leaves the optional off is the shape that breaks if these are reached the direct way.
 	 */
-	public static function bonus(n:Int):Int {
-		return n;
+	public static function bonus(n:Int, ?extra:Int):Int {
+		return n + (extra == null ? 0 : extra);
 	}
 
 	/** A class holding static state, set up by one caller and read by another. */
@@ -134,8 +137,7 @@ class Entry {
 
 			var modules:Array<Module> = [];
 			for (source in sources) {
-				var module:Module = new Module('', source.name, source.pack, source.name);
-				module.parse(source.code);
+				var module:Module = new Module(source.code, source.name, source.pack, source.name);
 				env.addModule(module);
 				modules.push(module);
 			}

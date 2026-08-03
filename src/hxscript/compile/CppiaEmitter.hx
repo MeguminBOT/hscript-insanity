@@ -1088,10 +1088,12 @@ class CppiaEmitter {
 				var split:Int = target.indexOf('::');
 
 				w.pos(line);
-				w.token('CALLSTATIC');
+				w.token('CALL');
+				w.int(params.length);
+				w.pos(line);
+				w.token('FSTATIC');
 				w.type(target.substr(0, split));
 				w.str(target.substr(split + 2));
-				w.int(params.length);
 				for (p in params)
 					expr(p);
 

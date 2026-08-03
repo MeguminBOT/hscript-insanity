@@ -96,7 +96,8 @@ class Caller {
 			var a = measure(cls, 'same');
 			var q = measure(cls, 'sameQualified');
 			var b = measure(cls, 'cross');
-			if (r == 0 || q.ms < qualMs) qualMs = q.ms;
+			if (r == 0 || q.ms < qualMs)
+				qualMs = q.ms;
 
 			if (r == 0 || a.ms < sameMs) {
 				sameMs = a.ms;
