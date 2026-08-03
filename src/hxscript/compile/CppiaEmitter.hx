@@ -69,6 +69,9 @@ class CppiaEmitter {
 	/** Top-level field names, mapped to the synthetic class holding them. */
 	var moduleFields:StringMap<String>;
 
+	/** Classes from this batch that the emitted code names. */
+	var refs:Array<String>;
+
 	/**
 	 * Static properties declared in this batch, as `class.field`, split by which accessor they have.
 	 *
@@ -96,6 +99,7 @@ class CppiaEmitter {
 		staticSetters = new StringMap();
 		moduleFields = new StringMap();
 		memberInits = [];
+		refs = [];
 		currentClass = '';
 		currentSuper = '';
 
@@ -109,12 +113,25 @@ class CppiaEmitter {
 	 * A script written against those names has no `DImport` to resolve them by, so without this the
 	 * emitter cannot place them and refuses the module.
 	 *
-	 * @param paths Full type paths; each is registered under its last segment.
+	 * @param paths Full type paths, each registered under its last segment. An entry written
+	 *        `Name=full.path` registers under `Name` instead, for a host that binds a type to a name
+	 *        of its own choosing.
 	 */
 	public function ambient(paths:Array<String>):Void {
-		for (path in paths) {
-			var dot:Int = path.lastIndexOf('.');
-			var short:String = dot < 0 ? path : path.substr(dot + 1);
+		for (entry in paths) {
+			var short:String;
+			var path:String;
+
+			var equals:Int = entry.indexOf('=');
+			if (equals >= 0) {
+				short = entry.substr(0, equals);
+				path = entry.substr(equals + 1);
+			} else {
+				path = entry;
+				var dot:Int = path.lastIndexOf('.');
+				short = dot < 0 ? path : path.substr(dot + 1);
+			}
+
 			if (!typePaths.exists(short))
 				typePaths.set(short, path);
 		}
@@ -367,7 +384,7 @@ class CppiaEmitter {
 		w.newline();
 		w.token(isInterface ? 'INTERFACE' : 'CLASS');
 		w.type(full);
-		w.type(currentSuper);
+		useType(currentSuper);
 		w.int(c.implement.length);
 		for (i in c.implement)
 			w.type(typeName(i));
@@ -421,9 +438,6 @@ class CppiaEmitter {
 
 		switch (f.kind) {
 			case KFunction(fn):
-				// The loader takes the constructor from the STATIC functions, by the name `new`, so a
-				// constructor written as an ordinary member never runs and the object keeps its
-				// zeroed fields.
 				var isConstructor:Bool = f.name == 'new';
 
 				w.token('FUNCTION');
@@ -451,7 +465,6 @@ class CppiaEmitter {
 				w.str(f.name);
 				w.type(v.type == null ? '' : typeName(v.type));
 
-				// A member initialiser moves into the constructor, so only a static keeps one here.
 				if (v.expr == null || !isStatic) {
 					w.int(0);
 				} else {
@@ -697,9 +710,6 @@ class CppiaEmitter {
 				var known:Null<String> = inferType(arr);
 				w.pos(line);
 				w.token('ARRAYI');
-				// Only an array type may claim the specialised element access. Anything else, including
-				// an unknown type, goes through the dynamic form, which also covers abstracts that
-				// define their own array access.
 				w.type(known != null && known.substr(0, 5) == 'Array' ? known : 'Dynamic');
 				expr(arr);
 				expr(index);
@@ -719,7 +729,7 @@ class CppiaEmitter {
 			case ENew(cl, params):
 				w.pos(line);
 				w.token('NEW');
-				w.type(resolveType(cl, e.pos));
+				useType(resolveType(cl, e.pos));
 				w.int(params.length);
 				for (p in params)
 					expr(p);
@@ -1012,7 +1022,7 @@ class CppiaEmitter {
 					if (isEnumCtor(asType, name)) {
 						w.pos(line);
 						w.token('CREATEENUM');
-						w.type(asType);
+						useType(asType);
 						w.str(name);
 						w.int(params.length);
 						for (p in params)
@@ -1026,7 +1036,7 @@ class CppiaEmitter {
 						w.int(params.length);
 						w.pos(line);
 						w.token('FSTATIC');
-						w.type(asType);
+						useType(asType);
 						w.str(name);
 						for (p in params)
 							expr(p);
@@ -1035,7 +1045,7 @@ class CppiaEmitter {
 
 					w.pos(line);
 					w.token('CALLSTATIC');
-					w.type(asType);
+					useType(asType);
 					w.str(name);
 					w.int(params.length);
 					for (p in params)
@@ -1118,7 +1128,7 @@ class CppiaEmitter {
 			if (isEnumCtor(asType, name)) {
 				w.pos(line);
 				w.token('FENUM');
-				w.type(asType);
+				useType(asType);
 				w.str(name);
 				return;
 			}
@@ -1126,7 +1136,7 @@ class CppiaEmitter {
 			if (staticGetters.exists(asType + '.' + name)) {
 				w.pos(line);
 				w.token('CALLSTATIC');
-				w.type(asType);
+				useType(asType);
 				w.str('get_' + name);
 				w.int(0);
 				return;
@@ -1134,7 +1144,7 @@ class CppiaEmitter {
 
 			w.pos(line);
 			w.token('FSTATIC');
-			w.type(asType);
+			useType(asType);
 			w.str(name);
 			return;
 		}
@@ -1227,6 +1237,16 @@ class CppiaEmitter {
 			return;
 		}
 
+		if (currentSuper.length > 0) {
+			w.pos(line);
+			w.token('FNAME');
+			w.unknownType();
+			w.str(v);
+			w.pos(line);
+			w.token('THIS');
+			return;
+		}
+
 		throw new CppiaUnsupported('unresolved identifier ' + v, pos);
 	}
 
@@ -1294,9 +1314,6 @@ class CppiaEmitter {
 			}
 
 			if (c.guard != null) {
-				// A failing guard must fall through to later cases, so the guard belongs in the test,
-				// not in the body. Anything the pattern binds is not bound yet at that point, so the
-				// guard reads it from the subject instead.
 				var guard:Expr = c.guard;
 
 				if (capture != null) {
@@ -1570,6 +1587,25 @@ class CppiaEmitter {
 			case _:
 				return null;
 		}
+	}
+
+	/**
+	 * Writes a type reference, noting it when it names a class from this batch.
+	 *
+	 * A reference to a class that ends up refused cannot link, and the loader rejects the WHOLE
+	 * module for it, so the caller needs to know which of its own classes a module leans on.
+	 *
+	 * @param path The type being referenced.
+	 */
+	function useType(path:String):Void {
+		if (moduleClasses.exists(path) && refs.indexOf(path) < 0)
+			refs.push(path);
+		w.type(path);
+	}
+
+	/** Classes from this batch that the emitted code names. */
+	public function references():Array<String> {
+		return refs;
 	}
 
 	/** Whether a name is a constructor of an enum this batch declares. */

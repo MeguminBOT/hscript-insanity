@@ -2,6 +2,7 @@ package hxscript.compile;
 
 import hxscript.compile.CppiaInput;
 import hxscript.compile.CppiaResult;
+import hxscript.syntax.Expr;
 
 /**
  * Compiles hxscript modules to cppia bytecode, which hxcpp loads and JIT-compiles at runtime.
@@ -34,10 +35,93 @@ class Cppia {
 	 * @param inputs The modules to compile.
 	 * @return The compiled module, and which inputs were compiled or skipped.
 	 */
+
+	#if hxscript_cppia
+	/**
+	 * Dotted paths of every type a module declares.
+	 *
+	 * @param decls The module's declarations.
+	 * @return The class, interface and enum paths it defines.
+	 */
+	static function declaredPaths(decls:Array<ModuleDecl>):Array<String> {
+		var pack:String = '';
+		var paths:Array<String> = [];
+
+		for (decl in decls) {
+			switch (decl.d) {
+				case DPackage(path):
+					pack = path.join('.');
+				case DClass(c) | DInterface(c):
+					paths.push(pack.length > 0 ? pack + '.' + c.name : c.name);
+				case DEnum(en):
+					paths.push(pack.length > 0 ? pack + '.' + en.name : en.name);
+				case _:
+			}
+		}
+
+		return paths;
+	}
+
+	/**
+	 * Drops modules that name a class which is not going to be there.
+	 *
+	 * A reference to a refused class cannot link, and the loader rejects the WHOLE module over it, so
+	 * one refusal would otherwise cost every class in the batch. Dropping the modules that lean on it
+	 * keeps them interpreted together, which is where their dependency already is. Repeats until
+	 * nothing more falls out, since dropping one module can strand another.
+	 *
+	 * @param accepted The modules that compiled on their own.
+	 * @param skipped Receives each module dropped here, with its reason.
+	 * @param uses What each module referenced, by module name.
+	 * @return The modules that can be emitted together.
+	 */
+	static function dropDanglingUsers(accepted:Array<CppiaInput>, skipped:Array<{name:String, reason:String}>,
+			uses:Map<String, Array<String>>):Array<CppiaInput> {
+		while (true) {
+			// Keyed by the CLASSES on offer, not the module names: a reference names a class, and a
+			// module may declare several under a name of its own.
+			var present:Map<String, Bool> = new Map();
+			for (input in accepted)
+				for (path in declaredPaths(input.decls))
+					present.set(path, true);
+
+			var survivors:Array<CppiaInput> = [];
+			var dropped:Bool = false;
+
+			for (input in accepted) {
+				var missing:String = null;
+				var referenced:Array<String> = uses.get(input.name);
+
+				if (referenced != null) {
+					for (path in referenced) {
+						if (!present.exists(path)) {
+							missing = path;
+							break;
+						}
+					}
+				}
+
+				if (missing == null) {
+					survivors.push(input);
+				} else {
+					skipped.push({name: input.name, reason: 'uses $missing, which is interpreted'});
+					dropped = true;
+				}
+			}
+
+			accepted = survivors;
+			if (!dropped)
+				return accepted;
+		}
+	}
+	#end
+
 	public static function compile(inputs:Array<CppiaInput>, ?ambient:Array<String>):CppiaResult {
 		#if hxscript_cppia
 		var skipped:Array<{name:String, reason:String}> = [];
 		var accepted:Array<CppiaInput> = [];
+
+		var uses:Map<String, Array<String>> = new Map();
 
 		for (input in inputs) {
 			var trial:CppiaEmitter = new CppiaEmitter();
@@ -49,11 +133,14 @@ class Cppia {
 			try {
 				trial.emit(input.decls, input.name);
 				trial.finish();
+				uses.set(input.name, trial.references());
 				accepted.push(input);
 			} catch (e:CppiaUnsupported) {
 				skipped.push({name: input.name, reason: e.reason});
 			}
 		}
+
+		accepted = dropDanglingUsers(accepted, skipped, uses);
 
 		if (accepted.length == 0)
 			return {bytes: null, compiled: [], skipped: skipped};
