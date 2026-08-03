@@ -72,6 +72,9 @@ class CppiaEmitter {
 	/** Classes from this batch that the emitted code names. */
 	var refs:Array<String>;
 
+	/** Scripted classes the host has elsewhere, which this batch cannot reach. */
+	var external:StringMap<Bool>;
+
 	/**
 	 * Static properties declared in this batch, as `class.field`, split by which accessor they have.
 	 *
@@ -100,6 +103,7 @@ class CppiaEmitter {
 		moduleFields = new StringMap();
 		memberInits = [];
 		refs = [];
+		external = new StringMap();
 		currentClass = '';
 		currentSuper = '';
 
@@ -1625,9 +1629,28 @@ class CppiaEmitter {
 	 * @param path The type being referenced.
 	 */
 	function useType(path:String):Void {
-		if (moduleClasses.exists(path) && refs.indexOf(path) < 0)
-			refs.push(path);
+		if (moduleClasses.exists(path)) {
+			if (refs.indexOf(path) < 0)
+				refs.push(path);
+		} else if (external.exists(path)) {
+			throw new CppiaUnsupported('uses $path, which is compiled elsewhere', null);
+		}
+
 		w.type(path);
+	}
+
+	/**
+	 * Registers scripted classes the host has elsewhere, which this batch cannot reach.
+	 *
+	 * cppia resolves a class either inside the module being loaded or as a host class. A scripted
+	 * class living in another module is neither, so naming one produces a reference that fails to
+	 * link and rejects the whole batch. Refusing here keeps the module interpreted instead.
+	 *
+	 * @param paths Full paths of those classes.
+	 */
+	public function externals(paths:Array<String>):Void {
+		for (path in paths)
+			external.set(path, true);
 	}
 
 	/** Classes from this batch that the emitted code names. */

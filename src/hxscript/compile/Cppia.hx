@@ -115,9 +115,13 @@ class Cppia {
 	 *
 	 * @param inputs The modules to compile.
 	 * @param ambient Types the host makes available without an import.
+	 * @param external Scripted classes the host has elsewhere but that are NOT in this batch. A
+	 *        module naming one is left interpreted: cppia resolves a class either inside the module
+	 *        being loaded or as a host class, and a scripted class in another module is neither, so
+	 *        the reference would fail to link and take the batch down with it.
 	 * @return The compiled module, and which inputs were compiled or skipped.
 	 */
-	public static function compile(inputs:Array<CppiaInput>, ?ambient:Array<String>):CppiaResult {
+	public static function compile(inputs:Array<CppiaInput>, ?ambient:Array<String>, ?external:Array<String>):CppiaResult {
 		#if hxscript_cppia
 		var skipped:Array<{name:String, reason:String}> = [];
 		var accepted:Array<CppiaInput> = [];
@@ -128,6 +132,8 @@ class Cppia {
 			var trial:CppiaEmitter = new CppiaEmitter();
 			if (ambient != null)
 				trial.ambient(ambient);
+			if (external != null)
+				trial.externals(external);
 			for (other in inputs)
 				trial.declare(other.decls, other.name);
 
@@ -149,6 +155,8 @@ class Cppia {
 		var emitter:CppiaEmitter = new CppiaEmitter();
 		if (ambient != null)
 			emitter.ambient(ambient);
+		if (external != null)
+			emitter.externals(external);
 		for (input in inputs)
 			emitter.declare(input.decls, input.name);
 
