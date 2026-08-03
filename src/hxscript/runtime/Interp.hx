@@ -753,8 +753,13 @@ class Interp {
 	 * @return The value, or null if the slot doesn't exist.
 	 */
 	public function getLocal(id:String, ?map:Map<String, Variable>):Dynamic {
-		var map:Map<String, Variable> = (map ?? locals);
-		var l:Variable = map.get(id);
+		var varMap:Map<String, Variable> = (map ?? locals);
+		#if flash
+		if (varMap == null)
+			return null;
+		#end
+
+		var l:Variable = varMap.get(id);
 		if (l == null)
 			return null;
 
