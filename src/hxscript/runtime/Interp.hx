@@ -3006,8 +3006,11 @@ class Interp {
 							return e;
 						}
 						if ((t is Class || t is ScriptedClass || t is ScriptedInterface || t is Enum || t is ScriptedEnum)
-							&& !Std.isOfType(e, t))
+							&& !Std.isOfType(e, t)) {
+							if (isCompiledAs(t, e))
+								return e;
 							return error(ECustom('${AbstractTools.resolveName(e)} should be $path'));
+						}
 						return e;
 				}
 			case CTAnon(fields):
@@ -3345,6 +3348,8 @@ class Interp {
 			}
 		}
 
+		o = staticHost(o);
+
 		// A scripted abstract's fields are statics taking the boxed value as their `this`, so reading
 		// one has to go through the abstract rather than through the box object.
 		if (o is ScriptedAbstractValue) {
@@ -3427,6 +3432,8 @@ class Interp {
 			throw DDefer;
 
 		checkAccess(o, f);
+
+		o = staticHost(o);
 
 		if (o is ScriptedAbstractValue) {
 			var box:ScriptedAbstractValue = cast o;
@@ -3524,6 +3531,8 @@ class Interp {
 	 * @throws InterpException If no method, extension, or shim can be found.
 	 */
 	function fcall(o:Dynamic, f:String, args:Array<Dynamic>):Dynamic {
+		o = staticHost(o);
+
 		var fun:Dynamic = get(o, f);
 
 		// Std.string must keep abstract wrappers so their custom toString runs; unwrap for everything else.
@@ -3615,6 +3624,52 @@ class Interp {
 	 * @param args Constructor arguments.
 	 * @return The new instance.
 	 */
+	/**
+	 * Whether a value is an instance of the compiled class standing in for a scripted one.
+	 *
+	 * Only asked of a fully compiled world, where `cnew` builds the compiled class, so a value
+	 * annotated with the scripted type holds a native instance and the ordinary check would reject
+	 * the object the interpreter itself just produced.
+	 *
+	 * @param t The declared type.
+	 * @param e The value being checked.
+	 * @return True when the value is that type's compiled form.
+	 */
+	/**
+	 * The class that owns a scripted class's statics.
+	 *
+	 * A compiled class carries its own statics, so while a world is only partly compiled there are
+	 * two stores for the same declaration and redirecting to either one strands the other. Once the
+	 * whole world is compiled there is only one store worth using, and every static read, write and
+	 * call has to reach it -- including the ones the host makes on its way in, which would otherwise
+	 * set up a copy that nothing else reads.
+	 *
+	 * @param o The value a field is being read from, written to, or called on.
+	 * @return The compiled class standing in for it, or `o` unchanged.
+	 */
+	function staticHost(o:Dynamic):Dynamic {
+		#if hxscript_cppia
+		if (environment != null && environment.fullyCompiled && o is ScriptedClass) {
+			var native:Class<Dynamic> = environment.compiled.get((cast o : ScriptedClass).path);
+			if (native != null)
+				return native;
+		}
+		#end
+		return o;
+	}
+
+	function isCompiledAs(t:Dynamic, e:Dynamic):Bool {
+		#if hxscript_cppia
+		if (environment == null || !environment.fullyCompiled || !(t is ScriptedClass))
+			return false;
+
+		var native:Class<Dynamic> = environment.compiled.get((cast t : ScriptedClass).path);
+		return native != null && Std.isOfType(e, native);
+		#else
+		return false;
+		#end
+	}
+
 	function cnew(cl:String, args:Array<Dynamic>):Dynamic {
 		var c = Tools.resolve(cl, environment);
 
@@ -3629,6 +3684,14 @@ class Interp {
 
 		if (canDefer && c is IScriptedType && !c.initialized)
 			throw DDefer;
+
+		#if hxscript_cppia
+		if (c is ScriptedClass && environment != null && environment.fullyCompiled) {
+			var native:Class<Dynamic> = environment.compiled.get((cast c : ScriptedClass).path);
+			if (native != null)
+				return HaxeType.createInstance(native, args);
+		}
+		#end
 
 		if (c is ScriptedAbstract)
 			return (cast c : ScriptedAbstract).create(args);

@@ -28,6 +28,24 @@ class Environment {
 	/** Callbacks run once `start` finishes; returning false removes the callback. */
 	public var onInitialized:Array<Map<String, IScriptedType>->Bool> = [];
 
+	#if hxscript_cppia
+	/**
+	 * Native classes the host compiled from this world's scripted ones, keyed by scripted path.
+	 *
+	 * Recording them is not the same as using them: a compiled class carries its own statics and its
+	 * own identity, so running one class both ways splits it in two. Nothing is built from these
+	 * unless `fullyCompiled` says the whole world came through, which is what makes the split
+	 * impossible.
+	 */
+	public var compiled:Map<String, Class<Dynamic>> = [];
+
+	/**
+	 * Whether every scripted class in this world is compiled, so nothing is left to disagree with
+	 * them about statics or identity. Only then may the compiled classes stand in for the scripted.
+	 */
+	public var fullyCompiled:Bool = false;
+	#end
+
 	/**
 	 * Creates a world, optionally seeded with modules, and builds the initial type index.
 	 *
