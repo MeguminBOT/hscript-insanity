@@ -3649,7 +3649,7 @@ class Interp {
 	 */
 	function staticHost(o:Dynamic):Dynamic {
 		#if hxscript_cppia
-		if (environment != null && environment.fullyCompiled && o is ScriptedClass) {
+		if (environment != null && environment.substituting && o is ScriptedClass) {
 			var native:Class<Dynamic> = environment.compiled.get((cast o : ScriptedClass).path);
 			if (native != null)
 				return native;
@@ -3660,7 +3660,7 @@ class Interp {
 
 	function isCompiledAs(t:Dynamic, e:Dynamic):Bool {
 		#if hxscript_cppia
-		if (environment == null || !environment.fullyCompiled || !(t is ScriptedClass))
+		if (environment == null || !environment.substituting || !(t is ScriptedClass))
 			return false;
 
 		var native:Class<Dynamic> = environment.compiled.get((cast t : ScriptedClass).path);
@@ -3686,7 +3686,7 @@ class Interp {
 			throw DDefer;
 
 		#if hxscript_cppia
-		if (c is ScriptedClass && environment != null && environment.fullyCompiled) {
+		if (c is ScriptedClass && environment != null && environment.substituting) {
 			var native:Class<Dynamic> = environment.compiled.get((cast c : ScriptedClass).path);
 			if (native != null)
 				return HaxeType.createInstance(native, args);

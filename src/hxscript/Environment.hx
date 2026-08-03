@@ -29,21 +29,21 @@ class Environment {
 	public var onInitialized:Array<Map<String, IScriptedType>->Bool> = [];
 
 	#if hxscript_cppia
-	/**
-	 * Native classes the host compiled from this world's scripted ones, keyed by scripted path.
-	 *
-	 * Recording them is not the same as using them: a compiled class carries its own statics and its
-	 * own identity, so running one class both ways splits it in two. Nothing is built from these
-	 * unless `fullyCompiled` says the whole world came through, which is what makes the split
-	 * impossible.
-	 */
+	/** Native classes the host compiled from this world's scripted ones, keyed by scripted path. */
 	public var compiled:Map<String, Class<Dynamic>> = [];
 
 	/**
-	 * Whether every scripted class in this world is compiled, so nothing is left to disagree with
-	 * them about statics or identity. Only then may the compiled classes stand in for the scripted.
+	 * Whether a compiled class may stand in for the scripted one it was built from.
+	 *
+	 * A compiled class carries its own statics and its own identity, so the danger is a class
+	 * existing both ways at once and the two halves disagreeing. What prevents that is not every
+	 * class being compiled -- it is every reference going the same way. With this on, a scripted
+	 * class that has a compiled form is reached through the compiled form from everywhere, including
+	 * from code that is still interpreted, so there is only ever one of it.
+	 *
+	 * It therefore has to be on whenever ANY class here is compiled, not only when all of them are.
 	 */
-	public var fullyCompiled:Bool = false;
+	public var substituting:Bool = false;
 	#end
 
 	/**

@@ -77,9 +77,9 @@ class Entry {
 
 		check('nothing compiled', [], false);
 		check('everything compiled', ['w.Tables', 'w.Worker', 'w.Entry'], true);
-		check('entry interpreted, rest compiled', ['w.Tables', 'w.Worker'], false);
-		check('worker compiled alone', ['w.Worker'], false);
-		check('tables compiled alone', ['w.Tables'], false);
+		check('entry interpreted, rest compiled', ['w.Tables', 'w.Worker'], true);
+		check('tables compiled, the rest interpreted', ['w.Tables'], false);
+		check('worker compiled without the class it reads', ['w.Worker'], false);
 
 		Sys.println('');
 		Sys.println('----------------------------------------');
@@ -201,7 +201,7 @@ class Entry {
 				env.compiled.set(path, cls);
 		}
 
-		env.fullyCompiled = (wanted.length == sources.length);
+		env.substituting = env.compiled.keys().hasNext();
 		#end
 	}
 }
