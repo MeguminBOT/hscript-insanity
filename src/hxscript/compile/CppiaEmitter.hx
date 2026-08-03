@@ -373,8 +373,16 @@ class CppiaEmitter {
 							throw new CppiaUnsupported('string interpolation', e.pos);
 						w.token('s');
 						w.str(s);
-					case CReg(_, _):
-						throw new CppiaUnsupported('regex literals', e.pos);
+					case CReg(pattern, modifiers):
+						w.token('NEW');
+						w.type('EReg');
+						w.int(2);
+						w.pos(line);
+						w.token('s');
+						w.str(pattern);
+						w.pos(line);
+						w.token('s');
+						w.str(modifiers == null ? '' : modifiers);
 				}
 
 			case EIdent(v):
