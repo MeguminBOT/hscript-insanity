@@ -511,7 +511,7 @@ class CppiaEmitter {
 			w.str(a.name);
 			w.int(id);
 			w.bool(false);
-			w.type(a.t == null ? '' : typeName(a.t));
+			storableType(a.t == null ? '' : typeName(a.t));
 			w.bool(false);
 		}
 
@@ -827,13 +827,13 @@ class CppiaEmitter {
 						w.str(n);
 						w.int(id);
 						w.bool(false);
-						w.type(t == null ? '' : typeName(t));
+						storableType(t == null ? '' : typeName(t));
 					} else {
 						w.token('VARDECLI');
 						w.str(n);
 						w.int(id);
 						w.bool(false);
-						w.type(t == null ? '' : typeName(t));
+						storableType(t == null ? '' : typeName(t));
 						w.type('');
 						expr(init);
 					}
@@ -1586,6 +1586,33 @@ class CppiaEmitter {
 
 			case _:
 				return null;
+		}
+	}
+
+	/**
+	 * Writes the declared type of a variable slot.
+	 *
+	 * A slot is only ever stored as bool, int, float, string or object, and everything that is not
+	 * one of the first four is an object -- so naming the exact class buys nothing, while naming one
+	 * the loader cannot resolve leaves the slot with no store type at all and drops it to untyped
+	 * access. Only the types that change the storage are written; the rest are `Dynamic`.
+	 *
+	 * @param path The declared type, or the empty string when there was none.
+	 */
+	function storableType(path:String):Void {
+		if (path == null || path.length == 0) {
+			w.unknownType();
+			return;
+		}
+
+		switch (path) {
+			case 'Int' | 'Float' | 'Bool' | 'String':
+				w.type(path);
+			case _:
+				if (path.length >= 5 && path.substr(0, 5) == 'Array')
+					w.type(path);
+				else
+					w.unknownType();
 		}
 	}
 
