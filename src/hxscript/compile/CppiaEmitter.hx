@@ -973,6 +973,32 @@ class CppiaEmitter {
 				return;
 			}
 
+			if (hostField(e1)) {
+				var target:Expr = null;
+				var member:String = null;
+				switch (e1.e) {
+					case EField(o, f, _):
+						target = o;
+						member = f;
+					case _:
+				}
+
+				w.pos(line);
+				w.token('CALL');
+				w.int(3);
+				w.pos(line);
+				w.token('FSTATIC');
+				w.type('Reflect');
+				w.str('setProperty');
+				expr(target);
+				w.pos(line);
+				w.token('s');
+				w.str(member);
+				expectedArray = elementArray(inferType(e1));
+				expr(e2);
+				return;
+			}
+
 			w.pos(line);
 			w.token('SET');
 			expr(e1);
@@ -1214,11 +1240,21 @@ class CppiaEmitter {
 			return;
 		}
 
+		// Nothing here knows what `obj` is, so it is something the host owns, and on a host object a
+		// name may be a property rather than a field. Reading it as a field returns null and writing
+		// it does nothing -- silently, which is the worst way for it to be wrong. Going through
+		// property access costs a call and is right for both.
 		w.pos(line);
-		w.token('FNAME');
-		w.type('');
-		w.str(name);
+		w.token('CALL');
+		w.int(2);
+		w.pos(line);
+		w.token('FSTATIC');
+		w.type('Reflect');
+		w.str('getProperty');
 		expr(obj);
+		w.pos(line);
+		w.token('s');
+		w.str(name);
 	}
 
 	function emitIdent(v:String, pos:Position):Void {
@@ -1705,6 +1741,38 @@ class CppiaEmitter {
 	 * @param path The type name as written, short or fully qualified.
 	 * @return Its full path, or null if this batch does not declare it.
 	 */
+	/**
+	 * Whether an assignment target is a field on something the host owns.
+	 *
+	 * Only a field access qualifies, and only when its object cannot be shown to be a class from this
+	 * batch: those have a known layout and are reached by offset. Everything else may be a property,
+	 * and there is no way to tell from here which, so both are handled the one way that works for
+	 * either.
+	 *
+	 * `this` is excluded because a scripted class's own fields are its own, whatever it extends.
+	 *
+	 * @param e The assignment target.
+	 * @return Whether it needs property access.
+	 */
+	function hostField(e:Expr):Bool {
+		switch (e.e) {
+			case EField(obj, name, _):
+				if (obj.e.match(EIdent('this'))) {
+					return instanceVar(currentClass, name) == null && !members.exists(name);
+				}
+
+				var owner:Null<String> = typeOf(obj);
+				if (owner != null) {
+					return false;
+				}
+
+				return instanceClassOf(obj) == null;
+
+			case _:
+				return false;
+		}
+	}
+
 	/** An array type carrying an element kind, or null for anything else. */
 	static function elementArray(name:Null<String>):Null<String> {
 		return (name != null && name.length > 6 && name.substr(0, 6) == 'Array.') ? name : null;
