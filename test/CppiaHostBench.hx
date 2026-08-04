@@ -59,6 +59,26 @@ class P {
 }
 ';
 
+	/** Reads and writes fields on another SCRIPTED class, which is what a renderer does per column. */
+	static var SCRIPTED:String = 'package p;
+class Holder {
+	public var a:Float = 0;
+	public var b:Float = 1;
+	public function new() {}
+}
+class S {
+	public static function run(sink:HostSink, n:Int):Dynamic {
+		var h:Holder = new Holder();
+		var i:Int = 0;
+		while (i < n) {
+			h.a = h.a + h.b;
+			i++;
+		}
+		return h.a;
+	}
+}
+';
+
 	static inline var COUNT:Int = 2000000;
 
 	public static function main():Void {
@@ -71,6 +91,7 @@ class P {
 		measure('host method', CALLS, 'p.C', 'C', nativeCalls);
 		measure('host field', FIELDS, 'p.F', 'F', nativeFields);
 		measure('pure arithmetic', PURE, 'p.P', 'P', nativePure);
+		measure('scripted field', SCRIPTED, 'p.S', 'S', nativeScripted);
 
 		Sys.println('');
 	}
@@ -93,6 +114,17 @@ class P {
 			i++;
 		}
 		return sink.total;
+	}
+
+	/** The scripted-object field loop, compiled by Haxe. */
+	static function nativeScripted(sink:HostSink, n:Int):Dynamic {
+		var h:NativeHolder = new NativeHolder();
+		var i:Int = 0;
+		while (i < n) {
+			h.a = h.a + h.b;
+			i++;
+		}
+		return h.a;
 	}
 
 	/** The control loop, compiled by Haxe. */
