@@ -26,6 +26,12 @@ class Cppia {
 	}
 
 	#if hxscript_cppia
+	/** `Class.method` to record readably while emitting, for inspecting what a hot method became. */
+	public static var echoTarget:Null<String> = null;
+
+	/** What `echoTarget` emitted, filled by the last `compile`. */
+	public static var echoed:Null<String> = null;
+
 	/**
 	 * Dotted paths of every type a module declares.
 	 *
@@ -167,11 +173,16 @@ class Cppia {
 		for (input in inputs)
 			emitter.declare(input.decls, input.name);
 
+		emitter.echoTarget = echoTarget;
+
 		var compiled:Array<String> = [];
 		for (input in accepted) {
 			emitter.emit(input.decls, input.name);
 			compiled.push(input.name);
 		}
+
+		if (emitter.echoed != null)
+			echoed = emitter.echoed;
 
 		return {bytes: emitter.finish(), compiled: compiled, skipped: skipped};
 		#else

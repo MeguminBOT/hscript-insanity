@@ -67,12 +67,30 @@ class CppiaWriter {
 		return id;
 	}
 
+	/**
+	 * A readable echo of what is being written, or null.
+	 *
+	 * The body is a stream of pool indices, so reading it back means resolving every number against
+	 * the pools to find out what it meant. These methods are handed the real names on the way in, so
+	 * recording them here is exact and costs nothing when it is off.
+	 */
+	public var echo:StringBuf = null;
+
 	public inline function token(t:String):Void {
+		if (echo != null) {
+			// Newline as a code rather than an escape: one per token is what makes the echo readable.
+			echo.addChar(10);
+			echo.add(t);
+		}
 		body.add(t);
 		body.addChar(' '.code);
 	}
 
 	public inline function int(v:Int):Void {
+		if (echo != null) {
+			echo.addChar(' '.code);
+			echo.add(Std.string(v));
+		}
 		body.add(Std.string(v));
 		body.addChar(' '.code);
 	}
@@ -83,15 +101,30 @@ class CppiaWriter {
 
 	/** Writes a string as its pool index. */
 	public inline function str(s:String):Void {
+		if (echo != null) {
+			echo.add(' "');
+			echo.add(s);
+			echo.addChar('"'.code);
+		}
+		var saved:StringBuf = echo;
+		echo = null;
 		int(stringId(s));
+		echo = saved;
 	}
 
 	/** Writes a type path as its pool index, falling back to `Dynamic` for an empty path. */
 	public inline function type(path:String):Void {
+		if (echo != null) {
+			echo.addChar(' '.code);
+			echo.add((path == null || path.length == 0) ? '<Dynamic>' : '<' + path + '>');
+		}
+		var saved:StringBuf = echo;
+		echo = null;
 		if (path == null || path.length == 0)
 			unknownType();
 		else
 			int(typeId(path));
+		echo = saved;
 	}
 
 	/**

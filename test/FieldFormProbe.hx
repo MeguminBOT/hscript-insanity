@@ -27,7 +27,17 @@ class FieldFormProbe {
 			}
 		}
 
-		var result:CppiaResult = Cppia.compile(inputs, ambient());
+		if (Sys.args().length > 1)
+			Cppia.echoTarget = Sys.args()[1];
+
+		var result:CppiaResult = Cppia.compile(inputs, ambient(), null, ambientStatics());
+
+		if (Cppia.echoed != null) {
+			Sys.println('');
+			Sys.println('--- ' + Cppia.echoTarget + ' ---');
+			Sys.println(Cppia.echoed);
+			return;
+		}
 		Sys.println('modules: ' + inputs.length + '   compiled: ' + result.compiled.length + '   skipped: ' + result.skipped.length);
 		for (s in result.skipped)
 			Sys.println('  skipped ' + s.name + ' -- ' + s.reason);
@@ -68,6 +78,20 @@ class FieldFormProbe {
 			else if (StringTools.endsWith(entry, '.hx'))
 				into.push(full);
 		}
+	}
+
+	/** The bare names the engine answers with a static of its own. */
+	static function ambientStatics():Array<String> {
+		return [
+			'controls=backend.Controls::instance',
+			'getVar=scripting.ScriptGlobals::getVar',
+			'setVar=scripting.ScriptGlobals::setVar',
+			'debugPrint=scripting.ScriptGlobals::debugPrint',
+			'switchToState=scripting.ScriptGlobals::switchToState',
+			'keyboardJustPressed=scripting.ScriptGlobals::keyboardJustPressed',
+			'keyboardPressed=scripting.ScriptGlobals::keyboardPressed',
+			'keyboardReleased=scripting.ScriptGlobals::keyboardReleased'
+		];
 	}
 
 	static function ambient():Array<String> {

@@ -64,6 +64,14 @@ class CppiaEmitter {
 	 */
 	var classVars:StringMap<StringMap<String>>;
 
+	/** Fully-qualified `Class.method` to echo readably while emitting, or null. */
+	public var echoTarget:Null<String> = null;
+
+	/** What that method emitted, once it has been emitted. */
+	public var echoed:Null<String> = null;
+
+	var echoing:Bool = false;
+
 	/**
 	 * The array type the next literal should be built as, or null for an untyped one.
 	 *
@@ -483,6 +491,11 @@ class CppiaEmitter {
 			case KFunction(fn):
 				var isConstructor:Bool = f.name == 'new';
 
+				if (echoTarget != null && echoTarget == currentClass + '.' + f.name) {
+					w.echo = new StringBuf();
+					echoing = true;
+				}
+
 				w.token('FUNCTION');
 				w.bool(isStatic || isConstructor);
 				w.bool(hasAccess(f, ADynamic));
@@ -517,6 +530,12 @@ class CppiaEmitter {
 					popScope();
 				}
 				w.newline();
+
+				if (echoing) {
+					echoed = w.echo.toString();
+					w.echo = null;
+					echoing = false;
+				}
 		}
 	}
 
