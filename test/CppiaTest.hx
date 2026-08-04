@@ -136,6 +136,22 @@ class CppiaTest {
 			function set_value(v:Int):Int { store = v * 2; return v; }
 			public function new() {}
 		');
+		// A plain field is reached by offset while a property on the SAME class must still go through
+		// its accessor. Getting that wrong reads the storage behind the property and silently skips
+		// the doubling, so the two are exercised together and the answer separates them.
+		check('plain field and property together', 'var t = new T(); t.raw = 3; t.value = 4; return t.raw + t.value;', '11', '
+			public var raw:Int = 0;
+			public var store:Int = 0;
+			public var value(get, set):Int;
+			function get_value():Int return store;
+			function set_value(v:Int):Int { store = v * 2; return v; }
+			public function new() {}
+		');
+		check('field through a typed local', 'var t:T = new T(); t.raw = 6; var u:T = t; return u.raw;', '6', '
+			public var raw:Int = 0;
+			public function new() {}
+		');
+
 		check('static property', 'return T.only;', '42', '
 			public static var only(get, never):Int;
 			static function get_only():Int return 42;

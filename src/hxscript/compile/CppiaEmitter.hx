@@ -54,6 +54,16 @@ class CppiaEmitter {
 	var typePaths:StringMap<String>;
 	var moduleClasses:StringMap<Bool>;
 
+	/**
+	 * Plain instance variables of every class in the batch, by class path then field name, holding
+	 * each field's declared type or the empty string when it had none.
+	 *
+	 * Only fields that are plain variables are here. A field with a `get` or `set` accessor is left
+	 * out on purpose: reaching it directly would read the storage behind the property and skip the
+	 * accessor that gives it its meaning.
+	 */
+	var classVars:StringMap<StringMap<String>>;
+
 	var currentClass:String;
 	var currentSuper:String;
 	var members:StringMap<Bool>;
@@ -97,6 +107,7 @@ class CppiaEmitter {
 		scopeTypes = [];
 		typePaths = new StringMap();
 		moduleClasses = new StringMap();
+		classVars = new StringMap();
 		members = new StringMap();
 		statics = new StringMap();
 		memberTypes = new StringMap();
@@ -186,6 +197,18 @@ class CppiaEmitter {
 					var full:String = pack.length > 0 ? pack + '.' + c.name : c.name;
 					typePaths.set(c.name, full);
 					moduleClasses.set(full, true);
+
+					var vars:StringMap<String> = new StringMap();
+					for (f in c.fields) {
+						if (hasAccess(f, AStatic))
+							continue;
+						switch (f.kind) {
+							case KVar(v) if (plainAccess(v.get) && plainAccess(v.set)):
+								vars.set(f.name, v.type == null ? '' : typeName(v.type));
+							case _:
+						}
+					}
+					classVars.set(full, vars);
 
 					for (f in c.fields) {
 						if (!hasAccess(f, AStatic))
@@ -1136,6 +1159,20 @@ class CppiaEmitter {
 			return;
 		}
 
+		// A known class turns the access into an offset the loader resolves once, instead of a lookup
+		// by name on every evaluation. That is the difference between a field read costing what
+		// arithmetic costs and costing twenty-five times more, which is the whole cost of anything
+		// shaped like a renderer.
+		var holder:Null<String> = (obj.e.match(EIdent('this'))) ? currentClass : instanceClassOf(obj);
+		if (holder != null && instanceVar(holder, name) != null) {
+			w.pos(line);
+			w.token('FLINK');
+			w.type(holder);
+			w.str(name);
+			expr(obj);
+			return;
+		}
+
 		w.pos(line);
 		w.token('FNAME');
 		w.type('');
@@ -1176,7 +1213,7 @@ class CppiaEmitter {
 
 		if (members.exists(v)) {
 			w.pos(line);
-			w.token('FTHISNAME');
+			w.token(instanceVar(currentClass, v) != null ? 'FTHISINST' : 'FTHISNAME');
 			w.type(currentClass);
 			w.str(v);
 			return;
@@ -1627,6 +1664,30 @@ class CppiaEmitter {
 	 * @param path The type name as written, short or fully qualified.
 	 * @return Its full path, or null if this batch does not declare it.
 	 */
+	/** Whether an accessor keyword leaves a field as ordinary storage. */
+	static function plainAccess(access:String):Bool {
+		return access == null || access == 'default' || access == 'null' || access == 'never';
+	}
+
+	/**
+	 * The declared type of a plain instance variable, or null when the class has no such field.
+	 *
+	 * @param owner Full path of the class holding it.
+	 * @param field The field name.
+	 * @return Its declared type, the empty string when it had none, or null when it is not a plain
+	 *         variable of that class.
+	 */
+	function instanceVar(owner:String, field:String):Null<String> {
+		var vars:Null<StringMap<String>> = classVars.get(owner);
+		return vars == null ? null : vars.get(field);
+	}
+
+	/** The class an expression is known to be an instance of, or null. */
+	function instanceClassOf(e:Expr):Null<String> {
+		var named:Null<String> = inferType(e);
+		return named == null ? null : declaredClass(named);
+	}
+
 	function declaredClass(path:String):Null<String> {
 		if (moduleClasses.exists(path))
 			return path;
@@ -1878,6 +1939,13 @@ class CppiaEmitter {
 				var owner:Null<String> = typeOf(obj);
 				if (owner != null && owner == currentClass)
 					return staticTypes.get(f);
+
+				var holder:Null<String> = (obj.e.match(EIdent('this'))) ? currentClass : instanceClassOf(obj);
+				if (holder != null) {
+					var declared:Null<String> = instanceVar(holder, f);
+					if (declared != null && declared.length > 0)
+						return declared;
+				}
 				return null;
 
 			case ENew(cl, _):
