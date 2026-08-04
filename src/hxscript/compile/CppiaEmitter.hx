@@ -1757,16 +1757,19 @@ class CppiaEmitter {
 	function hostField(e:Expr):Bool {
 		switch (e.e) {
 			case EField(obj, name, _):
-				if (obj.e.match(EIdent('this'))) {
-					return instanceVar(currentClass, name) == null && !members.exists(name);
-				}
-
-				var owner:Null<String> = typeOf(obj);
-				if (owner != null) {
+				// A type on the left is a static, which has its own form and is not this question.
+				if (typeOf(obj) != null) {
 					return false;
 				}
 
-				return instanceClassOf(obj) == null;
+				// The same test the read side makes, and it has to be the same test: a read that goes
+				// one way and a write that goes the other produces an assignment to a call, which the
+				// loader rejects for the whole module. Belonging to a class from this batch is not
+				// enough -- the field must be one that class declares, because a scripted class also
+				// carries everything its host superclass has, and those are reached like any other
+				// host field.
+				var holder:Null<String> = obj.e.match(EIdent('this')) ? currentClass : instanceClassOf(obj);
+				return holder == null || instanceVar(holder, name) == null;
 
 			case _:
 				return false;

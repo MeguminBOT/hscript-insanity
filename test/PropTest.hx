@@ -14,10 +14,33 @@ import hxscript.types.ScriptedClass;
  */
 class PropTest {
 	static var SRC:String = 'package p;
+class Holder {
+	public var scaled(get, set):Int;
+
+	var real:Int = 0;
+
+	function get_scaled():Int return real;
+
+	function set_scaled(v:Int):Int {
+		real = v * 2;
+		return real;
+	}
+
+	public function new() {}
+}
 class T {
 	public static function run(sink:HostSink):Dynamic {
 		sink.tinted = 21;
 		return sink.tinted;
+	}
+
+	// The object belongs to the batch but the field is not one of its plain variables, so reading and
+	// writing must agree on going through the accessor. Disagreeing produces an assignment to a call,
+	// which the loader refuses for the whole module.
+	public static function viaAccessor():Dynamic {
+		var h:Holder = new Holder();
+		h.scaled = 21;
+		return h.scaled;
 	}
 }
 ';
@@ -35,6 +58,7 @@ class T {
 		var cls:ScriptedClass = cast env.resolve('p.T');
 		var interpreted:Dynamic = Reflect.callMethod(null, cls.reflectGetField('run'), [new HostSink()]);
 		report('interpreted', interpreted);
+		report('interpreted, batch accessor', Reflect.callMethod(null, cls.reflectGetField('viaAccessor'), []));
 
 		var decls = new hxscript.syntax.Parser().parseModule(SRC, 'T', 0, ['p']);
 		var r:CppiaResult = Cppia.compile([{name: 'p.T', decls: decls}], ['HostSink']);
@@ -45,7 +69,9 @@ class T {
 		var mod = cpp.cppia.Module.fromData(r.bytes.getData());
 		mod.boot();
 		try {
-			report('compiled', Reflect.callMethod(null, Reflect.field(mod.resolveClass('p.T'), 'run'), [new HostSink()]));
+			var built:Class<Dynamic> = mod.resolveClass('p.T');
+			report('compiled', Reflect.callMethod(null, Reflect.field(built, 'run'), [new HostSink()]));
+			report('compiled, batch accessor', Reflect.callMethod(null, Reflect.field(built, 'viaAccessor'), []));
 		} catch (e:Dynamic) {
 			failures++;
 			Sys.println('  FAIL compiled threw: ' + e);
