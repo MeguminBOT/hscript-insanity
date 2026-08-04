@@ -152,6 +152,20 @@ class CppiaTest {
 			public function new() {}
 		');
 
+		// An array literal has nothing in it to say what it holds, so it used to be built loose while an
+		// annotation promised a specific kind. Reading it back through that annotation reinterprets the
+		// memory, which crashes rather than misbehaves, so these index one after the round trip.
+		check('typed array local, literal init', 'var d:Array<Float> = [1.5, 2.5]; return d[1];', '2.5');
+		check('typed int array local', 'var d:Array<Int> = [4, 5, 6]; return d[2];', '6');
+		check('typed array field, indexed back', 'var t = new T(); t.data = [7.5]; return t.data[0];', '7.5', '
+			public var data:Array<Float>;
+			public function new() {}
+		');
+		check('typed array field, initialised in place', 'var t = new T(); return t.data[1];', '9', '
+			public var data:Array<Int> = [8, 9];
+			public function new() {}
+		');
+
 		check('static property', 'return T.only;', '42', '
 			public static var only(get, never):Int;
 			static function get_only():Int return 42;

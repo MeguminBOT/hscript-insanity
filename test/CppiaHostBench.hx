@@ -79,6 +79,33 @@ class S {
 }
 ';
 
+	/** Reads a typed array held in a field, which is the renderer's other per-column operation. */
+	static var ARRAYS:String = 'package p;
+class Grid {
+	public var data:Array<Float>;
+	public function new() {
+		data = [];
+		var i:Int = 0;
+		while (i < 1024) {
+			data.push(i);
+			i++;
+		}
+	}
+}
+class A {
+	public static function run(sink:HostSink, n:Int):Dynamic {
+		var g:Grid = new Grid();
+		var total:Float = 0;
+		var i:Int = 0;
+		while (i < n) {
+			total = total + g.data[i & 1023];
+			i++;
+		}
+		return total;
+	}
+}
+';
+
 	static inline var COUNT:Int = 2000000;
 
 	public static function main():Void {
@@ -92,6 +119,7 @@ class S {
 		measure('host field', FIELDS, 'p.F', 'F', nativeFields);
 		measure('pure arithmetic', PURE, 'p.P', 'P', nativePure);
 		measure('scripted field', SCRIPTED, 'p.S', 'S', nativeScripted);
+		measure('typed array', ARRAYS, 'p.A', 'A', nativeArrays);
 
 		Sys.println('');
 	}
@@ -125,6 +153,24 @@ class S {
 			i++;
 		}
 		return h.a;
+	}
+
+	/** The typed-array loop, compiled by Haxe. */
+	static function nativeArrays(sink:HostSink, n:Int):Dynamic {
+		var data:Array<Float> = [];
+		var k:Int = 0;
+		while (k < 1024) {
+			data.push(k);
+			k++;
+		}
+
+		var total:Float = 0;
+		var i:Int = 0;
+		while (i < n) {
+			total = total + data[i & 1023];
+			i++;
+		}
+		return total;
 	}
 
 	/** The control loop, compiled by Haxe. */

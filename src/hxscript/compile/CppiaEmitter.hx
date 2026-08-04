@@ -64,6 +64,17 @@ class CppiaEmitter {
 	 */
 	var classVars:StringMap<StringMap<String>>;
 
+	/**
+	 * The array type the next literal should be built as, or null for an untyped one.
+	 *
+	 * An array literal has nothing in it to say what it holds, so it was always built as the loose
+	 * kind. That is fine until something reads it back through an annotation promising a specific
+	 * kind, because the read trusts the annotation and reinterprets the memory -- which crashes rather
+	 * than misbehaves. Carrying the target's type to the literal keeps the two descriptions of the
+	 * same array in agreement.
+	 */
+	var expectedArray:Null<String> = null;
+
 	var currentClass:String;
 	var currentSuper:String;
 	var members:StringMap<Bool>;
@@ -576,6 +587,12 @@ class CppiaEmitter {
 	}
 
 	function expr(e:Expr):Void {
+		// The expected array type is meant for a literal standing directly where it was set, so
+		// anything else consumes and discards it rather than letting it reach a nested literal that
+		// has nothing to do with the target.
+		if (e != null && !e.e.match(EArrayDecl(_)))
+			expectedArray = null;
+
 		if (e == null) {
 			w.pos(0);
 			w.token('NULL');
@@ -736,9 +753,12 @@ class CppiaEmitter {
 					expr(mapLiteral(items, e.pos));
 					return;
 				}
+				var want:Null<String> = expectedArray;
+				expectedArray = null;
+
 				w.pos(line);
 				w.token('ADEF');
-				w.type('Array');
+				w.type(want == null ? 'Array' : want);
 				w.int(items.length);
 				for (item in items)
 					expr(item);
@@ -852,6 +872,7 @@ class CppiaEmitter {
 						w.bool(false);
 						storableType(t == null ? '' : typeName(t));
 						w.type('');
+						expectedArray = elementArray(t == null ? null : typeName(t));
 						expr(init);
 					}
 					w.newline();
@@ -936,6 +957,7 @@ class CppiaEmitter {
 			w.pos(line);
 			w.token('SET');
 			expr(e1);
+			expectedArray = elementArray(inferType(e1));
 			expr(e2);
 			return;
 		}
@@ -1664,6 +1686,11 @@ class CppiaEmitter {
 	 * @param path The type name as written, short or fully qualified.
 	 * @return Its full path, or null if this batch does not declare it.
 	 */
+	/** An array type carrying an element kind, or null for anything else. */
+	static function elementArray(name:Null<String>):Null<String> {
+		return (name != null && name.length > 6 && name.substr(0, 6) == 'Array.') ? name : null;
+	}
+
 	/** Whether an accessor keyword leaves a field as ordinary storage. */
 	static function plainAccess(access:String):Bool {
 		return access == null || access == 'default' || access == 'null' || access == 'never';
