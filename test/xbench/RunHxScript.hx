@@ -1,19 +1,7 @@
-import insanity.Script;
+import hxscript.Script;
 
-/**
- * Runner for hscript-insanity.
- *
- * Separate from `RunHxScript` only because the two libraries no longer share a package.
- * hscript-insanity is still `insanity`; this library is the one that moved, to `hxscript`. One
- * runner cannot import both, and the shared runner built against hscript-insanity failed to resolve
- * its import and was skipped -- silently, since a build failure here drops a library rather than
- * stopping the suite. That took the column out of the comparison without taking anything out of the
- * document.
- *
- * The body is deliberately identical to `RunHxScript`'s. Any difference between them would show up
- * as a difference between the libraries.
- */
-class RunInsanity {
+/** Runner for this library. `RunInsanity` is the same body against hscript-insanity's package. */
+class RunHxScript {
 	static function main():Void {
 		XBench.run(Sys.args()[0], prepare, exec);
 	}

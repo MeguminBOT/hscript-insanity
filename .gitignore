@@ -3,5 +3,6 @@ __pycache__/
 bin/
 bin_bench/
 bin_mbench/
+bin_xbench/
 hxscript.zip
 export_classes.info

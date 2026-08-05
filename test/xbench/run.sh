@@ -3,7 +3,7 @@
 #
 #   LIBS=/path/to/checkouts sh test/xbench/run.sh
 #
-# `LIBS` must contain checkouts named: insanity-upstream, hscript, improved, iris, rulescript,
+# `LIBS` must contain checkouts named: insanity, hscript, improved, iris, rulescript,
 # hscript-rs (an hscript old enough for RuleScript; see docs/benchmarks.md). Anything missing is
 # skipped rather than failing the run.
 #
@@ -33,12 +33,13 @@ build() { # name, classpath, main, [extra hxml]
 }
 
 echo "building..." >&2
-build ours "$ROOT/src" RunInsanity >/dev/null
-build upstream "$LIBS/insanity-upstream" RunInsanity >/dev/null
+build hxscript "$ROOT/src" RunHxScript >/dev/null
+# Its own runner: hscript-insanity is `package insanity`, so one runner cannot import both.
+build insanity "$LIBS/insanity" RunInsanity >/dev/null
 build hscript "$LIBS/hscript" RunHscript >/dev/null
 build improved "$LIBS/improved" RunHscript >/dev/null
 build iris "$LIBS/iris" RunIris >/dev/null
-# The same libraries again with position tracking on, which is what this fork always does. Without
+# The same libraries again with position tracking on, which is what hxScript always does. Without
 # it they record no source positions at all, so the plain rows are not a like-for-like comparison.
 build hscript-pos "$LIBS/hscript" RunHscript "$HERE/hscript-pos.hxml" >/dev/null
 build improved-pos "$LIBS/improved" RunHscript "$HERE/hscript-pos.hxml" >/dev/null
@@ -56,7 +57,7 @@ fi
 
 : > "$OUT"
 # tr -d '\r': the runners emit CRLF, and a case name carrying a trailing CR matches nothing
-CASES=$("$BIN/ours/RunInsanity.exe" ours __list | tr -d '\r')
+CASES=$("$BIN/hxscript/RunHxScript.exe" hxscript __list | tr -d '\r')
 
 # Scales the whole corpus is run at. Must be multiples of 1000, which is the array length `forArray`
 # walks.
@@ -67,8 +68,8 @@ CASES=$("$BIN/ours/RunInsanity.exe" ours __list | tr -d '\r')
 # not worth it. Pass SCALES to check it again after a change that could plausibly disturb it.
 SCALES=${SCALES:-"100000"}
 
-for entry in "ours:$BIN/ours/RunInsanity.exe" \
-             "insanity-upstream:$BIN/upstream/RunInsanity.exe" \
+for entry in "hxscript:$BIN/hxscript/RunHxScript.exe" \
+             "insanity:$BIN/insanity/RunInsanity.exe" \
              "hscript-pos:$BIN/hscript-pos/RunHscript.exe" \
              "hscript:$BIN/hscript/RunHscript.exe" \
              "hscript-improved-pos:$BIN/improved-pos/RunHscript.exe" \
