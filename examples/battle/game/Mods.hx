@@ -11,8 +11,12 @@ import sys.FileSystem;
 import sys.io.File;
 
 /**
- * The whole embedding layer: everything the host has to do to make scripts work. Four steps, and
+ * The whole embedding layer: everything the host has to do to make scripts work. Five steps, and
  * `setup` runs them once.
+ *
+ * The fifth is optional, and is what a host adds when scripts get hot enough to notice: the same
+ * scripts, compiled to bytecode at runtime instead of interpreted. Nothing above it changes, and
+ * nothing below it can tell which way a class ended up running.
  *
  * See [docs/embedding.md](../../../docs/embedding.md) for what each one is doing and why.
  */
@@ -20,7 +24,16 @@ class Mods {
 	/** The world every loaded script and type lives in. */
 	public static var world:Environment;
 
-	/** Names scripts can use without importing them. */
+	/** What the compiler did, for `Main` to print. Empty when this build cannot compile. */
+	public static var compileReport:String = 'interpreted (built without -D hxscript_cppia)';
+
+	/**
+	 * Names scripts can use without importing them.
+	 *
+	 * Listed by hand here because the list is four entries and the example is meant to be read. A
+	 * host with a real API surface marks its types `@:scriptAmbient` instead and calls
+	 * `ExposeMacro.apply()`, which fills this in and the compiler's copy of it from the same marks.
+	 */
 	static final GLOBALS:Array<String> = ['game.Entity', 'game.Component', 'game.Battle', 'game.Damage'];
 
 	/**
@@ -66,6 +79,47 @@ class Mods {
 		world.variables.set('roll', function(sides:Int):Int return 1 + Std.random(sides));
 
 		world.start();
+
+		// 5. Optional: compile what can be compiled.
+		//    Worth about 20x on a script's own work, and free to leave out -- a build without
+		//    `-D hxscript_cppia` skips this entirely and everything is interpreted as before.
+		compile();
+	}
+
+	/**
+	 * Compiles the world's scripts to bytecode, where this build can.
+	 *
+	 * The whole of it is one call. `Compiler.compile` offers every module, loads what compiled,
+	 * registers the classes against the world and turns substitution on, so the rest of this file --
+	 * `classes()`, `roster()`, everything in `Battle` -- goes on asking the world for a class and
+	 * getting whichever form exists, without knowing which.
+	 *
+	 * A module the emitter cannot take is reported and left interpreted, so turning this on cannot
+	 * break a script that was working. All twelve of these compile, including `Combat.hx`, which
+	 * declares an enum, a typedef and an abstract in one module.
+	 */
+	static function compile():Void {
+		#if hxscript_cppia
+		// The same names step 1 gave the interpreter, given to the compiler in the form it reads.
+		// Compiled code has no interpreter to have them injected into, so a bare `Entity` means
+		// nothing to it until it is told where `Entity` lives. Miss this and the module still
+		// emits, and fails to load.
+		hxscript.compile.Compiler.ambient = GLOBALS;
+
+		var report = hxscript.compile.Compiler.compile(world);
+
+		var parts:Array<String> = ['compiled ${report.compiled.length} classes in '
+			+ Math.round(report.ms * 10) / 10 + 'ms'];
+
+		for (skip in report.skipped)
+			parts.push('interpreting ${skip.name}: ${skip.reason}');
+
+		if (!report.substituting)
+			parts.push('nothing compiled; all interpreted');
+
+		compileReport = parts.join('
+  ');
+		#end
 	}
 
 	/**

@@ -24,6 +24,10 @@ import openfl.text.TextFormat;
  * log is drawn into a window:
  *
  *     cd examples/battle && lime test windows
+ *
+ * Adding `-D scriptable -D hxscript_cppia -dce no` to a native build compiles the scripts to
+ * bytecode at runtime instead of interpreting them. The fight comes out the same; the first line of
+ * the log says which way it ran. See `Mods.compile`.
  */
 class Main #if openfl extends Sprite #end {
 	static function main():Void {
@@ -60,6 +64,10 @@ class Main #if openfl extends Sprite #end {
 	/** Loads the scripts, builds the encounter out of what they declared, and runs it. */
 	static function play():Void {
 		Mods.setup(scriptFolder());
+
+		// What the scripts are running as. Interpreted unless the build asked for the compiler; the
+		// fight is identical either way, which is the point.
+		Output.write('scripts: ${Mods.compileReport}');
 
 		var battle:Battle = new Battle(20260726);
 
