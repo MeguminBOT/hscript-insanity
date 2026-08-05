@@ -1279,7 +1279,7 @@ class Parser extends Lexer {
 	 * @param importModule Whether this is an `import.hx` prelude (restricted to imports/usings).
 	 * @return The parsed declarations.
 	 */
-	public function parseModule(content:String, ?origin:String = "hscript", ?position:Int = 0, ?pack:Array<String>, ?importModule:Bool = false) {
+	public function parseModule(content:String, ?origin:String = "hscript", position:Int = 0, ?pack:Array<String>, importModule:Bool = false) {
 		this.pack = pack;
 		initParser(origin, position);
 		input = content;

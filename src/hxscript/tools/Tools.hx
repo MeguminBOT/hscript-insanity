@@ -297,7 +297,7 @@ class Tools {
 	 * @param collection The collection to search; defaults to the global one.
 	 * @return The importable type infos, or null if the path is unknown.
 	 */
-	public static inline function listTypes(path:String, ?fromPack:Bool = false, ?canIgnoreWarnings:Bool = false, ?collection:TypeCollection):Array<TypeInfo> {
+	public static inline function listTypes(path:String, fromPack:Bool = false, canIgnoreWarnings:Bool = false, ?collection:TypeCollection):Array<TypeInfo> {
 		var typeInfos:Array<TypeInfo> = [];
 
 		collection ??= TypeCollection.main;
@@ -343,7 +343,7 @@ class Tools {
 	 * @param collections The collections to search (nulls are skipped).
 	 * @return The combined type infos, or null if none matched.
 	 */
-	public static inline function listTypesEx(path:String, ?fromPack:Bool = false, ?canIgnoreWarnings:Bool = false,
+	public static inline function listTypesEx(path:String, fromPack:Bool = false, canIgnoreWarnings:Bool = false,
 			collections:Array<TypeCollection>):Array<TypeInfo> {
 		var types:Array<TypeInfo> = null;
 
