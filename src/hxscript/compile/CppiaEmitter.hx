@@ -1,3 +1,25 @@
+/*
+ * Copyright (c) 2026 MeguminBOT (hxScript)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ */
+
 package hxscript.compile;
 
 #if hxscript_cppia
@@ -45,13 +67,25 @@ class CppiaEmitter {
 	/** Compound assignments, which cppia spells the same way but reads as a `SetExpr`. */
 	static var ASSIGN_OPS:Array<String> = ['+=', '-=', '*=', '/=', '&=', '|=', '^=', '<<=', '>>=', '>>>='];
 
+	/** The token stream being built. */
 	var w:CppiaWriter;
+
+	/** How many classes have been written, which the module header has to declare up front. */
 	var classCount:Int;
+
+	/** Next free local slot. Slots are numbered across the whole module, not per function. */
 	var nextVarId:Int;
 
+	/** Local slots by name, innermost scope last. */
 	var scopes:Array<StringMap<Int>>;
+
+	/** The declared type of each local, in step with `scopes`. */
 	var scopeTypes:Array<StringMap<String>>;
+
+	/** Full path for each short type name in view, from imports, declarations and ambient types. */
 	var typePaths:StringMap<String>;
+
+	/** Paths this batch declares, which can be linked directly rather than resolved as host types. */
 	var moduleClasses:StringMap<Bool>;
 
 	/**
@@ -70,6 +104,7 @@ class CppiaEmitter {
 	/** What that method emitted, once it has been emitted. */
 	public var echoed:Null<String> = null;
 
+	/** Whether the writer is recording, which only the method named by `echoTarget` turns on. */
 	var echoing:Bool = false;
 
 	/**
@@ -83,11 +118,63 @@ class CppiaEmitter {
 	 */
 	var expectedArray:Null<String> = null;
 
+	/**
+	 * Paths in this batch that were declared as abstracts rather than classes.
+	 *
+	 * An abstract has no runtime form, so a value of one is its underlying value and a method on it
+	 * is a static taking that value as a leading `this`. Knowing which paths those are is what lets
+	 * a call be routed there, and what each one boxes is what lets a slot holding one be typed as
+	 * the thing it really holds.
+	 */
+	var moduleAbstracts:StringMap<String> = new StringMap();
+
+	/** Locals declared as an array of one of this batch's abstracts, by name, to that abstract. */
+	var arrayElements:StringMap<String> = new StringMap();
+
+	/** Abstracts in this batch that declare a constructor, which `new` has to be routed to. */
+	var abstractCtors:StringMap<Bool> = new StringMap();
+
+	/**
+	 * Declared return types of a batch type's methods, by owner then method name.
+	 *
+	 * What a call evaluates to is otherwise unknown, and it has to be known for `m.plus(1).big()`:
+	 * without it the second call has no idea it is still holding an abstract.
+	 */
+	var methodReturns:StringMap<StringMap<String>> = new StringMap();
+
+	/**
+	 * How many arguments the current class's host superclass constructor declares, or -1 when the
+	 * superclass is in this batch and needs no padding.
+	 */
+	var superArgs:Int = -1;
+
+	/**
+	 * The element type to give the next temporary this emitter introduces.
+	 *
+	 * A local's array type comes from what it was declared as, and a temporary is declared with no
+	 * type at all, so it would be built untyped however specific its contents are. That matters when
+	 * the temporary is then read into a slot the loader believes holds a typed array: it reads the
+	 * wrong shape and yields nothing useful. This carries the type across the one step where there is
+	 * no declaration to take it from.
+	 */
+	var temporaryArray:Null<String> = null;
+
+	/** Full path of the class being written. */
 	var currentClass:String;
+
+	/** Its superclass's path, or the empty string when it has none. */
 	var currentSuper:String;
+
+	/** Its instance fields, to whether each is a method rather than a var holding one. */
 	var members:StringMap<Bool>;
+
+	/** Its static fields, read the same way. */
 	var statics:StringMap<Bool>;
+
+	/** Declared types of its instance fields. */
 	var memberTypes:StringMap<String>;
+
+	/** Declared types of its statics. */
 	var staticTypes:StringMap<String>;
 
 	/** Constructor names of every enum this batch declares, by full type path. */
@@ -114,10 +201,13 @@ class CppiaEmitter {
 	 * A static read links straight to the storage slot, so unlike a member property the accessor is
 	 * never consulted and has to be called outright.
 	 */
+	/** `class.field` of every static property with a getter, which must be read through it. */
 	var staticGetters:StringMap<Bool>;
 
+	/** `class.field` of every static property with a setter, which must be written through it. */
 	var staticSetters:StringMap<Bool>;
 
+	/** Starts an empty batch. One emitter writes one module, however many classes it holds. */
 	public function new() {
 		w = new CppiaWriter();
 		classCount = 0;
@@ -181,6 +271,7 @@ class CppiaEmitter {
 	 * be declared before any is emitted.
 	 *
 	 * @param decls The module's declarations.
+	 * @param moduleName The module they came from, used to keep two batches' classes apart.
 	 */
 	public function declare(decls:Array<ModuleDecl>, moduleName:String = null):Void {
 		var pack:String = '';
@@ -229,6 +320,16 @@ class CppiaEmitter {
 					}
 					classVars.set(full, vars);
 
+					var rets:StringMap<String> = new StringMap();
+					for (f in c.fields) {
+						switch (f.kind) {
+							case KFunction(fn) if (fn.ret != null):
+								rets.set(f.name, typeName(fn.ret));
+							case _:
+						}
+					}
+					methodReturns.set(full, rets);
+
 					for (f in c.fields) {
 						if (!hasAccess(f, AStatic))
 							continue;
@@ -240,6 +341,33 @@ class CppiaEmitter {
 							case _:
 						}
 					}
+				case DAbstract(a):
+					var full:String = pack.length > 0 ? pack + '.' + a.name : a.name;
+
+					// Not set here when the host already offers the name: another module in this batch
+					// resolving `Damage` almost certainly means the one it was given. The module that
+					// declares it gets its own view applied in `ownView` before it is emitted.
+					if (!typePaths.exists(a.name))
+						typePaths.set(a.name, full);
+
+					moduleClasses.set(full, true);
+					moduleAbstracts.set(full, a.underlying == null ? '' : typeName(a.underlying));
+					classVars.set(full, new StringMap());
+
+					for (f in a.fields) {
+						if (f.name == 'new')
+							abstractCtors.set(full, true);
+					}
+
+					var returns:StringMap<String> = new StringMap();
+					for (f in a.fields) {
+						switch (f.kind) {
+							case KFunction(fn) if (fn.ret != null):
+								returns.set(f.name == 'new' ? '@new' : f.name, typeName(fn.ret));
+							case _:
+						}
+					}
+					methodReturns.set(full, returns);
 				case DEnum(en):
 					var full:String = pack.length > 0 ? pack + '.' + en.name : en.name;
 					typePaths.set(en.name, full);
@@ -258,9 +386,12 @@ class CppiaEmitter {
 	 * Emits every type a module declares.
 	 *
 	 * @param decls The module's declarations.
+	 * @param moduleName The module they came from, used to keep two batches' classes apart.
 	 * @throws CppiaUnsupported If any declaration has no cppia spelling.
 	 */
 	public function emit(decls:Array<ModuleDecl>, moduleName:String = null):Void {
+		ownView(decls);
+
 		emitModuleFields(decls, moduleName);
 
 		var pack:String = '';
@@ -276,8 +407,8 @@ class CppiaEmitter {
 				case DImport(_, _) | DUsing(_):
 				case DEnum(en):
 					emitEnum(en, pack);
-				case DAbstract(_):
-					throw new CppiaUnsupported('abstract declarations', decl.pos);
+				case DAbstract(a):
+					emitClass(implementationOf(a, pack), pack, false, decl.pos);
 				case DTypedef(_):
 				case DField(_):
 			}
@@ -393,11 +524,131 @@ class CppiaEmitter {
 		classCount++;
 	}
 
+	/**
+	 * Re-resolves short names the way the module being emitted sees them.
+	 *
+	 * Every module in the batch is declared into one table, so a name declared in one is visible from
+	 * all of them, and a name the host also offers is decided by whichever was written last. Neither
+	 * is how Haxe reads a module: its own declarations and its own imports come first, and another
+	 * file's types are reachable only through an import.
+	 *
+	 * A fresh emitter is built for each module and declares the batch before emitting one of them, so
+	 * applying that module's own view last is enough to get the precedence right -- without it a
+	 * script declaring `Damage` beside a host `Damage` silently linked the wrong one.
+	 *
+	 * @param decls The declarations of the module about to be emitted.
+	 */
+	function ownView(decls:Array<ModuleDecl>):Void {
+		var pack:String = '';
+
+		for (decl in decls) {
+			switch (decl.d) {
+				case DPackage(path):
+					pack = path.join('.');
+
+				case DImport(path, mode):
+					var full:String = path.join('.');
+					typePaths.set(switch (mode) {
+						case IAsName(alias): alias;
+						case _: path[path.length - 1];
+					}, full);
+
+				case DClass(c) | DInterface(c):
+					typePaths.set(c.name, pack.length > 0 ? pack + '.' + c.name : c.name);
+
+				case DAbstract(a):
+					typePaths.set(a.name, pack.length > 0 ? pack + '.' + a.name : a.name);
+
+				case DEnum(en):
+					typePaths.set(en.name, pack.length > 0 ? pack + '.' + en.name : en.name);
+
+				case _:
+			}
+		}
+	}
+
+	/**
+	 * An abstract's implementation class, in the same shape the interpreter builds.
+	 *
+	 * An abstract has no runtime form of its own -- in Haxe or here. What exists is a class of
+	 * statics, each taking the boxed value as a leading `this`, and a box that carries which abstract
+	 * it belongs to. The box, the operators and the `from`/`to` conversions stay with the
+	 * interpreter, which is where the type information they need lives; the methods are an ordinary
+	 * class and compile like one.
+	 *
+	 * Built through `ScriptedAbstract.staticForm` rather than a copy of it, so the compiled methods
+	 * cannot drift from the interpreted ones.
+	 *
+	 * @param a The abstract's declaration.
+	 * @param pack Its package, unused beyond matching `emitClass`'s shape.
+	 * @return The class to emit in its place.
+	 */
+	function implementationOf(a:AbstractDecl, pack:String):ClassDecl {
+		var fields:Array<FieldDecl> = [];
+		for (f in a.fields) {
+			var made:FieldDecl = f.access.contains(AStatic) ? f : hxscript.types.ScriptedAbstract.staticForm(f, a.name, a.underlying);
+
+			// `staticForm` ends a constructor with a bare `this`, which the interpreter returns
+			// because a scripted body yields its last expression. Compiled code does not: a
+			// function returns only what it is told to, so the trailing value is made a return.
+			if (made.name == '@new') {
+				switch (made.kind) {
+					case KFunction(fn):
+						switch (fn.expr.e) {
+							case EBlock(list) if (list.length > 0):
+								var last:Expr = list[list.length - 1];
+								list[list.length - 1] = {e: EReturn(last), pos: last.pos};
+							case _:
+						}
+					case _:
+				}
+			}
+
+			fields.push(made);
+		}
+
+		return {
+			name: a.name,
+			meta: a.meta,
+			params: a.params,
+			extend: null,
+			implement: [],
+			fields: fields,
+			isPrivate: a.isPrivate,
+			isExtern: false
+		};
+	}
+
+	/**
+	 * Writes one class or interface: its header, then every field it declares.
+	 *
+	 * @param c The declaration.
+	 * @param pack Its package, empty for the root one.
+	 * @param isInterface Whether it was declared as an interface, which changes the header and
+	 *        leaves its methods without bodies.
+	 * @param pos Where it appears.
+	 */
 	function emitClass(c:ClassDecl, pack:String, isInterface:Bool, pos:Position):Void {
 		var full:String = pack.length > 0 ? pack + '.' + c.name : c.name;
 
 		currentClass = full;
 		currentSuper = c.extend == null ? '' : typeName(c.extend);
+
+		// cppia links a call by its exact argument count, so a script's `super(a, b)` against a host
+		// constructor whose third argument is optional is a count short -- which the loader accepts
+		// and the runtime rejects, mid-call, as `CallHaxe: Invalid arg count`. The type table records
+		// each class's constructor shape for exactly this, and `superArity` reads it. A host class
+		// whose shape is not recorded cannot be padded, so it is refused instead: interpreting is
+		// correct, and crashing is not.
+		//
+		// Extending another class from the same batch needs none of this: its constructor is here.
+		superArgs = -1;
+
+		if (currentSuper != '' && declaredClass(currentSuper) == null) {
+			superArgs = hostConstructorArity(currentSuper);
+			if (superArgs < 0)
+				throw new CppiaUnsupported('extends ' + currentSuper + ', whose constructor shape is unknown', pos);
+		}
 		members = new StringMap();
 		statics = new StringMap();
 		memberTypes = new StringMap();
@@ -409,12 +660,16 @@ class CppiaEmitter {
 				case KFunction(fn): fn.ret == null ? null : typeName(fn.ret);
 			}
 
+			// A rest-argument function is emitted as a var holding a closure, so it is called as a
+			// value rather than linked as a method.
+			var isMethod:Bool = f.kind.match(KFunction(_)) && restArg(f) == null;
+
 			if (hasAccess(f, AStatic)) {
-				statics.set(f.name, true);
+				statics.set(f.name, isMethod);
 				if (declared != null)
 					staticTypes.set(f.name, declared);
 			} else {
-				members.set(f.name, true);
+				members.set(f.name, isMethod);
 				if (declared != null)
 					memberTypes.set(f.name, declared);
 			}
@@ -484,8 +739,25 @@ class CppiaEmitter {
 		return {e: EBlock(out), pos: pos};
 	}
 
+	/**
+	 * Writes one field of the class being emitted, as storage or as a method.
+	 *
+	 * @param f The declaration.
+	 * @param isInterface Whether the owner is an interface, whose methods carry no body.
+	 * @param pos Where it appears.
+	 */
 	function emitField(f:FieldDecl, isInterface:Bool, pos:Position):Void {
 		var isStatic:Bool = hasAccess(f, AStatic);
+
+		// A cppia function has a fixed number of arguments, so a rest parameter cannot be one. What
+		// can is a field holding a closure built by `Reflect.makeVarArgs`, which every caller reaches
+		// the same way -- compiled code, the interpreter and the host alike -- and which accepts
+		// however many arguments it is given. Calls to it are already routed as value calls, since
+		// what it is now is a var rather than a method.
+		if (!isInterface && restArg(f) != null) {
+			emitVarArgsField(f, isStatic, pos);
+			return;
+		}
 
 		switch (f.kind) {
 			case KFunction(fn):
@@ -539,6 +811,16 @@ class CppiaEmitter {
 		}
 	}
 
+	/**
+	 * Writes a method's arguments and body.
+	 *
+	 * A constructor gets the member initialisers folded in ahead of its own body, which is where a
+	 * field's `= value` is run.
+	 *
+	 * @param fn The declaration.
+	 * @param isConstructor Whether it is the constructor.
+	 * @param pos Where it appears.
+	 */
 	function emitFunctionBody(fn:FunctionDecl, isConstructor:Bool, pos:Position):Void {
 		emitFun(fn.args, isConstructor ? withMemberInits(fn.expr, pos) : fn.expr, fn.ret, pos);
 	}
@@ -565,9 +847,8 @@ class CppiaEmitter {
 		w.int(args.length);
 
 		for (a in args) {
-			if (a.rest == true)
-				throw new CppiaUnsupported('rest arguments', pos);
 
+			noteArrayElement(a.name, a.t);
 			var id:Int = declareVar(a.name, a.t == null ? null : typeName(a.t));
 
 			w.str(a.name);
@@ -605,6 +886,15 @@ class CppiaEmitter {
 		popScope();
 	}
 
+	/**
+	 * Writes one expression, and whatever it contains.
+	 *
+	 * The whole emitter hangs off this: every form the compiler accepts has a case here, and any
+	 * form it does not throws `CppiaUnsupported`, which abandons the module rather than the batch.
+	 *
+	 * @param e The expression, or null for a literal absence.
+	 * @throws CppiaUnsupported If it has no cppia spelling.
+	 */
 	function expr(e:Expr):Void {
 		// The expected array type is meant for a literal standing directly where it was set, so
 		// anything else consumes and discards it rather than letting it reach a nested literal that
@@ -772,6 +1062,10 @@ class CppiaEmitter {
 					expr(mapLiteral(items, e.pos));
 					return;
 				}
+				if (items.length == 1 && isComprehension(items[0])) {
+					expr(comprehension(items[0], expectedArray, e.pos));
+					return;
+				}
 				var want:Null<String> = expectedArray;
 				expectedArray = null;
 
@@ -783,6 +1077,28 @@ class CppiaEmitter {
 					expr(item);
 
 			case ENew(cl, params):
+				// An abstract has nothing to allocate. Its constructor is a static whose leading
+				// `this` starts out null and whose body assigns it, so calling that yields the
+				// underlying value -- and an abstract with no constructor is simply its argument.
+				var boxed:Null<String> = abstractPathOf(cl);
+				if (boxed != null) {
+					if (!abstractCtors.exists(boxed)) {
+						expr(params.length > 0 ? params[0] : null);
+						return;
+					}
+
+					w.pos(line);
+					w.token('CALLSTATIC');
+					useType(boxed);
+					w.str('@new');
+					w.int(params.length + 1);
+					w.pos(line);
+					w.token('NULL');
+					for (p in params)
+						expr(p);
+					return;
+				}
+
 				w.pos(line);
 				w.token('NEW');
 				useType(resolveType(cl, e.pos));
@@ -877,6 +1193,7 @@ class CppiaEmitter {
 					w.token('TVARS');
 					w.int(1);
 
+					noteArrayElement(n, t);
 					var id:Int = declareVar(n, t == null ? null : typeName(t));
 					if (init == null) {
 						w.token('VARDECL');
@@ -891,7 +1208,14 @@ class CppiaEmitter {
 						w.bool(false);
 						storableType(t == null ? '' : typeName(t));
 						w.type('');
-						expectedArray = elementArray(t == null ? null : typeName(t));
+
+						var declared:Null<String> = elementArray(t == null ? null : typeName(t));
+						if (declared == null && temporaryArray != null) {
+							declared = temporaryArray;
+							temporaryArray = null;
+						}
+
+						expectedArray = declared;
 						expr(init);
 					}
 					w.newline();
@@ -958,6 +1282,17 @@ class CppiaEmitter {
 		return {e: EBlock(outer), pos: pos};
 	}
 
+	/**
+	 * Writes a binary operation.
+	 *
+	 * Assignment is not one operation among others: what it writes depends on what is being assigned
+	 * to, since a property, a static and a local each take a different form.
+	 *
+	 * @param op The operator.
+	 * @param e1 Its left side.
+	 * @param e2 Its right side.
+	 * @param pos Where it appears.
+	 */
 	function emitBinop(op:String, e1:Expr, e2:Expr, pos:Position):Void {
 		var line:Int = pos == null ? 0 : pos.line;
 
@@ -1036,6 +1371,17 @@ class CppiaEmitter {
 		throw new CppiaUnsupported('operator ' + op, pos);
 	}
 
+	/**
+	 * Writes a `switch`.
+	 *
+	 * Only a switch over plain values has a cppia form. Guards, captures and destructuring do not, so
+	 * those are rewritten into an if-else chain first and emitted as that instead.
+	 *
+	 * @param cond The value being matched.
+	 * @param cases Its cases.
+	 * @param defaultExpr Its default branch, if any.
+	 * @param pos Where it appears.
+	 */
 	function emitSwitch(cond:Expr, cases:Array<{values:Array<Expr>, expr:Expr, ?guard:Expr}>, defaultExpr:Null<Expr>, pos:Position):Void {
 		for (c in cases) {
 			if (c.guard != null || captureName(c) != null || destructure(c) != null) {
@@ -1043,8 +1389,17 @@ class CppiaEmitter {
 				return;
 			}
 			for (v in c.values) {
+				if (anyEnumCtor(v)) {
+					expr(switchAsChain(cond, cases, defaultExpr, pos));
+					return;
+				}
+
 				switch (v.e) {
 					case EConst(_) | EIdent(_) | EField(_, _, _):
+					case EObject(_) | EArrayDecl(_):
+						// Shapes rather than values, which the chain can test and the instruction cannot.
+						expr(switchAsChain(cond, cases, defaultExpr, pos));
+						return;
 					case _:
 						throw new CppiaUnsupported('pattern matching in switch', pos);
 				}
@@ -1068,6 +1423,17 @@ class CppiaEmitter {
 			expr(defaultExpr);
 	}
 
+	/**
+	 * Writes a call, choosing the form from what is being called.
+	 *
+	 * A static of a known class, a method on a known instance and a call through a value are three
+	 * different instructions, and picking the most specific one is most of what makes compiled code
+	 * faster than interpreted code.
+	 *
+	 * @param callee What is being called.
+	 * @param params Its arguments.
+	 * @param pos Where it appears.
+	 */
 	function emitCall(callee:Expr, params:Array<Expr>, pos:Position):Void {
 		var line:Int = pos == null ? 0 : pos.line;
 
@@ -1116,6 +1482,23 @@ class CppiaEmitter {
 					return;
 				}
 
+				// A method on an abstract-typed value is a static taking that value as its `this`,
+				// which is the shape both this emitter and the interpreter build the implementation
+				// in. Without this the call would go to the underlying value, which has no such
+				// method.
+				var boxed:Null<String> = abstractTypeOf(obj);
+				if (boxed != null) {
+					w.pos(line);
+					w.token('CALLSTATIC');
+					useType(boxed);
+					w.str(name);
+					w.int(params.length + 1);
+					expr(obj);
+					for (p in params)
+						expr(p);
+					return;
+				}
+
 				switch (obj.e) {
 					case EIdent('super'):
 						w.pos(line);
@@ -1139,10 +1522,48 @@ class CppiaEmitter {
 					expr(p);
 
 			case EIdent('super'):
+				// Padded up to what the host constructor declares. A script may leave optional
+				// arguments off; the instruction may not.
+				var supplied:Int = params.length;
+				var wanted:Int = superArgs > supplied ? superArgs : supplied;
+
 				w.pos(line);
 				w.token('CALLSUPERNEW');
 				w.type(currentSuper);
+				w.int(wanted);
+				for (p in params)
+					expr(p);
+
+				// Null rather than the declared default, which does not survive into the type table.
+				// An omitted optional arrives as null in Haxe too, so the callee sees what it would
+				// have seen: its own default handling takes over from there.
+				for (i in supplied...wanted) {
+					w.pos(line);
+					w.token('NULL');
+				}
+
+			case EIdent(name) if (lookupVar(name) == null && enumOwning(name) != null):
+				w.pos(line);
+				w.token('CREATEENUM');
+				useType(enumOwning(name));
+				w.str(name);
 				w.int(params.length);
+				for (p in params)
+					expr(p);
+
+			case EIdent(name) if (lookupVar(name) == null && members.exists(name) && members.get(name) != true):
+				// A var that holds a function: read the field, then call what came out. Linking to it
+				// as a method fails, because there is no method of that name to link to.
+				callValue({e: EField({e: EIdent('this'), pos: pos}, name), pos: pos}, params, line);
+
+			case EIdent(name) if (lookupVar(name) == null && statics.exists(name) && statics.get(name) != true):
+				w.pos(line);
+				w.token('CALL');
+				w.int(params.length);
+				w.pos(line);
+				w.token('FSTATIC');
+				useType(currentClass);
+				w.str(name);
 				for (p in params)
 					expr(p);
 
@@ -1197,6 +1618,135 @@ class CppiaEmitter {
 		}
 	}
 
+	/**
+	 * The rest parameter of a field, if it declares one.
+	 *
+	 * @param f The field.
+	 * @return Its rest argument, or null when it has none.
+	 */
+	function restArg(f:FieldDecl):Null<Argument> {
+		switch (f.kind) {
+			case KFunction(fn):
+				for (a in fn.args) {
+					if (a.rest == true)
+						return a;
+				}
+			case _:
+		}
+
+		return null;
+	}
+
+	/**
+	 * Writes a rest-argument method as a field holding a variadic closure.
+	 *
+	 * The closure takes one array and unpacks it: each fixed parameter is bound to its position, and
+	 * the rest parameter to whatever is left. That is what `Reflect.makeVarArgs` hands it, and it is
+	 * what makes the arity of the call site irrelevant.
+	 *
+	 * @param f The declared field.
+	 * @param isStatic Whether it belongs to the class rather than an instance.
+	 * @param pos Where it appears.
+	 */
+	function emitVarArgsField(f:FieldDecl, isStatic:Bool, pos:Position):Void {
+		var fn:FunctionDecl = switch (f.kind) {
+			case KFunction(d): d;
+			case _: null;
+		}
+
+		var packed:String = tempName('args');
+		var bound:Array<Expr> = [];
+		var fixed:Array<Argument> = [];
+
+		for (a in fn.args) {
+			if (a.rest == true)
+				break;
+			fixed.push(a);
+		}
+
+		for (i in 0...fixed.length) {
+			bound.push({
+				e: EVar(fixed[i].name, fixed[i].t,
+					{e: EArray({e: EIdent(packed), pos: pos}, {e: EConst(CInt(i)), pos: pos}), pos: pos}, null, null, false),
+				pos: pos
+			});
+		}
+
+		// Everything past the fixed parameters is the rest, which `slice` hands over as an array.
+		bound.push({
+			e: EVar(fn.args[fn.args.length - 1].name, null, {
+				e: ECall({e: EField({e: EIdent(packed), pos: pos}, 'slice'), pos: pos},
+					[{e: EConst(CInt(fixed.length)), pos: pos}]),
+				pos: pos
+			}, null, null, false),
+			pos: pos
+		});
+
+		bound.push(fn.expr);
+
+		var inner:Expr = {
+			e: EFunction([{name: packed, t: null}], {e: EBlock(bound), pos: pos}, null, fn.ret),
+			pos: pos
+		};
+
+		var made:Expr = {
+			e: ECall({e: EField({e: EIdent('Reflect'), pos: pos}, 'makeVarArgs'), pos: pos}, [inner]),
+			pos: pos
+		};
+
+		// Written as an ordinary var whose initialiser builds the closure. Only a static carries one:
+		// an instance field is initialised per instance, which the constructor does.
+		w.token('VAR');
+		w.bool(isStatic);
+		w.token('N');
+		w.token('N');
+		w.bool(false);
+		w.str(f.name);
+		w.unknownType();
+
+		if (isStatic) {
+			w.int(1);
+			pushScope();
+			expr(made);
+			popScope();
+		} else {
+			w.int(0);
+			memberInits.push({e: EBinop('=', {e: EField({e: EIdent('this'), pos: pos}, f.name), pos: pos}, made), pos: pos});
+		}
+
+		w.newline();
+	}
+
+	/**
+	 * Writes a call of whatever a value turns out to be.
+	 *
+	 * Used where the thing being called is a function held in a field or a local rather than a
+	 * method declared on a class. cppia links a method call by name, which needs a method of that
+	 * name to exist; this reads the value first and calls that.
+	 *
+	 * @param callee An expression for the function.
+	 * @param params The arguments.
+	 * @param line The source line.
+	 */
+	function callValue(callee:Expr, params:Array<Expr>, line:Int):Void {
+		w.pos(line);
+		w.token('CALL');
+		w.int(params.length);
+		expr(callee);
+		for (p in params)
+			expr(p);
+	}
+
+	/**
+	 * Writes a field read.
+	 *
+	 * By offset when the object's class is known and the field is plain storage, by name otherwise.
+	 * The offset form is the faster of the two and the reason the emitter tracks classes at all.
+	 *
+	 * @param obj The object.
+	 * @param name The field.
+	 * @param pos Where it appears.
+	 */
 	function emitField2(obj:Expr, name:String, pos:Position):Void {
 		var line:Int = pos == null ? 0 : pos.line;
 
@@ -1257,6 +1807,13 @@ class CppiaEmitter {
 		w.str(name);
 	}
 
+	/**
+	 * Writes a bare identifier, which may be a local, a field of `this`, a type, or a host static.
+	 *
+	 * @param v The name.
+	 * @param pos Where it appears.
+	 * @throws CppiaUnsupported If it resolves to nothing this batch or the host can offer.
+	 */
 	function emitIdent(v:String, pos:Position):Void {
 		var line:Int = pos == null ? 0 : pos.line;
 
@@ -1274,10 +1831,31 @@ class CppiaEmitter {
 				w.token('NULL');
 				return;
 			case 'this':
+				// An abstract's methods are statics whose first parameter is literally named `this`,
+				// which is how both this emitter and the interpreter give them the boxed value. In
+				// one of those, `this` is that parameter and not an instance.
+				var self:Null<Int> = lookupVar('this');
+				if (self == null) {
+					w.pos(line);
+					w.token('THIS');
+					return;
+				}
+
 				w.pos(line);
-				w.token('THIS');
+				w.token('VAR');
+				w.int(self);
 				return;
 			default:
+		}
+
+		var owner:Null<String> = lookupVar(v) != null ? null : enumOwning(v);
+		if (owner != null) {
+			w.pos(line);
+			w.token('CREATEENUM');
+			useType(owner);
+			w.str(v);
+			w.int(0);
+			return;
 		}
 
 		var local:Null<Int> = lookupVar(v);
@@ -1379,7 +1957,18 @@ class CppiaEmitter {
 			var body:Expr = c.expr;
 			var test:Expr = null;
 
-			if (pattern != null) {
+			var shape:Null<{test:Expr, binds:Array<{name:String, value:Expr}>}> = shapeOf(c, ref, pos);
+
+			if (shape != null) {
+				var block:Array<Expr> = [];
+				for (b in shape.binds)
+					block.push({e: EVar(b.name, null, b.value, null, null, false), pos: pos});
+
+				block.push(c.expr);
+
+				body = {e: EBlock(block), pos: pos};
+				test = shape.test;
+			} else if (pattern != null) {
 				var bound:Array<Expr> = [];
 				for (b in 0...pattern.binds.length) {
 					var bind:String = pattern.binds[b];
@@ -1410,7 +1999,17 @@ class CppiaEmitter {
 				test = {e: EIdent('true'), pos: pos};
 			} else {
 				for (v in c.values) {
-					var eq:Expr = {e: EBinop('==', ref, v), pos: pos};
+					// `case Blue:` on a scripted enum is a parameterless constructor, which cannot be
+					// compared as a value: there is nothing named `Blue` to read. What identifies it is
+					// its constructor name, the same way `case Red(n):` is identified.
+					var eq:Expr = anyEnumCtor(v) ? {
+						e: EBinop('==', {
+							e: ECall({e: EField({e: EIdent('Type'), pos: pos}, 'enumConstructor'), pos: pos}, [ref]),
+							pos: pos
+						}, {e: EConst(CString(bareName(v))), pos: pos}),
+						pos: pos
+					} : {e: EBinop('==', ref, v), pos: pos};
+
 					test = test == null ? eq : {e: EBinop('||', test, eq), pos: pos};
 				}
 				if (test == null)
@@ -1420,7 +2019,12 @@ class CppiaEmitter {
 			if (c.guard != null) {
 				var guard:Expr = c.guard;
 
-				if (capture != null) {
+				if (shape != null) {
+					// The guard runs before the body's declarations exist, so the names it uses are
+					// written into it directly.
+					for (b in shape.binds)
+						guard = CppiaCapture.substitute(guard, b.name, b.value);
+				} else if (capture != null) {
 					guard = CppiaCapture.substitute(guard, capture, ref);
 				} else if (pattern != null) {
 					for (b in 0...pattern.binds.length) {
@@ -1482,6 +2086,163 @@ class CppiaEmitter {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * The enum from this batch that declares a constructor of the given name.
+	 *
+	 * @param name The constructor name.
+	 * @return Its enum's path, or null when no enum here declares it.
+	 */
+	function enumOwning(name:String):Null<String> {
+		if (name == null || name.length == 0)
+			return null;
+
+		for (path in enumCtors.keys()) {
+			if (isEnumCtor(path, name))
+				return path;
+		}
+
+		return null;
+	}
+
+	/**
+	 * Whether an expression names a constructor of some enum this batch declares.
+	 *
+	 * Any of them: a `case` gives no clue which enum is being matched, and two enums sharing a
+	 * constructor name would answer the same either way.
+	 *
+	 * @param e The pattern.
+	 * @return Whether it is a bare constructor name.
+	 */
+	function anyEnumCtor(e:Expr):Bool {
+		return enumOwning(bareName(e)) != null;
+	}
+
+	/**
+	 * @param e An expression.
+	 * @return The identifier or trailing field name it writes, or the empty string.
+	 */
+	function bareName(e:Expr):String {
+		return switch (e.e) {
+			case EIdent(v): v;
+			case EField(_, f, _): f;
+			case EParent(inner): bareName(inner);
+			case _: '';
+		}
+	}
+
+	/**
+	 * Reads a structure or array pattern out of a case, as a test and the bindings it makes.
+	 *
+	 * `case {n: v}` and `case [a, b]` describe a shape, which cppia's switch cannot express: it
+	 * compares values. So they are lowered here into an ordinary condition and some declarations,
+	 * and the chain the caller builds does the rest. A field is reached through `Reflect` because
+	 * nothing about the matched value's type is known at this point.
+	 *
+	 * Nested patterns recurse, so `case {pos: [x, y]}` works; a name in a leaf position binds, and
+	 * `_` matches without binding.
+	 *
+	 * @param c The case to read.
+	 * @param ref The temporary holding the value being matched.
+	 * @param pos Where the switch appears.
+	 * @return The test and bindings, or null when the case is not a shape pattern.
+	 */
+	function shapeOf(c:{values:Array<Expr>, expr:Expr, ?guard:Expr}, ref:Expr,
+			pos:Position):Null<{test:Expr, binds:Array<{name:String, value:Expr}>}> {
+		for (v in c.values) {
+			switch (v.e) {
+				case EObject(_) | EArrayDecl(_):
+					var binds:Array<{name:String, value:Expr}> = [];
+					var test:Expr = matchShape(v, ref, binds, pos);
+					return test == null ? null : {test: test, binds: binds};
+				case _:
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Builds the condition that one pattern matches one value, collecting what it binds.
+	 *
+	 * @param pattern The pattern.
+	 * @param value An expression for the value being tested against it.
+	 * @param binds Names the pattern binds and where each reads from, appended to.
+	 * @param pos Where the switch appears.
+	 * @return The condition, or null when the pattern has a form this cannot express.
+	 */
+	function matchShape(pattern:Expr, value:Expr, binds:Array<{name:String, value:Expr}>, pos:Position):Null<Expr> {
+		function and(a:Null<Expr>, b:Expr):Expr {
+			return a == null ? b : {e: EBinop('&&', {e: EParent(a), pos: pos}, {e: EParent(b), pos: pos}), pos: pos};
+		}
+
+		switch (pattern.e) {
+			case EObject(fields):
+				var test:Null<Expr> = {
+					e: ECall({e: EField({e: EIdent('Reflect'), pos: pos}, 'isObject'), pos: pos}, [value]),
+					pos: pos
+				};
+
+				for (f in fields) {
+					var read:Expr = {
+						e: ECall({e: EField({e: EIdent('Reflect'), pos: pos}, 'field'), pos: pos},
+							[value, {e: EConst(CString(f.name)), pos: pos}]),
+						pos: pos
+					};
+
+					test = and(test, {
+						e: ECall({e: EField({e: EIdent('Reflect'), pos: pos}, 'hasField'), pos: pos},
+							[value, {e: EConst(CString(f.name)), pos: pos}]),
+						pos: pos
+					});
+
+					var inner:Null<Expr> = matchShape(f.e, read, binds, pos);
+					if (inner == null)
+						return null;
+
+					if (!inner.e.match(EIdent('true')))
+						test = and(test, inner);
+				}
+
+				return test;
+
+			case EArrayDecl(items):
+				var length:Expr = {e: EField(value, 'length'), pos: pos};
+				var test:Null<Expr> = {
+					e: EBinop('==', length, {e: EConst(CInt(items.length)), pos: pos}),
+					pos: pos
+				};
+
+				for (i in 0...items.length) {
+					var element:Expr = {e: EArray(value, {e: EConst(CInt(i)), pos: pos}), pos: pos};
+
+					var inner:Null<Expr> = matchShape(items[i], element, binds, pos);
+					if (inner == null)
+						return null;
+
+					if (!inner.e.match(EIdent('true')))
+						test = and(test, inner);
+				}
+
+				return test;
+
+			case EIdent('_'):
+				return {e: EIdent('true'), pos: pos};
+
+			case EIdent(name) if (!hxscript.tools.Tools.isTypeIdentifier(name) && name != 'true' && name != 'false' && name != 'null'):
+				// A lower-case name in a leaf position binds rather than compares. Kept as a pair
+				// rather than a declaration, because a guard needs the value written into it and a
+				// body needs it declared, and those want different shapes.
+				binds.push({name: name, value: value});
+				return {e: EIdent('true'), pos: pos};
+
+			case EConst(_) | EIdent(_) | EField(_, _, _):
+				return {e: EBinop('==', value, pattern), pos: pos};
+
+			case _:
+				return null;
+		}
 	}
 
 	/**
@@ -1550,6 +2311,165 @@ class CppiaEmitter {
 	/** A name no script can write, for a temporary the emitter introduces. */
 	inline function tempName(prefix:String):String {
 		return '`' + prefix + (nextVarId++);
+	}
+
+	/**
+	 * Whether a lone array-literal element is a comprehension rather than a value.
+	 *
+	 * `[for (k in 0...5) k]` parses as an array literal holding one `EFor`, which is not the same
+	 * shape as an array holding one value and must not be emitted as one. Parentheses and blocks are
+	 * looked through because the parser keeps them.
+	 *
+	 * @param e The single element.
+	 * @return Whether it drives a comprehension.
+	 */
+	function isComprehension(e:Expr):Bool {
+		if (e == null)
+			return false;
+
+		return switch (e.e) {
+			case EFor(_, _, _) | EForGen(_, _): true;
+			case EParent(inner): isComprehension(inner);
+			case EBlock(list): list.length > 0 && isComprehension(list[list.length - 1]);
+			case _: false;
+		}
+	}
+
+	/**
+	 * Lowers a comprehension into a block that fills an array and yields it.
+	 *
+	 * Emitted as written, a comprehension becomes a one-element array whose element is a loop, which
+	 * is why `[for (k in 0...5) k]` came out as `[0]`. What it means is an accumulator, so that is
+	 * what it becomes:
+	 *
+	 *     { var tmp = []; for (k in 0...5) tmp.push(k); tmp; }
+	 *
+	 * The push goes at every position whose value the comprehension keeps, which is what makes a
+	 * filtering `if` work without needing a value meaning "produced nothing": an `if` with no `else`
+	 * simply has no push on the branch it does not take. The interpreter reaches the same answer by
+	 * a different route, returning a void marker that its accumulator skips.
+	 *
+	 * The temporary is what the block yields, so it has to be the same kind of array the target
+	 * asked for, which is what `temporaryArray` carries: it has no declaration of its own to take
+	 * the type from.
+	 *
+	 * @param loop The comprehension's driving expression.
+	 * @param want The array type the target asked for, if any.
+	 * @param pos Where the literal appears.
+	 * @return A block expression evaluating to the finished array.
+	 */
+	function comprehension(loop:Expr, want:Null<String>, pos:Position):Expr {
+		var name:String = tempName('compr');
+		var target:Expr = {e: EIdent(name), pos: pos};
+
+		// `[for (k in ...) k => v]` fills a map and `[for (k in ...) v]` fills an array, and the two
+		// are told apart the same way a plain literal is: by whether the first thing it yields is a
+		// `=>` pair. The accumulator differs, the rewriting does not.
+		var pairKey:Null<Expr> = yieldedPair(loop);
+		var empty:Expr;
+
+		if (pairKey != null) {
+			var mapClass:String = switch (pairKey.e) {
+				case EConst(CString(_, _)): 'haxe.ds.StringMap';
+				case EConst(CInt(_)): 'haxe.ds.IntMap';
+				case _: 'hxscript.runtime.AnyMap';
+			}
+
+			empty = {e: ENew(mapClass, []), pos: pos};
+			temporaryArray = null;
+		} else {
+			empty = {e: EArrayDecl([]), pos: pos};
+			temporaryArray = want;
+		}
+
+		expectedArray = null;
+
+		var filled:Expr = accumulate(loop, target);
+
+		return {
+			e: EBlock([{e: EVar(name, null, empty, null, null, false), pos: pos}, filled, target]),
+			pos: pos
+		};
+	}
+
+	/**
+	 * The key of the first `key => value` a comprehension yields, or null when it yields plain values.
+	 *
+	 * Only the shape is wanted, not the key itself, except that a literal key says which map to
+	 * build -- the same reading a plain map literal gets. Looked for down the same positions
+	 * `accumulate` rewrites, since those are the ones whose value the comprehension keeps.
+	 *
+	 * @param e The comprehension body or a part of it.
+	 * @return The first pair's key expression, or null.
+	 */
+	function yieldedPair(e:Expr):Null<Expr> {
+		if (e == null)
+			return null;
+
+		return switch (e.e) {
+			case EBinop('=>', key, _): key;
+			case EParent(inner): yieldedPair(inner);
+			case EBlock(list): list.length == 0 ? null : yieldedPair(list[list.length - 1]);
+			case EFor(_, _, body): yieldedPair(body);
+			case EForGen(_, body): yieldedPair(body);
+			case EIf(_, then, otherwise):
+				var found:Null<Expr> = yieldedPair(then);
+				found != null ? found : (otherwise == null ? null : yieldedPair(otherwise));
+			case _: null;
+		}
+	}
+
+	/**
+	 * Rewrites a comprehension's body so every value it yields is pushed onto `target`.
+	 *
+	 * Only the positions whose value the comprehension keeps are rewritten. In a block that is the
+	 * last expression and nothing before it; in a loop it is the body, so nesting accumulates into
+	 * the same container; in an `if` it is each branch that exists.
+	 *
+	 * A `key => value` becomes a `set` rather than a `push`, which is what makes the map form work:
+	 * the caller has already built `target` as a map when that is what the body yields.
+	 *
+	 * @param e The expression to rewrite.
+	 * @param target The array being filled.
+	 * @return The rewritten expression.
+	 */
+	function accumulate(e:Expr, target:Expr):Expr {
+		if (e == null)
+			return null;
+
+		var pos:Position = e.pos;
+
+		return switch (e.e) {
+			case EParent(inner):
+				{e: EParent(accumulate(inner, target)), pos: pos};
+
+			case EBlock(list):
+				if (list.length == 0) {
+					e;
+				} else {
+					var out:Array<Expr> = list.slice(0, list.length - 1);
+					out.push(accumulate(list[list.length - 1], target));
+					{e: EBlock(out), pos: pos};
+				}
+
+			case EFor(v, it, body):
+				{e: EFor(v, it, accumulate(body, target)), pos: pos};
+
+			case EForGen(it, body):
+				{e: EForGen(it, accumulate(body, target)), pos: pos};
+
+			case EIf(cond, then, otherwise):
+				{
+					e: EIf(cond, accumulate(then, target), otherwise == null ? null : accumulate(otherwise, target)),
+					pos: pos
+				};
+
+			case EBinop('=>', key, value):
+				{e: ECall({e: EField(target, 'set'), pos: pos}, [key, value]), pos: pos};
+
+			case _:
+				{e: ECall({e: EField(target, 'push'), pos: pos}, [e]), pos: pos};
+		}
 	}
 
 	/**
@@ -1709,6 +2629,15 @@ class CppiaEmitter {
 			return;
 		}
 
+		// An abstract is not a runtime type: a slot declared as one holds what it boxes. Typing the
+		// slot as the abstract instead leaves an Int slot expecting an object, and the value read
+		// back is not the value written.
+		var boxes:Null<String> = underlyingOf(path);
+		if (boxes != null) {
+			storableType(boxes);
+			return;
+		}
+
 		switch (path) {
 			case 'Int' | 'Float' | 'Bool' | 'String':
 				w.type(path);
@@ -1805,6 +2734,143 @@ class CppiaEmitter {
 		return named == null ? null : declaredClass(named);
 	}
 
+	/**
+	 * How many arguments a host class's constructor declares.
+	 *
+	 * Read from the type table, which the build's own macro fills. Reflection cannot answer this: a
+	 * constructor is not a field, and nothing at runtime carries its signature.
+	 *
+	 * @param path The host class's full path.
+	 * @return Its declared argument count, 0 for a class with no constructor of its own, or -1 when
+	 *         the table has nothing to say and the call therefore cannot be padded safely.
+	 */
+	function hostConstructorArity(path:String):Int {
+		var infos:Array<hxscript.types.TypeCollection.TypeInfo> = hxscript.types.TypeCollection.main.fromCompilePath(path);
+		if (infos == null || infos.length == 0)
+			infos = hxscript.types.TypeCollection.main.fromPath(path);
+		if (infos == null || infos.length == 0)
+			return -1;
+
+		var info = infos[0];
+		if (info.ctorArgs == null)
+			return info.kind == 'class' ? 0 : -1;
+
+		return info.ctorArgs;
+	}
+
+	/**
+	 * What an abstract from this batch boxes, given the type name as written.
+	 *
+	 * @param path The declared type name or path.
+	 * @return The underlying type's spelling, or null when this is not an abstract of ours or it
+	 *         declared no underlying type.
+	 */
+	function underlyingOf(path:String):Null<String> {
+		var full:Null<String> = declaredClass(path);
+		if (full == null)
+			full = path;
+
+		var boxes:Null<String> = moduleAbstracts.get(full);
+		return (boxes == null || boxes.length == 0) ? null : boxes;
+	}
+
+	/**
+	 * Remembers that a local holds an array of one of this batch's abstracts.
+	 *
+	 * The erased spelling cannot carry it: `Array<Meters>` becomes `Array.int`, which is right for
+	 * storage and useless for working out what `a[0].big()` is called on.
+	 *
+	 * @param name The local's name.
+	 * @param t Its declared type, if it had one.
+	 */
+	function noteArrayElement(name:String, t:Null<CType>):Void {
+		if (t == null)
+			return;
+
+		switch (t) {
+			case CTPath(['Array'], params) if (params != null && params.length == 1):
+				switch (params[0]) {
+					case CTPath(path, _):
+						var full:Null<String> = abstractPathOf(path.join('.'));
+						if (full != null)
+							arrayElements.set(name, full);
+					case _:
+				}
+			case _:
+		}
+	}
+
+	/**
+	 * The name a simple expression reads a local through, for looking that local up.
+	 *
+	 * @param e The expression.
+	 * @return Its identifier, or the empty string when it is not one.
+	 */
+	function varNameOf(e:Expr):String {
+		return switch (e.e) {
+			case EIdent(v): v;
+			case EParent(inner): varNameOf(inner);
+			case _: '';
+		}
+	}
+
+	/**
+	 * The array spelling for an element type already resolved to its own spelling.
+	 *
+	 * @param element The element type's name.
+	 * @return The cppia array spelling.
+	 */
+	function arraySpelling(element:String):String {
+		return switch (element) {
+			case 'Int': 'Array.int';
+			case 'Bool': 'Array.bool';
+			case 'Float': 'Array.Float';
+			case 'String': 'Array.String';
+			case 'Dynamic' | 'Any': 'Array';
+			case _: 'Array.Object';
+		}
+	}
+
+	/**
+	 * The abstract a written type name refers to, when it is one from this batch.
+	 *
+	 * @param name The type name as written.
+	 * @return Its full path, or null when it names something else.
+	 */
+	function abstractPathOf(name:String):Null<String> {
+		var full:Null<String> = declaredClass(name);
+		if (full == null)
+			full = name;
+
+		return moduleAbstracts.exists(full) ? full : null;
+	}
+
+	/**
+	 * The abstract an expression's declared type names, when it is one from this batch.
+	 *
+	 * @param e The expression whose type to read.
+	 * @return The abstract's path, or null when the value is not one.
+	 */
+	function abstractTypeOf(e:Expr):Null<String> {
+		var declared:Null<String> = instanceClassOf(e);
+		if (declared == null)
+			declared = typeOf(e);
+		if (declared == null)
+			return null;
+
+		var full:Null<String> = declaredClass(declared);
+		if (full == null)
+			full = declared;
+
+		return moduleAbstracts.exists(full) ? full : null;
+	}
+
+	/**
+	 * Resolves a name to a class this batch declares.
+	 *
+	 * @param path A full path or a short name.
+	 * @return The full path, or null when the batch declares no such class.
+	 */
 	function declaredClass(path:String):Null<String> {
 		if (moduleClasses.exists(path))
 			return path;
@@ -1936,6 +3002,14 @@ class CppiaEmitter {
 		}
 	}
 
+	/**
+	 * Resolves a written type name to the full path the loader will link against.
+	 *
+	 * @param name The name as written.
+	 * @param pos Where it appears.
+	 * @return Its full path.
+	 * @throws CppiaUnsupported If nothing of that name can be found.
+	 */
 	function resolveType(name:String, pos:Position):String {
 		if (typePaths.exists(name))
 			return typePaths.get(name);
@@ -1979,6 +3053,17 @@ class CppiaEmitter {
 		if (params == null || params.length != 1)
 			return 'Array';
 
+		// An array of an abstract is an array of what that abstract boxes, since a value of one IS
+		// its underlying value. Reading the spelling off the abstract keeps `Array<Meters>` a real
+		// `Array.int` rather than an array of objects that never holds one.
+		switch (params[0]) {
+			case CTPath(path, _):
+				var boxes:Null<String> = underlyingOf(path.join('.'));
+				if (boxes != null)
+					return arraySpelling(boxes);
+			case _:
+		}
+
 		return switch (params[0]) {
 			case CTPath(['Int'], _): 'Array.int';
 			case CTPath(['Bool'], _): 'Array.bool';
@@ -1989,15 +3074,22 @@ class CppiaEmitter {
 		}
 	}
 
+	/**
+	 * @param f The field.
+	 * @param a The keyword to look for.
+	 * @return Whether the field was declared with it.
+	 */
 	inline function hasAccess(f:FieldDecl, a:FieldAccess):Bool {
 		return f.access.indexOf(a) >= 0;
 	}
 
+	/** Opens a scope. Locals declared from here are dropped when it closes. */
 	inline function pushScope():Void {
 		scopes.push(new StringMap());
 		scopeTypes.push(new StringMap());
 	}
 
+	/** Closes the innermost scope. */
 	inline function popScope():Void {
 		scopes.pop();
 		scopeTypes.pop();
@@ -2068,11 +3160,46 @@ class CppiaEmitter {
 			case ENew(cl, _):
 				return typePaths.exists(cl) ? typePaths.get(cl) : null;
 
+			case EArray(arr, _):
+				// The element type of an array of abstracts, which the erased spelling cannot carry.
+				var named:Null<String> = arrayElements.get(varNameOf(arr));
+				return named;
+
+			case ECall(callee, _):
+				switch (callee.e) {
+					case EField(obj, name, _):
+						// The owner is whatever the receiver is: an abstract routes to its
+						// implementation, anything else to its own class.
+						var owner:Null<String> = abstractTypeOf(obj);
+						if (owner == null)
+							owner = (obj.e.match(EIdent('this'))) ? currentClass : instanceClassOf(obj);
+						if (owner == null)
+							owner = typeOf(obj);
+						if (owner == null)
+							return null;
+
+						var rets:Null<StringMap<String>> = methodReturns.get(owner);
+						return rets == null ? null : rets.get(name);
+
+					case EIdent(name):
+						var rets:Null<StringMap<String>> = methodReturns.get(currentClass);
+						return rets == null ? null : rets.get(name);
+
+					case _:
+						return null;
+				}
+
 			case _:
 				return null;
 		}
 	}
 
+	/**
+	 * Finds a local by name, innermost scope first.
+	 *
+	 * @param name The local's name.
+	 * @return Its slot id, or null when no scope in range declares it.
+	 */
 	function lookupVar(name:String):Null<Int> {
 		var i:Int = scopes.length - 1;
 		while (i >= 0) {

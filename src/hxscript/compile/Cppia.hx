@@ -1,3 +1,25 @@
+/*
+ * Copyright (c) 2026 MeguminBOT (hxScript)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ */
+
 package hxscript.compile;
 
 import hxscript.compile.CppiaInput;
@@ -17,6 +39,7 @@ class Cppia {
 	/** Whether this build can compile at all. */
 	public static var available(get, never):Bool;
 
+	/** @return Whether this build carries the emitter, which `-D hxscript_cppia` decides. */
 	static function get_available():Bool {
 		#if hxscript_cppia
 		return true;
@@ -38,7 +61,7 @@ class Cppia {
 	 * @param decls The module's declarations.
 	 * @return The class, interface and enum paths it defines.
 	 */
-	static function declaredPaths(decls:Array<ModuleDecl>):Array<String> {
+	public static function declaredPaths(decls:Array<ModuleDecl>):Array<String> {
 		var pack:String = '';
 		var paths:Array<String> = [];
 
@@ -48,6 +71,8 @@ class Cppia {
 					pack = path.join('.');
 				case DClass(c) | DInterface(c):
 					paths.push(pack.length > 0 ? pack + '.' + c.name : c.name);
+				case DAbstract(a):
+					paths.push(pack.length > 0 ? pack + '.' + a.name : a.name);
 				case DEnum(en):
 					paths.push(pack.length > 0 ? pack + '.' + en.name : en.name);
 				case _:
