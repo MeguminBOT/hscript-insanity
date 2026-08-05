@@ -28,14 +28,17 @@ class ParserException extends haxe.Exception {
 	 * @param origin The source origin.
 	 * @param line The 1-based line number.
 	 */
-	public function new(e, pmin, pmax, origin, line) {
+	public function new(e:Error, pmin:Int, pmax:Int, origin:String, line:Int) {
+		// Before the assignments, not after: Java and C# require `super()` to be the first statement
+		// when the base class is a native one, so the message is built from the parameters rather
+		// than by calling `toString()` once the fields are set.
+		super(Printer.errorAt(e, origin, line));
+
 		this.e = e;
 		this.pmin = pmin;
 		this.pmax = pmax;
 		this.origin = origin;
 		this.line = line;
-
-		super(toString());
 	}
 
 	/** @return The error formatted with its source position. */

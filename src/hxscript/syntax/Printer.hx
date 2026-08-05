@@ -718,7 +718,35 @@ class Printer {
 	 * @return The formatted message.
 	 */
 	public static function errorToString(e:Error, ?p:ParserException) {
-		var message = switch (e) {
+		if (p != null)
+			return errorAt(e, p.origin, p.line);
+
+		return errorMessage(e);
+	}
+
+	/**
+	 * Renders an error against a position given directly rather than read off an exception.
+	 *
+	 * For a caller that has the position but no exception to read it from. `ParserException`'s
+	 * constructor is the one that matters: Java and C# require `super()` to be the first statement
+	 * when the base class is a native one, so the message has to be built before any field is
+	 * assigned, and `this` cannot be passed to the overload above.
+	 *
+	 * @param e The error to render.
+	 * @param origin The source origin.
+	 * @param line The 1-based line number.
+	 * @return The formatted message, prefixed with the position.
+	 */
+	public static function errorAt(e:Error, origin:String, line:Int):String {
+		return origin + ":" + line + ": " + errorMessage(e);
+	}
+
+	/**
+	 * @param e The error to render.
+	 * @return Its text, with no position prefix.
+	 */
+	static function errorMessage(e:Error):String {
+		return switch (e) {
 			case EImportHx: 'Only import and using is allowed in import.hx files';
 			case EHasNoSuper: 'Current class does not have a super';
 			case EUnknownType(t): 'Type not found: $t';
@@ -736,8 +764,5 @@ class Printer {
 			case EInvalidAccess(f): "Invalid access to field " + f;
 			case ECustom(msg): msg;
 		};
-		if (p != null)
-			return (p.origin + ":" + p.line + ": " + message);
-		return message;
 	}
 }
