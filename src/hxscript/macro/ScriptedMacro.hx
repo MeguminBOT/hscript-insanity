@@ -775,7 +775,6 @@ class ScriptedMacro {
 						}
 
 					case FVar(_, _):
-						//
 				}
 			}
 

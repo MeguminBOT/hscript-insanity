@@ -533,7 +533,6 @@ class Lexer {
 							case "x".code:
 								if (n > 0 || exp > 0)
 									invalidChar(char);
-								// read hexa
 								var n = 0;
 								while (true) {
 									char = readChar();
@@ -553,7 +552,6 @@ class Lexer {
 							case "b".code:
 								if (n > 0 || exp > 0)
 									invalidChar(char);
-								// read binary
 								var n = 0;
 								while (true) {
 									char = readChar();
