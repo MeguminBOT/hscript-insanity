@@ -30,6 +30,18 @@ typedef TypeInfo = {
 
 	/** Whether the type is a structural (anonymous-shape) typedef that erases to `Dynamic`. */
 	var ?structural:Bool;
+
+	/**
+	 * How many arguments the constructor declares, and how many of those are required.
+	 *
+	 * Recorded because the runtime compiler needs it and has nowhere else to get it. cppia links a
+	 * call by its exact argument count, so a script's `super(a, b)` against a constructor whose third
+	 * argument is optional is a count short -- accepted by the loader and rejected by the runtime.
+	 * Knowing the real shape lets the emitter make up the difference. Only a class has one.
+	 */
+	var ?ctorArgs:Int;
+
+	var ?ctorRequired:Int;
 }
 
 /** The type index, keyed several ways so lookups by path, module, package, or compile path are direct. */
