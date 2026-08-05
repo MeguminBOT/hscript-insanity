@@ -142,6 +142,7 @@ class Interp {
 	 */
 	var declaredNames:Array<String>;
 
+	/** What each shadowed name held before, restored when the scope closes. */
 	var declaredOld:Array<Variable>;
 
 	/** The value returned by the currently-returning function. */
@@ -1975,7 +1976,7 @@ class Interp {
 	}
 
 	/**
-	 * Evaluates an array literal, or an array/map comprehension when the body is a `for`/`while`.
+	 * Evaluates an array literal, or an array/map comprehension when the single element is a `for`.
 	 *
 	 * @param arr The literal's elements, or the single comprehension expression.
 	 * @param t The declared type, used to pick the map implementation for an empty `Map` literal.
@@ -1983,6 +1984,10 @@ class Interp {
 	 */
 	function evalArrayDecl(arr:Array<Expr>, t:Null<CType>):Dynamic {
 		var compr:Dynamic = null;
+
+		// `compr` cannot answer this on its own: one that yields nothing leaves it null, which reads
+		// the same as never having been a comprehension.
+		var ranComprehension:Bool = false;
 
 		var exprCompr:(e:Expr, ?inFor:Bool) -> Dynamic = null;
 
@@ -2040,11 +2045,13 @@ class Interp {
 					exprCompr(e, inFor);
 
 				case EFor(n, it, e):
+					ranComprehension = true;
 					forLoop(n, it, forExpr.bind(e));
 
 					Interp.void;
 
 				case EForGen(it, e):
+					ranComprehension = true;
 					Tools.getKeyIterator(it, function(vk, vv, it) {
 						if (vk == null) {
 							position = it.pos;
@@ -2124,7 +2131,10 @@ class Interp {
 
 						var p = new Printer();
 						error(ECustom('Map of type <${p.typeToString(params[0])}, ${p.typeToString(params[1])}> is not accepted'));
-					} else {
+					} else if (isResolvable(fullPath)) {
+						// Guarded because this is only looking for a map type to build empty, so an
+						// annotation naming anything else is not an error: `var a:Dynamic = [9]` was
+						// rejected here for naming a type with no runtime identity.
 						var t:Dynamic = resolve(fullPath);
 
 						if (t is haxe.ds.IntMap || t is haxe.ds.StringMap || t is haxe.ds.ObjectMap || t is haxe.ds.EnumValueMap)
@@ -2134,14 +2144,27 @@ class Interp {
 			}
 
 			var a = new Array();
-			for (e in arr)
-				a.push(expr(e));
+
+			// `arr` holds the comprehension itself when a loop drove this, so evaluating it would put
+			// the loop's own value in the array. An empty comprehension is an empty array.
+			if (!ranComprehension) {
+				for (e in arr)
+					a.push(expr(e));
+			}
+
 			return a;
 		}
 	}
 
 	/**
 	 * Evaluates a `switch`, including capture variables, extractors, guards and `|` alternatives.
+	 *
+	 * @param e The value being matched.
+	 * @param cases Its cases.
+	 * @param def Its default branch, if any.
+	 * @param void Whether the result is going to be discarded.
+	 * @param mapCompr Whether this sits inside a map comprehension.
+	 * @return The value of the branch that matched, or null when none did.
 	 */
 	function evalSwitch(e:Expr, cases:Array<{values:Array<Expr>, expr:Expr, ?guard:Expr}>, def:Null<Expr>, void:Bool, mapCompr:Bool):Dynamic {
 		var hasCapture:Bool = false;
@@ -2407,6 +2430,21 @@ class Interp {
 		return r;
 	}
 
+	/**
+	 * Evaluates one expression, and whatever it contains.
+	 *
+	 * The centre of the interpreter: every form the language has is a case here, and everything else
+	 * in this class is reached through it. Hot enough that the shape of the switch and the order of
+	 * its cases are load-bearing rather than stylistic.
+	 *
+	 * @param e The expression, or null for an absent one.
+	 * @param t The type the result is expected to take, when the caller knows it; used to pick a
+	 *        concrete map for an empty literal, and to box a value into an abstract.
+	 * @param void Whether the value is going to be discarded, which lets some forms skip building one.
+	 * @param mapCompr Whether this sits inside a map comprehension, where a `=>` is an entry rather
+	 *        than an operator.
+	 * @return The value it evaluates to.
+	 */
 	public function expr(e:Expr, ?t:CType, void:Bool = false, mapCompr:Bool = false):Dynamic {
 		// Both of these are already what they need to be for every node after the first, and both are
 		// statics holding object references, so an unconditional store pays hxcpp's write barrier on
@@ -3681,6 +3719,16 @@ class Interp {
 		return o;
 	}
 
+	/**
+	 * Whether a value is an instance of the compiled form of a scripted class.
+	 *
+	 * With substitution on, a scripted class that was compiled is reached through its compiled form
+	 * everywhere, so an `is` against the scripted type has to answer for the compiled one too.
+	 *
+	 * @param t The scripted type being tested against.
+	 * @param e The value.
+	 * @return Whether the value is that type's compiled form.
+	 */
 	function isCompiledAs(t:Dynamic, e:Dynamic):Bool {
 		#if hxscript_cppia
 		if (environment == null || !environment.substituting || !(t is ScriptedClass))
@@ -3693,6 +3741,13 @@ class Interp {
 		#end
 	}
 
+	/**
+	 * Builds an instance of a type named by path.
+	 *
+	 * @param cl The type's path as written.
+	 * @param args Constructor arguments.
+	 * @return The new instance.
+	 */
 	function cnew(cl:String, args:Array<Dynamic>):Dynamic {
 		var c = Tools.resolve(cl, environment);
 
