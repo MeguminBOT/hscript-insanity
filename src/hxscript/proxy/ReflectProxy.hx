@@ -191,6 +191,10 @@ class ReflectProxy {
 	 * @return A callable that collects its arguments and forwards them to `f`.
 	 */
 	@:overload(function(f:Array<Dynamic>->Void):Dynamic {})
+	/**
+	 * @param f A function taking every argument as one array.
+	 * @return A function callable with any number of arguments, which packs them into that array.
+	 */
 	public static function makeVarArgs(f:Array<Dynamic>->Dynamic):Dynamic {
 		return Reflect.makeVarArgs(f);
 	}

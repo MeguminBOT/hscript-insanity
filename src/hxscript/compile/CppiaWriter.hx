@@ -1,3 +1,25 @@
+/*
+ * Copyright (c) 2026 MeguminBOT (hxScript)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ */
+
 package hxscript.compile;
 
 #if hxscript_cppia
@@ -10,12 +32,22 @@ import haxe.io.Bytes;
  * have settled.
  */
 class CppiaWriter {
+	/** The string pool, in the order the header writes it. */
 	var strings:Array<String>;
+
+	/** Index of each pooled string, so a repeat costs nothing. */
 	var stringIds:StringMap<Int>;
+
+	/** The type pool, written the same way. */
 	var types:Array<String>;
+
+	/** Index of each pooled type. */
 	var typeIds:StringMap<Int>;
+
+	/** Everything after the header: the tokens themselves. */
 	var body:StringBuf;
 
+	/** Starts an empty module, with the pools seeded so index zero is the empty entry. */
 	public function new() {
 		strings = [];
 		stringIds = new StringMap();
@@ -76,6 +108,11 @@ class CppiaWriter {
 	 */
 	public var echo:StringBuf = null;
 
+	/**
+	 * Writes one opcode or keyword.
+	 *
+	 * @param t The token text.
+	 */
 	public inline function token(t:String):Void {
 		if (echo != null) {
 			// Newline as a code rather than an escape: one per token is what makes the echo readable.
@@ -86,6 +123,11 @@ class CppiaWriter {
 		body.addChar(' '.code);
 	}
 
+	/**
+	 * Writes an integer operand, space separated.
+	 *
+	 * @param v The value.
+	 */
 	public inline function int(v:Int):Void {
 		if (echo != null) {
 			echo.addChar(' '.code);
@@ -95,6 +137,11 @@ class CppiaWriter {
 		body.addChar(' '.code);
 	}
 
+	/**
+	 * Writes a flag, which the format spells as an integer.
+	 *
+	 * @param v The value.
+	 */
 	public inline function bool(v:Bool):Void {
 		int(v ? 1 : 0);
 	}
@@ -137,6 +184,7 @@ class CppiaWriter {
 		int(typeId('Dynamic'));
 	}
 
+	/** Ends the current expression. The format is whitespace separated, so this is a separator. */
 	public inline function newline():Void {
 		body.addChar('\n'.code);
 	}

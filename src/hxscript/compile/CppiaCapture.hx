@@ -1,3 +1,25 @@
+/*
+ * Copyright (c) 2026 MeguminBOT (hxScript)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ */
+
 package hxscript.compile;
 
 #if hxscript_cppia
@@ -15,9 +37,13 @@ import hxscript.syntax.Expr;
  * Selection is by name rather than by binding, so sibling scopes reusing a name are all boxed.
  */
 class CppiaCapture {
+	/** Names that were boxed, so a read of one is rewritten into a read of its box. */
 	var boxed:StringMap<Bool>;
+
+	/** The expression a boxed name is replaced by. */
 	var replacement:Expr;
 
+	/** Private: the entry point is the static below, which builds one of these per body. */
 	function new() {
 		boxed = new StringMap();
 	}
@@ -77,6 +103,12 @@ class CppiaCapture {
 		return self.replaceIdent(e);
 	}
 
+	/**
+	 * Rewrites every read of a boxed local into a read of its box.
+	 *
+	 * @param e The expression to rewrite.
+	 * @return The rewritten expression, or null when there was none.
+	 */
 	function replaceIdent(e:Expr):Expr {
 		if (e == null)
 			return null;
