@@ -11,6 +11,10 @@ A Haxe interpreter. It parses Haxe-shaped source and evaluates it directly, with
 language intact that a script can declare classes, enums, typedefs and abstracts, and extend the
 ones your application already compiled.
 
+It can also **compile a script to native bytecode while your application is running**, with no Haxe
+toolchain anywhere in sight, which is worth around 20x. See
+[compiling at runtime](#compiling-at-runtime).
+
 Two things it is for:
 
 - **A scripting language for your application.** Ship a program that loads `.hx` files at runtime, so
@@ -59,7 +63,8 @@ haxelib git hxscript https://github.com/MeguminBOT/hxscript
 
 Then `-lib hxscript` in your hxml, or `<haxelib name="hxscript" />` in a `Project.xml`. Nothing else
 is required: the table of compiled types that scripts resolve names against builds itself on first
-use.
+use, and the standard-library types scripts reach by reflection are kept from being eliminated
+under the default `-dce std` -- see [embedding.md](docs/embedding.md#14-things-that-will-bite-you).
 
 The [embedding guide](docs/embedding.md) covers the rest -- exposing your API, letting scripts
 subclass your classes, and the things that will bite you.
@@ -88,6 +93,7 @@ evaluates Haxe-shaped expressions and does that well; what it does not do is let
 | type annotations | parsed, ignored | **enforced at runtime** |
 | `Int` / `Float` distinction | blurred by `Dynamic` | preserved (`/` is always `Float`) |
 | errors | message | call stack across scripts and into the host |
+| **compiling to native bytecode** | no | yes, at runtime, from source text |
 
 The hscript column reflects 2.7.0, the version the benchmark suite actually ran; the absence of
 scripted classes and of single-quote interpolation are both recorded in
@@ -188,16 +194,61 @@ Called from Main.main (Main.hx line 10 column 3)
 packages, swapping the interpreter class, preprocessor values for conditionals, and predefined
 variables and imports.
 
+## Compiling at runtime
+
+Scripts are interpreted by default. A module can instead be translated to
+[cppia](https://haxe.org/manual/target-cppia.html), hxcpp's own bytecode, and loaded as a real
+`Class<Dynamic>` -- worth about **21x per operation** and **43x per call**, and about **30x** and
+**108x** with hxcpp's JIT enabled on top.
+
+```haxe
+// once, at startup: marks on your own types say where your API lives
+hxscript.macro.ExposeMacro.apply();
+
+// once per world
+var report = hxscript.compile.Compiler.compile(env);
+trace('${report.compiled.length} compiled, ${report.skipped.length} interpreted');
+```
+
+Needs `-D hxscript_cppia` here and `-D scriptable` on the host. It is decided per module: whatever
+the emitter cannot express is reported with a reason and left to the interpreter, so turning it on
+cannot break a script that was working. `Cppia.compile` is underneath if you want to drive it
+yourself -- to compile a subset, or to cache the bytecode on disk between launches.
+
+**Haxe can emit cppia too, but only as a build step.** That is the difference this is for. Haxe's
+path compiles a `.hx` file ahead of time, against a snapshot of your host's classes, on a machine
+with the Haxe compiler installed -- so it cannot compile a script that did not exist when you
+shipped. This translates source text in-process, at load, with nothing installed, which is what makes
+it work for mods, in-app editors and anything else a user writes after the fact. The same text still
+runs interpreted, unchanged, so it is a flag rather than a second pipeline.
+
+Where both can compile the same script, expect Haxe's output to be faster: it type-checks and
+optimises, and this is a direct translation with no optimisation passes and a smaller language
+subset.
+
+**It is new**, and younger than the rest of the library. What it rests on is
+[`test/SweepTest.hx`](test/SweepTest.hx), which runs 33 constructs interpreted and compiled and
+compares the answers -- currently 0 refused, 0 wrong -- and a differential suite that does the same
+for the language surface. Three wrong-answer bugs were found that way during the work, which is both
+the reason to trust it as far as you do and the reason not to trust it further.
+
+[modes.md](docs/modes.md) is the full comparison and the guidance on when compiling repays what it
+costs; [mode-benchmarks.md](docs/mode-benchmarks.md) is where the figures come from.
+
 ## Documentation
 
 - **[Embedding guide](docs/embedding.md)** -- putting the library in a project, worked end to end in
   [`examples/battle/`](examples/battle).
 - **[Macros, a custom interpreter, and binding your API](docs/advanced.md)** -- generating bridges,
   making native abstracts visible, subclassing `Interp`, and every surface for handing your API over.
+- **[Execution modes](docs/modes.md)** -- interpreting, compiling at runtime, or compiling and
+  jitting: how runtime translation differs from Haxe's own cppia, what each needs from your build,
+  and when compiling repays what it costs.
 - [Parity with Haxe](docs/parity.md) -- what scripts can and cannot do, and why.
 - [Performance](docs/performance.md) -- what has been optimised, and how to measure without fooling
   yourself.
 - [Benchmarks](docs/benchmarks.md) -- six libraries in this family on identical scripts.
+- [Mode benchmarks](docs/mode-benchmarks.md) -- the same corpus interpreted, compiled and jitted.
 - [Static checking](docs/checker.md) -- the design for a pre-run checker, and its limits.
 - [Examples](examples) -- [`battle/`](examples/battle) embeds the library in a game;
   [`workbench/`](examples/workbench) writes the whole program in script.
@@ -226,7 +277,15 @@ extensions still cannot be checked -- see below.
 
 **Printing**: `Printer` prints every module declaration, and printing round-trips through a reparse.
 
+**Runtime compilation**: a module translates to cppia bytecode in-process and loads as a real class,
+gated on `-D hxscript_cppia`, per module, with anything it cannot express reported and left to the
+interpreter.
+
 Not done:
+
+- [ ] **A script type cannot share a short name with a host type across modules.** Its own module
+      resolves it correctly; another module in the same batch gets the host's, since the emitter
+      keeps no per-module import table for other people's modules.
 
 - [ ] **Static checking before a script runs.** Designed but not built: see
       [checker.md](docs/checker.md) for what it could prove without inference, what it could not, and
@@ -241,8 +300,9 @@ Not done:
 Not "not yet": these need information that stops existing once the Haxe compiler has finished, so no
 amount of emulation inside a runtime interpreter recovers it.
 
-- **Macros, `@:build` and reification in scripts.** A macro runs *in* the compiler. There is no
-  compiler at runtime to run one.
+- **Macros, `@:build` and reification in scripts.** A macro runs *in* the Haxe compiler, and that is
+  not what runs at runtime. The bytecode compiler above translates a script; it does not evaluate
+  macros, and could not, because a macro expects the compiler's own API and type information.
 - **Compile-time type errors and inference.** The interpreter sees values, not the types of
   expressions that have not run yet. A static checker over the AST could catch some before running;
   that is the to-do above, and it is a different thing from inference.
@@ -269,7 +329,8 @@ What this fork adds on top of that upstream: type annotations enforced at runtim
 `-D hxscript_dynamic` to opt out and `Int` versus `Float` kept correct either way; abstracts that
 work, scripted or compiled, including operators, array access and `from`/`to`; structural typedefs
 checked by field *type* rather than by name alone; documentation and a runnable example rather than
-a feature list; and interpreter performance work that was measured rather than assumed.
+a feature list; interpreter performance work that was measured rather than assumed; and a compiler
+that translates a script to cppia bytecode at runtime.
 
 Still a work in progress. The to-do above says what is missing, and
 [parity.md](docs/parity.md) is honest about where scripts diverge from real Haxe. Pull requests

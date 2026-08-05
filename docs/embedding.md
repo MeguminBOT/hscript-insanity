@@ -1,7 +1,8 @@
 # Embedding the library in your game
 
 How to put hxscript into a Haxe project: running scripts, giving them access to your game,
-letting them subclass your classes, and the things that will bite you.
+letting them subclass your classes, compiling the hot ones at runtime, and the things that will
+bite you.
 
 [`example/`](../examples/battle) is a complete worked version of everything below: a small turn-based RPG
 whose creatures, bosses and status effects are all loaded from scripts. Run it, then read
@@ -146,6 +147,49 @@ for (path in myTypes)
 
 A script's own `import` of a missing or blacklisted type is fine by comparison: it is reported
 through `onProgramError` like any other script error.
+
+### Marking things instead of listing them
+
+Maintaining those registrations by hand gets old, and it gets worse if you ever compile scripts:
+compiled code has no interpreter to be injected into, so the same names have to be declared a second
+time in a second format. `ExposeMacro` collects both from the build.
+
+```haxe
+@:scriptAmbient
+class Entity {
+	@:scriptStatic('world')          // a script writing `world` gets this
+	public static var current:World;
+
+	@:scriptStatic                   // no name given, so the field's own is used
+	public static var version:Int;
+}
+```
+
+```haxe
+hxscript.macro.ExposeMacro.apply();   // once, at startup
+```
+
+`@:scriptAmbient` marks a type scripts may name; `@:scriptStatic` marks a static they may reach by a
+bare name. `apply()` fills `Config.globalVariables` for interpreted code and the compiler's lists for
+compiled code, from the same marks, so a name means the same thing whichever way a script ends up
+running. Marking one side only is the trap it exists to avoid: a script that works until the day it
+is compiled, or the reverse.
+
+For an API that is already grouped, a whole package can go in without touching its types, and
+sub-packages come with it:
+
+```
+--macro hxscript.macro.ExposeMacro.expose(['game', 'engine.api'])
+```
+
+Neither mark changes what a script is *allowed* to touch. `Config` still decides that, for
+interpreted and compiled code alike; this only says where the things it already allows actually
+live. The lists are readable on their own if you want to add to them by hand:
+
+```haxe
+Compiler.ambient = ExposeMacro.ambient().concat(['extra.Type']);
+Compiler.statics = ExposeMacro.statics();
+```
 
 ## 5. Errors
 
@@ -420,12 +464,243 @@ The bar it is held to is **round-trip**, not readability: printing, reparsing an
 again produces the same text. Output is not formatted to any house style, and comments are not
 preserved, since the parser does not keep them.
 
-## 13. Things that will bite you
+## 13. Compiling scripts instead of interpreting them
+
+Optional, and worth about 20x on a script's own work. A module can be translated to cppia bytecode
+and loaded as a real class instead of being walked as a tree. [`modes.md`](modes.md) is the whole
+picture -- what it buys, what it costs, and how it differs from Haxe's own cppia; this section is
+just the wiring.
+
+Decide per module. Both paths produce the same class, so nothing downstream needs to know which one
+it got, and a module the compiler refuses can simply be interpreted.
+
+**Nothing here happens on its own.** There is no setting that turns compiling on, and no point at
+which the library decides to compile something for you: adding the defines below makes the compiler
+*available*, and that is all. If you never ask, every script is interpreted exactly as before.
+
+That is deliberate. What to compile, when to compile it, and what to do about a module the compiler
+will not take are decisions only the host can make -- at startup, on demand, per mod folder, or from
+a flag in a pack's manifest.
+
+Asking is one call:
+
+```haxe
+var report = hxscript.compile.Compiler.compile(env);
+```
+
+That compiles what it can of a world and makes the result the thing that runs. The rest of this
+section is what that call does, in case you want to do it yourself.
+
+### What your build needs
+
+```
+-D scriptable       # hxcpp: makes your own types reachable from bytecode
+-D hxscript_cppia   # this library: compiles the emitter in at all
+-dce no             # see section 14
+```
+
+All three, and all three are about the host rather than any script. Without `-D hxscript_cppia`
+`Cppia.compile` reports every module skipped, which looks exactly like a compiler that refuses
+everything, so check it at startup rather than wondering:
+
+```haxe
+if (!hxscript.compile.Cppia.available)
+    trace('built without -D hxscript_cppia; everything will be interpreted');
+```
+
+### The whole of it, in one call
+
+```haxe
+import hxscript.compile.Compiler;
+import hxscript.macro.ExposeMacro;
+
+// once, at startup: tells both the interpreter and the compiler where your API lives
+ExposeMacro.apply();
+
+// once per world, whenever you want it compiled
+var report = Compiler.compile(env);
+
+trace('${report.compiled.length} classes compiled in ${report.ms}ms');
+for (skip in report.skipped)
+    trace('interpreting ${skip.name}: ${skip.reason}');
+```
+
+`Compiler.compile` offers every module in the world, loads what compiled, registers the classes
+against the world, and turns substitution on. A module it cannot take is reported and left to the
+interpreter, so the call is safe on any world and safe to repeat -- calling it again after a reload
+binds the classes it built last time rather than compiling them a second time.
+
+`ExposeMacro.apply()` is the other half, and section [4](#4-exposing-your-types) is where the
+annotations live. In short: mark a type `@:scriptAmbient` and a static `@:scriptStatic`, and the
+macro fills in `Config.globalVariables` for interpreted code and the compiler's lists for compiled
+code, from the same marks. Doing only one of those gives you a script that works until the day it is
+compiled, or the reverse.
+
+That is the whole integration. Everything below is the same work spelled out, for a host that wants
+to compile a subset, cache the bytes, or decide something the facade decides for it.
+
+### Doing it yourself: the smallest version that works
+
+```haxe
+import hxscript.compile.Cppia;
+import hxscript.syntax.Parser;
+
+var decls = new Parser().parseModule(source, 'Goblin', 0, ['mods']);
+var result = Cppia.compile([{name: 'mods.Goblin', decls: decls}]);
+
+if (result.bytes != null) {
+    var module = cpp.cppia.Module.fromData(result.bytes.getData());
+    module.boot();
+
+    var cls = module.resolveClass('mods.Goblin');
+    var goblin = Type.createInstance(cls, []);
+}
+
+for (skip in result.skipped)
+    trace('interpreting ${skip.name}: ${skip.reason}');
+```
+
+`bytes` is null when nothing in the batch compiled. `skipped` always says why, per module, in words
+meant to be read.
+
+### Handing over what you inject
+
+This is the part that catches people, and it follows from what compiled code is. Anything you give
+scripts through `Config` -- preset variables, preset imports -- is injected into an *interpreter*.
+Compiled code does not have one. A bare name that resolved fine interpreted will refuse to compile
+unless you say where it really lives:
+
+```haxe
+Cppia.compile(inputs,
+    ['game.Player', 'game.World'],              // ambient: types usable without an import
+    ['mods.Shared'],                            // external: scripted classes NOT in this batch
+    ['player=game.Player::current',             // statics: bare name -> a real host static
+     'world=game.World::active']);
+```
+
+- **`ambient`** are types a script may name without importing them.
+- **`statics`** are bare names your host answers with a static of its own, written
+  `name=owner.path::field`. This is the direct replacement for a preset variable.
+- **`external`** are scripted classes that live in another module or another world. A module naming
+  one is left interpreted on purpose: cppia resolves a class either inside the module being loaded
+  or as a host class, and a scripted class elsewhere is neither, so the reference would fail to link
+  and take the whole load down with it.
+
+### Telling the world what you compiled
+
+`Compiler.compile` does this for you; this is what it does.
+
+Resolving the class yourself is not enough. Everything else -- other scripts naming that class, `new`
+on it from interpreted code, a static read through it -- still goes through the world, and the world
+knows nothing about what you just built. Register it:
+
+```haxe
+for (input in inputs) {
+    if (result.compiled.indexOf(input.name) < 0)
+        continue;   // this one was skipped; it stays interpreted
+
+    for (path in Cppia.declaredPaths(input.decls)) {
+        var cls = module.resolveClass(path);
+        if (cls != null)
+            env.compiled.set(path, cls);
+    }
+}
+
+// on whenever ANY class in this world is compiled, not only when all of them are
+env.substituting = true;
+```
+
+`result.compiled` holds the *module* names you passed in, not class paths, and one module can declare
+several classes -- hence `declaredPaths` to get them.
+
+Skip this and everything runs interpreted while your own logging cheerfully reports it as compiled,
+because nothing errors: `Cppia.compile` succeeded, the module loaded, and the class you resolved is
+real. It is simply not the one anything else reaches. Worth a hard check the first time you wire it
+up, on the actual class an instance came from, rather than trusting that the compile step ran.
+
+`substituting` is the flag that makes it safe. A compiled class carries its own statics and its own
+identity, so the hazard is a class existing both ways at once with the two halves disagreeing about
+its state. What prevents that is not compiling everything -- it is every reference going the same
+way. With the flag on, a scripted class that has a compiled form is reached through the compiled
+form from everywhere, including from code that is still interpreted, so there is only ever one of
+it. Which is why it goes on as soon as one class is compiled, not once they all are.
+
+### Compiling several modules together
+
+Pass them in one call. Every module is declared before any is emitted, so they may refer to each
+other in any order and mutual references are fine:
+
+```haxe
+var result = Cppia.compile([
+    {name: 'mods.Goblin', decls: goblinDecls},
+    {name: 'mods.Boss', decls: bossDecls},
+    {name: 'mods.Loot', decls: lootDecls}
+]);
+```
+
+One thing to expect: skips cascade. If `Loot` is refused and `Boss` names it, `Boss` is skipped too,
+reported as `uses mods.Loot, which is interpreted`. That is not a defect -- a reference that cannot
+link rejects the whole loaded module -- but it does mean a batch is only as compilable as the
+modules it depends on, so group what belongs together rather than throwing everything in at once.
+
+### Turning on the JIT
+
+Once, at startup, before any module loads. It is a process-wide switch in hxcpp, not a per-module
+one, and it costs nothing measurable at load time:
+
+```haxe
+cpp.cppia.Host.enableJit(true);
+```
+
+### Caching the bytes
+
+One reason to drive `Cppia.compile` yourself rather than through the facade: `Compiler` holds the
+compiled classes in memory for the life of the process, which is what makes a reload free, but it
+does not write anything to disk.
+
+`result.bytes` is ordinary `haxe.io.Bytes`. You can write it out and load it next launch without
+parsing or compiling anything:
+
+```haxe
+sys.io.File.saveBytes('cache/Goblin.cppia', result.bytes);
+
+// next launch
+var module = cpp.cppia.Module.fromData(sys.io.File.getBytes('cache/Goblin.cppia').getData());
+module.boot();
+```
+
+Tested both ways it matters: bytes written by one process load in another, and bytes written by one
+build of the host load in a **rebuilt** host. That second one is the useful property, and it holds
+because names are resolved when the module loads rather than baked in when it was compiled -- there
+is no snapshot of your classes inside the file to go stale.
+
+The thing to know is what that defers rather than removes. If a later build of your host drops or
+renames something a cached module used, the failure appears when those bytes load, not when they
+were compiled. Key the cache on the source's own hash so an edited script is recompiled, and treat a
+load failure as "recompile from source", which is a cheap and always-correct fallback.
+
+### When not to bother
+
+Compiling a module costs a few milliseconds against a saving paid per operation, so a module of
+short handlers called a handful of times each will never repay it. [`modes.md`](modes.md) has the
+break-even and the figures behind it.
+
+## 14. Things that will bite you
 
 - **Dead code elimination.** With `-dce std`, methods your own code never calls statically are
   stripped from the build, and a script reaching one by reflection gets `Cannot call null`. It looks
   like a library bug and is not. `-dce no`, or `@:keep` on what scripts need. Measured below, because
   it removes more than people expect.
+
+  The library covers the worst of it for you. `extraParams.hxml` runs
+  [`KeepMacro`](../src/hxscript/macro/KeepMacro.hx), which pulls `IntIterator`, `Reflect`, `Type`,
+  `haxe.ds.StringMap`, `EReg`, `haxe.ds.List`, `Date` and `Sys` into the build and marks them and
+  their fields kept, so those work under `-dce std` without you doing anything. It handles the two
+  failures separately, because they are different: keeping saves a type already in the build from
+  being stripped (`Cannot call null`), while including puts one in that nothing referenced at all
+  (`Unknown identifier`), and `@:keep` cannot help with the second. `KeepMacro.types` is a plain
+  array you can add to; `-D hxscript_no_keep` turns the whole thing off for a host minimising binary
+  size. Everything else in the catalogue below is still yours to keep.
 - **`inline` is not the reason a member is missing.** An `inline` method still has a runtime form;
   what removes it is DCE noticing that every call site inlined it, so nothing references it. The two
   get confused constantly, and the fix is different: `-dce no`/`@:keep` for this, a `callShim` for a
@@ -492,6 +767,8 @@ instance methods. The runtime itself references those, so they are never candida
 - [`advanced.md`](advanced.md) is the next step up: generating bridges with a macro, making native
   abstracts visible to scripts, subclassing the interpreter, and every surface for binding your
   API.
+- [`modes.md`](modes.md) covers interpreting versus compiling at runtime: what compiling buys, what
+  it costs, and how it differs from Haxe's own cppia.
 - [`parity.md`](parity.md) covers what scripts can do compared to real Haxe, and the deliberate
   divergences.
 - [`performance.md`](performance.md) covers what is fast, what is not, and how to measure a change

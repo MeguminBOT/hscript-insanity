@@ -114,7 +114,18 @@ typed at the wrong moment.
 
 ---
 
-## 3. Adding a game library
+## 3. Exposing your API to both engines
+
+`ExposeMacro` is the counterpart to the bridge macro above: instead of generating subclassable
+shells, it collects what your host offers scripts by name. Mark a type `@:scriptAmbient` or a static
+`@:scriptStatic`, call `ExposeMacro.apply()` at startup, and it fills `Config.globalVariables` for
+interpreted code and `Compiler.ambient`/`Compiler.statics` for compiled code from the same marks.
+
+Worked through in
+[`embedding.md`](embedding.md#marking-things-instead-of-listing-them), including why filling one side
+only is a trap.
+
+## 4. Adding a game library
 
 Everything above applied to code you do not own. A script that says `class Boss extends FlxSprite`
 needs four separate things to be true, and each one fails differently:
@@ -245,7 +256,7 @@ having from the start.
 
 ---
 
-## 4. A custom interpreter
+## 5. A custom interpreter
 
 `Config.interpClass` is the whole installation:
 
@@ -313,7 +324,7 @@ script owners at once keys it per interpreter instead, so each script resolves a
 
 ---
 
-## 5. Binding your API
+## 6. Binding your API
 
 There are five surfaces and they are not interchangeable. Picking the wrong one is the usual cause
 of "the script cannot see it".
