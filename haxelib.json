@@ -1,7 +1,7 @@
 {
 	"name": "hxscript",
 	"url": "https://github.com/MeguminBOT/hxscript",
-	"description": "A Haxe interpreter. It parses Haxe-shaped source and evaluates it directly, with enough of the language intact that a script can declare classes, enums, typedefs and abstracts, and extend the ones your application already compiled.",
+	"description": "A Haxe interpreter with an optional runtime compiler. It parses Haxe-shaped source and evaluates it directly, with enough of the language intact that a script can declare classes, enums, typedefs and abstracts, and extend the ones your application already compiled. A module can instead be translated to native bytecode while your application is running, with no Haxe toolchain anywhere in sight, which is what lets a script that arrives after your release run at close to compiled speed.",
 	"license": "MIT",
 	"tags": [
 		"hscript",
@@ -10,12 +10,16 @@
 		"scripting",
 		"script",
 		"macro",
+		"cppia",
+		"compiler",
+		"JIT",
+		"runtime",
 		"cross",
 		"utility",
 		"game"
 	],
-	"version": "1.0.1",
-	"releasenote": "Adds `@:privateAccess`, which waives the private-member check at the access site the way Haxe does (thanks TBar09). Clarifies that `private` enforcement is gated on `strictAccess` OR `typedMode`, so it is on by default rather than opt-in.",
+	"version": "1.1.0",
+	"releasenote": "Adds a runtime compiler: a module can be translated to cppia bytecode while your application runs, with no Haxe toolchain involved, which is worth about 20x on a script's own work. Optional and decided per module, behind `-D hxscript_cppia` here and `-D scriptable` on the host; `Compiler.compile(env)` does the whole integration, and `ExposeMacro` collects what your API offers scripts for the interpreter and the compiler from the same marks. Standard-library types scripts reach by reflection are now kept from being eliminated under the default `-dce std`, which was a long-standing source of reports that looked like library bugs. Also fixes empty array comprehensions returning `[null]`, and array literals annotated with a type that has no runtime identity being rejected outright.",
 	"contributors": [
 		"MeguminBOT"
 	],

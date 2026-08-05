@@ -1,0 +1,11 @@
+# The portable suite on the python target. Run from the repository root.
+#
+#   haxe test/python/build.hxml
+#
+# python is installed, so run.sh runs the output.
+-cp src
+-cp test/common
+-cp test/common/fixtures
+-cp test/lib
+-main AllCommon
+-python bin_test/python/all.py

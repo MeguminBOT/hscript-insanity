@@ -64,7 +64,7 @@ records its type rather than storing the bare underlying value.
 What is still missing is everything that needs the *compiler*:
 
 - **No compile-time type errors and no inference.** Mismatches surface as runtime throws, not
-  editor/compile errors. There is no static checker in the library (the upstream one was removed as
+  editor/compile errors. There is no static checker in the library (hscript-insanity's was removed as
   dead code). [checker.md](checker.md) is the design for one: what it could prove without
   inference, what it could not, and why the boundary sits there.
 - **No overload resolution.** Haxe's method overloading and implicit conversions at call boundaries

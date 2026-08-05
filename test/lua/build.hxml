@@ -1,0 +1,11 @@
+# The portable suite on the lua target. Run from the repository root.
+#
+#   haxe test/lua/build.hxml
+#
+# No lua runtime here, so this is a generation check.
+-cp src
+-cp test/common
+-cp test/common/fixtures
+-cp test/lib
+-main AllCommon
+-lua bin_test/lua/all.lua

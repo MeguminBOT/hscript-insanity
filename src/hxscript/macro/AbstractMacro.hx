@@ -166,12 +166,6 @@ class AbstractMacro {
 			 * @param params The parameters to convert.
 			 * @return The converted parameters.
 			 */
-			/**
-			 * Converts a type-parameter list for re-emission.
-			 *
-			 * @param params The parameters to convert.
-			 * @return The converted parameters.
-			 */
 			function toTypeParam(params:Array<haxe.macro.Type>):Array<TypeParam> {
 				return [for (t in params) TPType(toComplex(t))];
 			}

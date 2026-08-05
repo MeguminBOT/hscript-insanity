@@ -142,6 +142,7 @@ class Interp {
 	 */
 	var declaredNames:Array<String>;
 
+	/** What each shadowed name held before, restored when the scope closes. */
 	var declaredOld:Array<Variable>;
 
 	/** The value returned by the currently-returning function. */
@@ -453,6 +454,17 @@ class Interp {
 	 * Adds two values with Haxe semantics: String concatenation when either side is a String,
 	 * otherwise numeric addition promoted like `numArith` (`Int + Int` stays `Int`).
 	 *
+	 * The sum is worked out both ways and the narrow one is only handed back if it agrees, which is
+	 * how a running total declared `Float` survives passing two billion. On hxcpp a `Dynamic` cannot
+	 * tell a whole `Float` from an `Int` -- `3.0` answers true to `is Int`, reports `TInt` from
+	 * `Type.typeof`, and carries the same internal tag as `3` -- so a value the script declared
+	 * `Float` arrives here indistinguishable from an `Int`, and adding it as one wraps into a negative
+	 * number with nothing to say it happened.
+	 *
+	 * Comparing the two results is used rather than the usual sign trick because the operands are not
+	 * always numbers: a boxed abstract can satisfy `is Int` while having no bitwise operators at all,
+	 * and it must come out of here exactly as it went in.
+	 *
 	 * @param a The left operand.
 	 * @param b The right operand.
 	 * @return The concatenated string or the promoted numeric sum.
@@ -461,8 +473,11 @@ class Interp {
 		// Int first. The result is the same whichever order these are tested in -- an operand cannot
 		// be both an Int and a String -- and integer addition is what a script actually spends its
 		// time on, so it should not pay two string checks to get there.
-		if (a is Int && b is Int)
-			return (a : Int) + (b : Int);
+		if (a is Int && b is Int) {
+			var wide:Float = (a : Float) + (b : Float);
+			var narrow:Int = (a : Int) + (b : Int);
+			return (narrow == wide) ? narrow : wide;
+		}
 		if (a is String || b is String)
 			return Std.string(a) + Std.string(b);
 		if (a is AbstractValue || b is AbstractValue)
@@ -471,15 +486,18 @@ class Interp {
 	}
 
 	/**
-	 * Subtracts with Haxe numeric promotion.
+	 * Subtracts with Haxe numeric promotion, widening on overflow for the reasons `numAdd` gives.
 	 *
 	 * @param a The left operand.
 	 * @param b The right operand.
-	 * @return `Int` when both operands are `Int`, otherwise `Float`.
+	 * @return `Int` when both operands are `Int` and the difference fits, otherwise `Float`.
 	 */
 	inline function numSub(a:Dynamic, b:Dynamic):Dynamic {
-		if (a is Int && b is Int)
-			return (a : Int) - (b : Int);
+		if (a is Int && b is Int) {
+			var wide:Float = (a : Float) - (b : Float);
+			var narrow:Int = (a : Int) - (b : Int);
+			return (narrow == wide) ? narrow : wide;
+		}
 		if (a is AbstractValue || b is AbstractValue)
 			return abstractArith("-", a, b);
 		return (a : Float) - (b : Float);
@@ -487,6 +505,12 @@ class Interp {
 
 	/**
 	 * Multiplies with Haxe numeric promotion.
+	 *
+	 * Unlike `+` and `-` this keeps wrapping when two `Int`s overflow, which is deliberate. Wrapping
+	 * multiplication is an idiom -- every hash and seeded random generator is built on it -- and
+	 * promoting would break them for good: a `Float` carries 53 bits of mantissa, so a product past
+	 * that has already lost the low bits the following mask wanted, and no later `&` can recover them.
+	 * Addition cannot lose bits that way, which is why it can afford to promote and this cannot.
 	 *
 	 * @param a The left operand.
 	 * @param b The right operand.
@@ -1957,7 +1981,7 @@ class Interp {
 	}
 
 	/**
-	 * Evaluates an array literal, or an array/map comprehension when the body is a `for`/`while`.
+	 * Evaluates an array literal, or an array/map comprehension when the single element is a `for`.
 	 *
 	 * @param arr The literal's elements, or the single comprehension expression.
 	 * @param t The declared type, used to pick the map implementation for an empty `Map` literal.
@@ -1965,6 +1989,10 @@ class Interp {
 	 */
 	function evalArrayDecl(arr:Array<Expr>, t:Null<CType>):Dynamic {
 		var compr:Dynamic = null;
+
+		// `compr` cannot answer this on its own: one that yields nothing leaves it null, which reads
+		// the same as never having been a comprehension.
+		var ranComprehension:Bool = false;
 
 		var exprCompr:(e:Expr, ?inFor:Bool) -> Dynamic = null;
 
@@ -2022,11 +2050,13 @@ class Interp {
 					exprCompr(e, inFor);
 
 				case EFor(n, it, e):
+					ranComprehension = true;
 					forLoop(n, it, forExpr.bind(e));
 
 					Interp.void;
 
 				case EForGen(it, e):
+					ranComprehension = true;
 					Tools.getKeyIterator(it, function(vk, vv, it) {
 						if (vk == null) {
 							position = it.pos;
@@ -2106,7 +2136,10 @@ class Interp {
 
 						var p = new Printer();
 						error(ECustom('Map of type <${p.typeToString(params[0])}, ${p.typeToString(params[1])}> is not accepted'));
-					} else {
+					} else if (isResolvable(fullPath)) {
+						// Guarded because this is only looking for a map type to build empty, so an
+						// annotation naming anything else is not an error: `var a:Dynamic = [9]` was
+						// rejected here for naming a type with no runtime identity.
 						var t:Dynamic = resolve(fullPath);
 
 						if (t is haxe.ds.IntMap || t is haxe.ds.StringMap || t is haxe.ds.ObjectMap || t is haxe.ds.EnumValueMap)
@@ -2116,14 +2149,27 @@ class Interp {
 			}
 
 			var a = new Array();
-			for (e in arr)
-				a.push(expr(e));
+
+			// `arr` holds the comprehension itself when a loop drove this, so evaluating it would put
+			// the loop's own value in the array. An empty comprehension is an empty array.
+			if (!ranComprehension) {
+				for (e in arr)
+					a.push(expr(e));
+			}
+
 			return a;
 		}
 	}
 
 	/**
 	 * Evaluates a `switch`, including capture variables, extractors, guards and `|` alternatives.
+	 *
+	 * @param e The value being matched.
+	 * @param cases Its cases.
+	 * @param def Its default branch, if any.
+	 * @param void Whether the result is going to be discarded.
+	 * @param mapCompr Whether this sits inside a map comprehension.
+	 * @return The value of the branch that matched, or null when none did.
 	 */
 	function evalSwitch(e:Expr, cases:Array<{values:Array<Expr>, expr:Expr, ?guard:Expr}>, def:Null<Expr>, void:Bool, mapCompr:Bool):Dynamic {
 		var hasCapture:Bool = false;
@@ -2293,17 +2339,6 @@ class Interp {
 	}
 
 	/**
-	 * The core evaluator: computes the value of one expression, recursing into its sub-expressions and
-	 * dispatching on the expression kind. Control flow (`break`/`continue`/`return`) is signalled by
-	 * throwing `Stop`.
-	 *
-	 * @param e The expression to evaluate.
-	 * @param t An optional expected type, used to cast the result.
-	 * @param void Whether the value is unused (allows statement-only forms).
-	 * @param mapCompr Whether this is evaluated inside a map comprehension (affects `k => v` handling).
-	 * @return The expression's value.
-	 */
-	/**
 	 * Evaluates a `try`/`catch`, kept out of `expr` deliberately.
 	 *
 	 * `expr` is size-bound on hxcpp: it is one enormous switch, and every line inside it competes
@@ -2389,6 +2424,21 @@ class Interp {
 		return r;
 	}
 
+	/**
+	 * Evaluates one expression, and whatever it contains.
+	 *
+	 * The centre of the interpreter: every form the language has is a case here, and everything else
+	 * in this class is reached through it. Hot enough that the shape of the switch and the order of
+	 * its cases are load-bearing rather than stylistic.
+	 *
+	 * @param e The expression, or null for an absent one.
+	 * @param t The type the result is expected to take, when the caller knows it; used to pick a
+	 *        concrete map for an empty literal, and to box a value into an abstract.
+	 * @param void Whether the value is going to be discarded, which lets some forms skip building one.
+	 * @param mapCompr Whether this sits inside a map comprehension, where a `=>` is an entry rather
+	 *        than an operator.
+	 * @return The value it evaluates to.
+	 */
 	public function expr(e:Expr, ?t:CType, void:Bool = false, mapCompr:Bool = false):Dynamic {
 		// Both of these are already what they need to be for every node after the first, and both are
 		// statics holding object references, so an unconditional store pays hxcpp's write barrier on
@@ -2838,18 +2888,6 @@ class Interp {
 	}
 
 	/**
-	 * Applies a type annotation to a value. Abstract `from`/`to` conversions always apply. When
-	 * `Config.typedMode` is on, the value is additionally checked against the declared type: it is
-	 * coerced where Haxe allows an implicit conversion (`Int`->`Float`), passed when already
-	 * assignable, and otherwise rejected with an error -- so a wrong-typed variable, argument, return,
-	 * or `cast(x, T)` throws the way typed Haxe would. When off, non-abstract annotations are ignored.
-	 *
-	 * @param e The value to cast.
-	 * @param type The target type annotation, if any.
-	 * @return The value, coerced to the target where applicable.
-	 * @throws InterpException If typed mode rejects the value, or an abstract can't convert.
-	 */
-	/**
 	 * Checks a non-null value against a core type in typed mode, coercing where Haxe allows it
 	 * implicitly. Split out of `tryCast` so the fast path and the general path share one definition.
 	 *
@@ -3011,8 +3049,11 @@ class Interp {
 							return e;
 						}
 						if ((t is Class || t is ScriptedClass || t is ScriptedInterface || t is Enum || t is ScriptedEnum)
-							&& !Std.isOfType(e, t))
+							&& !Std.isOfType(e, t)) {
+							if (isCompiledAs(t, e))
+								return e;
 							return error(ECustom('${AbstractTools.resolveName(e)} should be $path'));
+						}
 						return e;
 				}
 			case CTAnon(fields):
@@ -3350,6 +3391,8 @@ class Interp {
 			}
 		}
 
+		o = staticHost(o);
+
 		// A scripted abstract's fields are statics taking the boxed value as their `this`, so reading
 		// one has to go through the abstract rather than through the box object.
 		if (o is ScriptedAbstractValue) {
@@ -3432,6 +3475,8 @@ class Interp {
 			throw DDefer;
 
 		checkAccess(o, f);
+
+		o = staticHost(o);
 
 		if (o is ScriptedAbstractValue) {
 			var box:ScriptedAbstractValue = cast o;
@@ -3529,6 +3574,8 @@ class Interp {
 	 * @throws InterpException If no method, extension, or shim can be found.
 	 */
 	function fcall(o:Dynamic, f:String, args:Array<Dynamic>):Dynamic {
+		o = staticHost(o);
+
 		var fun:Dynamic = get(o, f);
 
 		// Std.string must keep abstract wrappers so their custom toString runs; unwrap for everything else.
@@ -3613,10 +3660,54 @@ class Interp {
 	}
 
 	/**
-	 * Evaluates `new cl(args)`: resolves the class (scripted or native) and constructs an instance,
-	 * deferring if the class is an uninitialized scripted type.
+	 * The class that owns a scripted class's statics.
 	 *
-	 * @param cl The class name/path.
+	 * A compiled class carries its own statics, so while a world is only partly compiled there are
+	 * two stores for the same declaration and redirecting to either one strands the other. Once the
+	 * whole world is compiled there is only one store worth using, and every static read, write and
+	 * call has to reach it -- including the ones the host makes on its way in, which would otherwise
+	 * set up a copy that nothing else reads.
+	 *
+	 * @param o The value a field is being read from, written to, or called on.
+	 * @return The compiled class standing in for it, or `o` unchanged.
+	 */
+	function staticHost(o:Dynamic):Dynamic {
+		#if hxscript_cppia
+		if (environment != null && environment.substituting && o is ScriptedClass) {
+			var native:Class<Dynamic> = environment.compiled.get((cast o : ScriptedClass).path);
+			if (native != null)
+				return native;
+		}
+		#end
+		return o;
+	}
+
+	/**
+	 * Whether a value is an instance of the compiled form of a scripted class.
+	 *
+	 * With substitution on, a scripted class that was compiled is reached through its compiled form
+	 * everywhere, so an `is` against the scripted type has to answer for the compiled one too.
+	 *
+	 * @param t The scripted type being tested against.
+	 * @param e The value.
+	 * @return Whether the value is that type's compiled form.
+	 */
+	function isCompiledAs(t:Dynamic, e:Dynamic):Bool {
+		#if hxscript_cppia
+		if (environment == null || !environment.substituting || !(t is ScriptedClass))
+			return false;
+
+		var native:Class<Dynamic> = environment.compiled.get((cast t : ScriptedClass).path);
+		return native != null && Std.isOfType(e, native);
+		#else
+		return false;
+		#end
+	}
+
+	/**
+	 * Builds an instance of a type named by path.
+	 *
+	 * @param cl The type's path as written.
 	 * @param args Constructor arguments.
 	 * @return The new instance.
 	 */
@@ -3634,6 +3725,14 @@ class Interp {
 
 		if (canDefer && c is IScriptedType && !c.initialized)
 			throw DDefer;
+
+		#if hxscript_cppia
+		if (c is ScriptedClass && environment != null && environment.substituting) {
+			var native:Class<Dynamic> = environment.compiled.get((cast c : ScriptedClass).path);
+			if (native != null)
+				return HaxeType.createInstance(native, args);
+		}
+		#end
 
 		if (c is ScriptedAbstract)
 			return (cast c : ScriptedAbstract).create(args);

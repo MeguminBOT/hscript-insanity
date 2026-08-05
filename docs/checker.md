@@ -8,7 +8,7 @@ This page is the design for catching some of them *before* a script runs. Nothin
 It exists so the open to-do item means something more than one line, and so whoever picks it up
 starts from the boundary rather than rediscovering it.
 
-Upstream had a `Checker`. It was removed as dead code: it predated the compiled type table and could
+hscript-insanity had a `Checker`. It was removed as dead code: it predated the compiled type table and could
 not see the host's types, so it could not check the thing scripts spend most of their time touching.
 
 ## What a checker could prove

@@ -1196,7 +1196,8 @@ class Parser extends Lexer {
 			}
 			t = token();
 			switch (t) {
-				case TComma: continue;
+				case TComma:
+					continue;
 				case TOp(op):
 					if (op == ">")
 						break;
@@ -1600,9 +1601,6 @@ class Parser extends Lexer {
 					}
 				}
 
-				// origin = pack.join('.');
-				// origin = (origin.length > 0 ? '$origin.$name' : name);
-
 				var fields = [];
 				ensure(TBrOpen);
 				while (!maybe(TBrClose))
@@ -1683,9 +1681,6 @@ class Parser extends Lexer {
 				while (!maybe(TBrClose)) {
 					var field:EnumFieldDecl = parseEnumField();
 					constructs.set(field.name, field);
-
-					// if (names.contains(field.name))
-					// 	error(ECustom('Duplicate constructor ${field.name}'), tokenMin, tokenMax);
 
 					names.push(field.name);
 				}

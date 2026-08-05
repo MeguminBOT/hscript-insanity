@@ -63,7 +63,7 @@ class ScriptedAbstract implements IScriptedType {
 	 * since that is its constructor, and an abstract's is an ordinary static like the rest. The `@`
 	 * keeps it out of reach of a script, which cannot write that name.
 	 */
-	static inline var CTOR:String = '@new';
+	public static inline var CTOR:String = '@new';
 
 	/** The parsed abstract declaration. */
 	var decl:AbstractDecl;
@@ -267,6 +267,30 @@ class ScriptedAbstract implements IScriptedType {
 	 * @return The equivalent static field.
 	 */
 	function asStatic(f:FieldDecl):FieldDecl {
+		return staticForm(f, name, underlying);
+	}
+
+	/**
+	 * The implementation form of one of an abstract's fields, independent of any instance.
+	 *
+	 * Shared with the runtime compiler, which has to produce the same shape from the same
+	 * declaration or the two would disagree about what a method is. Every method becomes a static
+	 * taking the boxed value as a leading `this`, a parameter of the abstract's own type becomes its
+	 * underlying type, and a constructor is renamed and made to return what it built.
+	 *
+	 * @param f The declared field.
+	 * @param name The abstract's own name, for spotting self-typed parameters.
+	 * @param underlying The type the abstract boxes.
+	 * @return The field as it appears on the implementation class.
+	 */
+	public static function staticForm(f:FieldDecl, name:String, underlying:Null<CType>):FieldDecl {
+		function unbox(t:Null<CType>):Null<CType> {
+			return switch (t) {
+				case CTPath(p, _) if (p.length > 0 && p[p.length - 1] == name): underlying;
+				default: t;
+			}
+		}
+
 		var kind:FieldKind = switch (f.kind) {
 			case KFunction(fn):
 				var args:Array<Argument> = [{name: 'this', t: underlying}];

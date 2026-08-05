@@ -1,0 +1,11 @@
+# The portable suite on the neko target. Run from the repository root.
+#
+#   haxe test/neko/build.hxml
+#
+# neko is installed, so run.sh runs the output.
+-cp src
+-cp test/common
+-cp test/common/fixtures
+-cp test/lib
+-main AllCommon
+-neko bin_test/neko/all.n

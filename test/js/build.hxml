@@ -1,0 +1,13 @@
+# The portable suite on the js target. Run from the repository root.
+#
+#   haxe test/js/build.hxml
+#
+# No runtime here (node is not installed), so this is a generation check.
+# That still earns its place: the failure it catches is a generator-stage one that `--no-output`
+# does not see.
+-cp src
+-cp test/common
+-cp test/common/fixtures
+-cp test/lib
+-main AllCommon
+-js bin_test/js/all.js

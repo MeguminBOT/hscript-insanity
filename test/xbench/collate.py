@@ -11,8 +11,8 @@ import sys, collections
 # Preferred column order. A library with no rows in the results is dropped rather than emptying the
 # comparison, so running against a subset of checkouts produces a table for that subset.
 PREFERRED = [
-    "ours",
-    "insanity-upstream",
+    "hxscript",
+    "insanity",
     "hscript-pos",
     "hscript-improved-pos",
     "hscript-iris-pos",
@@ -23,8 +23,8 @@ PREFERRED = [
     "rulescript",
 ]
 LABEL = {
-    "ours": "this fork",
-    "insanity-upstream": "insanity",
+    "hxscript": "**hxScript**",
+    "insanity": "insanity",
     "hscript-pos": "hscript",
     "hscript-improved-pos": "improved",
     "hscript-iris-pos": "iris",
@@ -134,7 +134,9 @@ def chart(title, unit, pairs, sort=True):
 
     Used twice in the whole document, for the two figures the trade-off turns on. A chart of a number
     already in a table beside it is duplication, not illustration."""
-    pairs = [(l, v) for l, v in pairs if v is not None]
+    # Mermaid takes an axis label as a literal string, so the emphasis that makes this library stand
+    # out in the tables would show up here as a pair of asterisks around the name.
+    pairs = [(l.replace("*", ""), v) for l, v in pairs if v is not None]
     if not pairs:
         return
     if sort:
@@ -184,7 +186,7 @@ sh = shared(REF, MAIN)
 perop = [c for c in sh if kind(c) == "op"]
 callc = [c for c in sh if kind(c) == "call"]
 tot = {l: sum(float(rows[c][REF][l][1]) for c in sh) for l in MAIN}
-base = tot["ours"] if tot.get("ours") else 1.0
+base = tot["hxscript"] if tot.get("hxscript") else 1.0
 
 print(f"\n### Summary, over the {len(sh)} cases every library ran\n")
 print("| | " + " | ".join(LABEL[l] for l in MAIN) + " |")
@@ -193,7 +195,7 @@ print(f"| us per operation ({len(perop)} cases) | " + " | ".join("%.3f" % avg(l,
 print(f"| us per call ({len(callc)} cases) | " + " | ".join("%.3f" % avg(l, callc, REF) for l in MAIN) + " |")
 print("| parse, ms | " + " | ".join(str(parse.get(l, "n/a")) for l in MAIN) + " |")
 print("| corpus total, ms | " + " | ".join("%.0f" % tot[l] for l in MAIN) + " |")
-print("| total relative to this fork | " + " | ".join("%.2fx" % (tot[l] / base) for l in MAIN) + " |")
+print("| total relative to hxScript | " + " | ".join("%.2fx" % (tot[l] / base) for l in MAIN) + " |")
 
 chart(f"Cost of one operation at {REF:,} iterations", "microseconds", [(LABEL[l], avg(l, perop, REF)) for l in MAIN])
 chart(f"Cost of one call at {REF:,} iterations", "microseconds", [(LABEL[l], avg(l, callc, REF)) for l in MAIN])
@@ -238,6 +240,19 @@ print(f"| calls per {SLICE_MS:.0f}ms slice | " + " | ".join(budget(callc, SLICE_
 
 # Only meaningful with more than one scale. With one it printed a table restating the summary and a
 # spread row reading 0.0% for every library, which says nothing.
+def spread(kind_name):
+    out = []
+    for l in MAIN:
+        vals = []
+        for n in scales:
+            s = shared(n, MAIN)
+            cs = [c for c in s if kind(c) == kind_name]
+            vals.append(avg(l, cs, n))
+        vals = [v for v in vals if v]
+        out.append("%.1f%%" % ((max(vals) - min(vals)) / min(vals) * 100.0) if vals else "n/a")
+    return out
+
+
 if len(scales) > 1:
     print("\n### The ranking does not depend on the scale\n")
     print("The whole corpus at each scale. If a difference only showed up at one size it would be a")
@@ -252,21 +267,6 @@ if len(scales) > 1:
         s = shared(n, MAIN)
         cs = [c for c in s if kind(c) == "call"]
         print(f"| us per call, {n:,} | " + " | ".join("%.3f" % avg(l, cs, n) for l in MAIN) + " |")
-
-
-def spread(kind_name):
-    out = []
-    for l in MAIN:
-        vals = []
-        for n in scales:
-            s = shared(n, MAIN)
-            cs = [c for c in s if kind(c) == kind_name]
-            vals.append(avg(l, cs, n))
-        vals = [v for v in vals if v]
-        out.append("%.1f%%" % ((max(vals) - min(vals)) / min(vals) * 100.0) if vals else "n/a")
-    return out
-
-
     print("| spread, operations | " + " | ".join(spread("op")) + " |")
     print("| spread, calls | " + " | ".join(spread("call")) + " |")
 
@@ -278,7 +278,7 @@ if any(l in seen for l in NOPOS):
     pairs = [(a, b) for a, b in pairs if a in seen and b in seen]
     if pairs:
         print("\n### What position tracking costs the libraries that can switch it off\n")
-        print("Not a ranking. This fork cannot turn positions off, so the comparison above is built")
+        print("Not a ranking. hxScript cannot turn positions off, so the comparison above is built")
         print(f"with them on everywhere; this is what that decision costs the others. At {REF:,}.\n")
         s = shared(REF, [l for p in pairs for l in p])
         op = [c for c in s if kind(c) == "op"]

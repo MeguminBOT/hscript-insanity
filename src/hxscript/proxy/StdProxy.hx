@@ -24,6 +24,13 @@ class StdProxy {
 	 * @return True if `v` is of type `t`.
 	 */
 	@:deprecated('Std.is is deprecated. Use Std.isOfType instead.')
+	/**
+	 * The old name for `isOfType`, kept because scripts written against older Haxe still use it.
+	 *
+	 * @param v The value.
+	 * @param t The type to test against.
+	 * @return Whether the value is of that type.
+	 */
 	public static inline function is(v:Dynamic, t:Dynamic):Bool {
 		return isOfType(v, t);
 	}
@@ -122,6 +129,13 @@ class StdProxy {
 	 * @return `value` if it is of type `c`, otherwise null.
 	 */
 	@:deprecated('Std.instance() is deprecated. Use Std.downcast() instead.')
+	/**
+	 * The old name for `downcast`, kept for the same reason as `is`.
+	 *
+	 * @param value The value.
+	 * @param c The class to cast to.
+	 * @return The value as that class, or null when it is not one.
+	 */
 	public static inline function instance(value:Dynamic, c:Dynamic):Dynamic {
 		return downcast(value, c);
 	}

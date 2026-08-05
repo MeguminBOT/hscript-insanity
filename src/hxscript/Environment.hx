@@ -28,6 +28,24 @@ class Environment {
 	/** Callbacks run once `start` finishes; returning false removes the callback. */
 	public var onInitialized:Array<Map<String, IScriptedType>->Bool> = [];
 
+	#if hxscript_cppia
+	/** Native classes the host compiled from this world's scripted ones, keyed by scripted path. */
+	public var compiled:Map<String, Class<Dynamic>> = [];
+
+	/**
+	 * Whether a compiled class may stand in for the scripted one it was built from.
+	 *
+	 * A compiled class carries its own statics and its own identity, so the danger is a class
+	 * existing both ways at once and the two halves disagreeing. What prevents that is not every
+	 * class being compiled -- it is every reference going the same way. With this on, a scripted
+	 * class that has a compiled form is reached through the compiled form from everywhere, including
+	 * from code that is still interpreted, so there is only ever one of it.
+	 *
+	 * It therefore has to be on whenever ANY class here is compiled, not only when all of them are.
+	 */
+	public var substituting:Bool = false;
+	#end
+
 	/**
 	 * Creates a world, optionally seeded with modules, and builds the initial type index.
 	 *

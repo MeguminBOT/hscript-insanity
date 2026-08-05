@@ -1,0 +1,13 @@
+# The portable suite on the java target. Run from the repository root.
+#
+#   haxe test/java/build.hxml
+#
+# Generation only. javac stalls on this machine, producing the .java files and no .class,
+# so `-D no-compilation` stops at the part that tests the library rather than the toolchain.
+-cp src
+-cp test/common
+-cp test/common/fixtures
+-cp test/lib
+-main AllCommon
+-java bin_test/java
+-D no-compilation

@@ -10,7 +10,7 @@ is only about running it.
 | --- | --- |
 | `BenchCases.hx` | the corpus: every case's source, iteration count and expected value |
 | `XBench.hx` | the timing harness, shared by every runner |
-| `RunInsanity.hx` | runner for this fork **and** upstream insanity (same API) |
+| `RunHxScript.hx` / `RunInsanity.hx` | runners for this library and hscript-insanity (same body, different package) |
 | `RunHscript.hx` | runner for hscript **and** hscript-improved (same API) |
 | `RunIris.hx` / `RunRuleScript.hx` | runners for the two libraries with their own API |
 | `run.sh` | builds everything and drives one process per case |
@@ -25,7 +25,7 @@ Check the libraries out side by side, then point `LIBS` at them:
 
 ```sh
 mkdir xbench-libs && cd xbench-libs
-git clone https://github.com/inky03/hscript-insanity insanity-upstream
+git clone https://github.com/inky03/hscript-insanity insanity
 git clone https://github.com/HaxeFoundation/hscript
 git clone https://github.com/CodenameCrew/hscript-improved improved
 git clone https://github.com/pisayesiwsi/hscript-iris iris
@@ -54,7 +54,8 @@ check is what caught the three behavioural differences documented in `docs/bench
 
 Add it to `BenchCases.all()` with its expected value and iteration count. Keep accumulators inside
 32-bit `Int` so the expected value is exact rather than depending on overflow, and use `i += 1` for
-loop counters rather than `i++`, since one of the libraries under test does not implement `++` and
-would loop forever.
+loop counters rather than `i++`. hscript-iris did not implement `++` on its released version and
+looped forever on one; it does now, but the corpus stays on `i += 1` so a case does not depend on
+which version of a library is checked out.
 
 Mark a case `ext` rather than `core` when it needs a feature some library may not have.

@@ -22,6 +22,39 @@ class TypeCollectionMacro {
 	static var _name:String = 'hxscript.macro.TypeCollectionMacro';
 
 	/**
+	 * Records a class's constructor shape, which the runtime compiler needs to pad a call.
+	 *
+	 * Only the counts: how many arguments it declares and how many a caller must supply.
+	 * The types are not wanted here and the defaults cannot be carried across the
+	 * serialization boundary, so a padded argument is passed as null and the callee's own
+	 * default handling takes it from there.
+	 *
+	 * @param info The entry being filled.
+	 * @param d The class being described.
+	 */
+	#if macro
+	static function recordConstructor(info:TypeInfo, d:Dynamic):Void {
+		var ctor:Dynamic = d.constructor;
+		if (ctor == null)
+			return;
+
+		switch (ctor.get().type) {
+			case TFun(args, _):
+				info.ctorArgs = args.length;
+
+				var required:Int = 0;
+				for (arg in args) {
+					if (!arg.opt)
+						required++;
+				}
+
+				info.ctorRequired = required;
+			case _:
+		}
+	}
+	#end
+
+	/**
 	 * Records every build type's info at compile time and emits code to rebuild the indexed map at runtime.
 	 *
 	 * @return An expression evaluating to the populated `TypeMap`.
@@ -74,6 +107,9 @@ class TypeCollectionMacro {
 					}
 					if (d.isInterface) {
 						info.isInterface = true;
+					}
+					if (k == 'class') {
+						recordConstructor(info, d);
 					}
 					_c['${d.module}.${d.name}'] = info;
 					return info;
