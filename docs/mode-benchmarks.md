@@ -129,36 +129,36 @@ a hot script actually uses, not from the language's edges.
 
 | case | kind | interpreted | cppia | cppia + JIT |
 | --- | --- | --- | --- | --- |
-| `noCall` | op | 1.066 | 0.016 | 0.001 |
-| `loopPlain` | op | 0.694 | 0.011 | 0.001 |
-| `postIncr` | op | 0.637 | 0.010 | 0.001 |
-| `arith` | op | 1.346 | 0.022 | 0.002 |
-| `locals` | op | 2.041 | 0.030 | 0.003 |
-| `blocks` | op | 1.650 | 0.029 | 0.003 |
-| `not` | op | 1.169 | 0.017 | 0.004 |
-| `neg` | op | 1.132 | 0.017 | 0.002 |
-| `index` | op | 1.461 | 0.041 | 0.003 |
-| `indexSet` | op | 0.941 | 0.031 | 0.002 |
-| `field` | op | 2.468 | 0.025 | 0.003 |
-| `fieldSet` | op | 1.646 | 0.018 | 0.002 |
-| `method` | op | 3.208 | 0.109 | 0.077 |
-| `ternary` | op | 1.450 | 0.154 | 0.140 |
-| `switch` | op | 1.624 | 0.159 | 0.138 |
-| `strConcat` | op | 1.683 | 0.179 | 0.161 |
-| `strInterp` | op | 1.975 | 0.187 | 0.166 |
-| `arrayDecl` | op | 2.367 | 0.066 | 0.037 |
-| `mapLiteral` | op | 2.931 | 0.216 | 0.179 |
-| `forRange` | op | 0.490 | 0.093 | 0.077 |
-| `forArray` | op | 0.513 | 0.096 | 0.078 |
-| `call0` | call | 1.762 | 0.045 | 0.008 |
-| `call1` | call | 2.539 | 0.051 | 0.008 |
-| `call3` | call | 3.834 | 0.063 | 0.009 |
-| `callCap20` | call | 2.525 | 0.048 | 0.008 |
-| `classCall` | call | 3.485 | 0.127 | 0.095 |
-| `loopCont` | unwind | 0.931 | 0.021 | 0.002 |
-| `tryCatch` | unwind | 8.970 | 6.561 | 0.019 |
-| `classNew` | compound | 16.428 | 0.086 | 0.033 |
-| `arrayCompr` | compound | 0.286 | 0.139 | 0.120 |
+| `noCall` | op | 1.052 | 0.016 | 0.001 |
+| `loopPlain` | op | 0.658 | 0.011 | 0.001 |
+| `postIncr` | op | 0.600 | 0.009 | 0.001 |
+| `arith` | op | 1.331 | 0.022 | 0.002 |
+| `locals` | op | 1.957 | 0.030 | 0.003 |
+| `blocks` | op | 1.558 | 0.029 | 0.003 |
+| `not` | op | 1.125 | 0.017 | 0.004 |
+| `neg` | op | 1.135 | 0.017 | 0.002 |
+| `index` | op | 1.391 | 0.040 | 0.003 |
+| `indexSet` | op | 0.913 | 0.031 | 0.002 |
+| `field` | op | 2.365 | 0.024 | 0.003 |
+| `fieldSet` | op | 1.604 | 0.018 | 0.002 |
+| `method` | op | 3.097 | 0.111 | 0.083 |
+| `ternary` | op | 1.389 | 0.151 | 0.136 |
+| `switch` | op | 1.559 | 0.157 | 0.132 |
+| `strConcat` | op | 1.644 | 0.175 | 0.157 |
+| `strInterp` | op | 1.928 | 0.182 | 0.158 |
+| `arrayDecl` | op | 2.245 | 0.068 | 0.040 |
+| `mapLiteral` | op | 2.830 | 0.220 | 0.179 |
+| `forRange` | op | 0.492 | 0.090 | 0.076 |
+| `forArray` | op | 0.507 | 0.094 | 0.077 |
+| `call0` | call | 1.697 | 0.053 | 0.008 |
+| `call1` | call | 2.383 | 0.058 | 0.008 |
+| `call3` | call | 3.680 | 0.071 | 0.009 |
+| `callCap20` | call | 2.403 | 0.055 | 0.008 |
+| `classCall` | call | 3.392 | 0.127 | 0.098 |
+| `loopCont` | unwind | 0.870 | 0.020 | 0.002 |
+| `tryCatch` | unwind | 8.664 | 6.428 | 0.020 |
+| `classNew` | compound | 13.945 | 0.088 | 0.033 |
+| `arrayCompr` | compound | 0.276 | 0.133 | 0.118 |
 
 </details>
 
@@ -166,30 +166,30 @@ a hot script actually uses, not from the language's edges.
 
 | | interpreted | cppia | cppia + JIT |
 | --- | --- | --- | --- |
-| us per operation (21 cases) | 1.547 | 0.073 | 0.051 |
-| us per call (5 cases) | 2.829 | 0.067 | 0.026 |
-| operation, vs interpreted | 1.0x | 21.3x | 30.1x |
-| call, vs interpreted | 1.0x | 42.3x | 110.1x |
-| corpus total, ms | 7325 | 867 | 138 |
+| us per operation (21 cases) | 1.494 | 0.072 | 0.051 |
+| us per call (5 cases) | 2.711 | 0.073 | 0.026 |
+| operation, vs interpreted | 1.0x | 20.8x | 29.5x |
+| call, vs interpreted | 1.0x | 37.2x | 103.7x |
+| corpus total, ms | 6869 | 855 | 137 |
 
 The total row is a sum over cases of very different cost, so it is not a speedup and should
-not be quoted as one. The single largest case in each column takes 22% (`classNew`) of interpreted, 76% (`tryCatch`) of cppia, 13% (`mapLiteral`) of cppia + JIT. The two
+not be quoted as one. The single largest case in each column takes 20% (`classNew`) of interpreted, 75% (`tryCatch`) of cppia, 13% (`mapLiteral`) of cppia + JIT. The two
 ratio rows above are the comparable figures.
 
 ```mermaid
 xychart-beta
     title "Cost of one operation at 100,000 iterations"
     x-axis ["cppia + JIT", "cppia", "interpreted"]
-    y-axis "microseconds" 0 --> 1.779
-    bar [0.051, 0.073, 1.547]
+    y-axis "microseconds" 0 --> 1.719
+    bar [0.051, 0.072, 1.494]
 ```
 
 ```mermaid
 xychart-beta
     title "Cost of one call at 100,000 iterations"
     x-axis ["cppia + JIT", "cppia", "interpreted"]
-    y-axis "microseconds" 0 --> 3.253
-    bar [0.026, 0.067, 2.829]
+    y-axis "microseconds" 0 --> 3.118
+    bar [0.026, 0.073, 2.711]
 ```
 
 ### What getting ready costs, and when it is repaid
@@ -204,9 +204,8 @@ a module, interpreting finishes first.
 
 | | interpreted | cppia | cppia + JIT |
 | --- | --- | --- | --- |
-| prepare, ms | 1.067 | 8.114 | 9.114 |
-| break-even, operations | n/a | 4,778 | 5,379 |
-
+| prepare, ms | 1.223 | 8.427 | 9.095 |
+| break-even, operations | n/a | 5,064 | 5,452 |
 <!-- END GENERATED -->
 
 ## What the value checking caught
@@ -264,6 +263,15 @@ collator can generate.
 
 Haxe 4.3.7, hxcpp 4.3.2, `-D scriptable -D hxscript_cppia -dce no`, Windows, single machine, one
 sitting, 24-thread build. The library is the working tree.
+
+| part | |
+| --- | --- |
+| CPU | AMD Ryzen 9 3900X, 12 cores / 24 threads |
+| RAM | 32GB DDR4-3200 CL14 |
+| storage | WD Black SN7100 2TB NVMe |
+
+The same machine as the [cross-library comparison](benchmarks.md). Every figure is single-threaded:
+the thread count built the binary, it did not run the corpus.
 
 ## Caveats
 

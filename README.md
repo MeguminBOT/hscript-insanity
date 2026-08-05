@@ -98,7 +98,7 @@ evaluates Haxe-shaped expressions and does that well; what it does not do is let
 The hscript column reflects 2.7.0, the version the benchmark suite actually ran; the absence of
 scripted classes and of single-quote interpolation are both recorded in
 [benchmarks.md](docs/benchmarks.md), which puts six libraries in this family through identical
-scripts. That page is worth reading before picking one. This fork carries the largest language
+scripts. That page is worth reading before picking one. hxScript carries the largest language
 surface and pays for it per operation, while being several times faster per *call*, because it
 signals `return` and `break` with flags where the others throw exceptions. Neither number is the
 whole story, and "fastest" depends entirely on which of the two your scripts do more of.
@@ -198,8 +198,8 @@ variables and imports.
 
 Scripts are interpreted by default. A module can instead be translated to
 [cppia](https://haxe.org/manual/target-cppia.html), hxcpp's own bytecode, and loaded as a real
-`Class<Dynamic>` -- worth about **21x per operation** and **43x per call**, and about **30x** and
-**108x** with hxcpp's JIT enabled on top.
+`Class<Dynamic>` -- worth about **21x per operation** and **37x per call**, and about **30x** and
+**104x** with hxcpp's JIT enabled on top.
 
 ```haxe
 // once, at startup: marks on your own types say where your API lives
@@ -320,12 +320,12 @@ amount of emulation inside a runtime interpreter recovers it.
 ## Lineage
 
 A fork of [inky03/hscript-insanity](https://github.com/inky03/hscript-insanity), itself an
-experimental fork of [hscript](https://github.com/HaxeFoundation/hscript). Upstream drew on
+experimental fork of [hscript](https://github.com/HaxeFoundation/hscript). hscript-insanity drew on
 [hscript-iris](https://github.com/pisayesiwsi/hscript-iris) and
 [RuleScript](https://github.com/Kriptel/RuleScript); both are worth a look, and both are in the
 benchmark comparison.
 
-What this fork adds on top of that upstream: type annotations enforced at runtime, with
+What hxScript adds on top of hscript-insanity: type annotations enforced at runtime, with
 `-D hxscript_dynamic` to opt out and `Int` versus `Float` kept correct either way; abstracts that
 work, scripted or compiled, including operators, array access and `from`/`to`; structural typedefs
 checked by field *type* rather than by name alone; documentation and a runnable example rather than
@@ -334,4 +334,4 @@ that translates a script to cppia bytecode at runtime.
 
 Still a work in progress. The to-do above says what is missing, and
 [parity.md](docs/parity.md) is honest about where scripts diverge from real Haxe. Pull requests
-welcome at [this fork](https://github.com/MeguminBOT/hxscript/pulls).
+welcome at [hxScript](https://github.com/MeguminBOT/hxscript/pulls).

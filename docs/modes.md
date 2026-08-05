@@ -4,7 +4,7 @@ A script can be interpreted or compiled to bytecode, and the bytecode can be jit
 about what choosing between them means for you. The measurements behind every figure quoted here are
 in [`mode-benchmarks.md`](mode-benchmarks.md).
 
-The short version: compiling is worth about **20x** on ordinary work and about **40x** on calls, it
+The short version: compiling is worth about **21x** on ordinary work and about **37x** on calls, it
 costs roughly **7ms per module** to do, and it is decided per module rather than per application. If
 your scripts contain loops, turn it on. If they are short handlers called a few times each, it will
 not pay for itself.
@@ -62,14 +62,14 @@ startup, and you cannot have some modules jitted and others not.
 
 ## What compiling buys
 
-Per **ordinary operation**, about **21x**. Per **call**, about **43x**. Calls gain more because a
+Per **ordinary operation**, about **21x**. Per **call**, about **37x**. Calls gain more because a
 call is where the interpreter does most of its bookkeeping, and bytecode does none of it.
 
-Adding the JIT on top is worth about **1.4x on operations** and **2.5x on calls** -- useful, but not
-another order of magnitude, and the spread matters more than the average. It is 13x on a case that is
-nothing but bytecode and 1.1x on one bounded by string allocation in the runtime, which would not
-care what drove it. The rule of thumb: the JIT speeds up a script's own logic and does nothing for
-time spent inside the standard library.
+Adding the JIT on top is worth about **1.4x on operations** and **2.8x on calls** -- useful, but not
+another order of magnitude, and the spread matters more than the average. It is 16x on a case that is
+nothing but bytecode (`noCall`) and 1.1x on one bounded by string allocation in the runtime
+(`strConcat`), which would not care what drove it. The rule of thumb: the JIT speeds up a script's
+own logic and does nothing for time spent inside the standard library.
 
 **Expect less than this in a real application.** Those figures come from a corpus built to isolate
 the interpreter, where every case is a loop of one operation -- exactly the work bytecode removes. A
@@ -79,11 +79,11 @@ where its time goes. Treat them as a ceiling.
 ## What compiling costs
 
 **About 7ms per module, once.** Getting a module ready costs about 1.2ms interpreted against about
-8.3ms compiled, for a module of 80 small functions. That scales with module size, so treat it as a
+8.4ms compiled, for a module of 80 small functions. That scales with module size, so treat it as a
 shape rather than a constant.
 
 It is charged once against a saving charged per operation, so there is a break-even. For the module
-measured it lands near **4,800 operations** in the life of that module. Anything with a loop in it
+measured it lands near **5,100 operations** in the life of that module. Anything with a loop in it
 clears that inside one frame. A module of short event handlers, each called a handful of times, may
 never clear it, and compiling it is a straight loss.
 
