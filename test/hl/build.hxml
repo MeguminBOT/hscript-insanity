@@ -1,0 +1,11 @@
+# The portable suite on the hl target. Run from the repository root.
+#
+#   haxe test/hl/build.hxml
+#
+# No hl runtime here, so this is a generation check.
+-cp src
+-cp test/common
+-cp test/common/fixtures
+-cp test/lib
+-main AllCommon
+-hl bin_test/hl/all.hl

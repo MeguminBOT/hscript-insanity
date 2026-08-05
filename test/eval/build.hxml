@@ -1,0 +1,13 @@
+# The portable suite on the eval target. Run from the repository root.
+#
+#   haxe test/eval/build.hxml
+#
+# Fastest of the nine and the one to reach for while changing the interpreter, but it is not the one
+# that decides anything: eval boxes differently from a static target, so a coercion bug can pass here
+# and fail on cpp.
+-cp src
+-cp test/common
+-cp test/common/fixtures
+-cp test/lib
+-main AllCommon
+--interp

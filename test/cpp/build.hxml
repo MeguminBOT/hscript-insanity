@@ -1,0 +1,27 @@
+# The portable suite plus the hxcpp-only suite. Run from the repository root.
+#
+#   haxe test/cpp/build.hxml && ./bin_test/cpp/common/AllCommon.exe && ./bin_test/cpp/cppia/AllCpp.exe
+#
+# The reference target: hxcpp is what ships, and the coercion and DCE behaviour the library cares
+# about is its behaviour.
+-cp src
+-cp test/common
+-cp test/common/fixtures
+-cp test/lib
+-main AllCommon
+-cpp bin_test/cpp/common
+
+--next
+
+# The cppia suite. `-D scriptable` and `-dce no` are not tuning: cppia resolves the host's classes by
+# name at load time, and DCE removes whatever no compiled call site references.
+-cp src
+-cp test/common
+-cp test/common/fixtures
+-cp test/lib
+-cp test/cpp
+-D scriptable
+-D hxscript_cppia
+-dce no
+-main AllCpp
+-cpp bin_test/cpp/cppia

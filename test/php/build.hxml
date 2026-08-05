@@ -1,0 +1,11 @@
+# The portable suite on the php target. Run from the repository root.
+#
+#   haxe test/php/build.hxml
+#
+# No php runtime here, so this is a generation check.
+-cp src
+-cp test/common
+-cp test/common/fixtures
+-cp test/lib
+-main AllCommon
+-php bin_test/php
