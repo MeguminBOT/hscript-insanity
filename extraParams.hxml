@@ -1,0 +1,9 @@
+# Applied automatically to anyone using -lib hxscript.
+#
+# Keeps the standard-library types scripts reach by reflection. Dead code elimination decides what to
+# strip by what the COMPILED code references, and a script references nothing at compile time, so
+# under the default -dce std a member no call site happens to use is removed and a script reaching it
+# finds a null field. See docs/embedding.md.
+#
+# -D hxscript_no_keep turns this off.
+--macro hxscript.macro.KeepMacro.run()
