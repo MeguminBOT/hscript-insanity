@@ -7,9 +7,9 @@
 [![stars](https://badgen.net/github/stars/MeguminBOT/hxscript)](https://github.com/MeguminBOT/hxscript/stargazers)
 [![Haxe](https://badgen.net/badge/Haxe/4.3+/orange)](https://haxe.org/)
 
-A Haxe interpreter. It parses Haxe-shaped source and evaluates it directly, with enough of the
-language intact that a script can declare classes, enums, typedefs and abstracts, and extend the
-ones your application already compiled.
+A Haxe interpreter with a runtime compiler. It parses Haxe-shaped source and evaluates it directly,
+with enough of the language intact that a script can declare classes, enums, typedefs and
+abstracts, and extend the ones your application already compiled.
 
 It can also **compile a script to native bytecode while your application is running**, with no Haxe
 toolchain anywhere in sight, which is worth around 20x. See
