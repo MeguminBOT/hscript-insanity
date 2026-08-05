@@ -196,12 +196,11 @@ class CppiaEmitter {
 	var ambientMembers:StringMap<String>;
 
 	/**
-	 * Static properties declared in this batch, as `class.field`, split by which accessor they have.
+	 * `class.field` of every static property with a getter, which must be read through it.
 	 *
 	 * A static read links straight to the storage slot, so unlike a member property the accessor is
 	 * never consulted and has to be called outright.
 	 */
-	/** `class.field` of every static property with a getter, which must be read through it. */
 	var staticGetters:StringMap<Bool>;
 
 	/** `class.field` of every static property with a setter, which must be written through it. */
@@ -2656,21 +2655,6 @@ class CppiaEmitter {
 	}
 
 	/**
-	 * The full path of a class from this batch, given whatever the source called it.
-	 *
-	 * Worth resolving because the alternative is `Dynamic`, and `Dynamic` decides how every later
-	 * access to the value is performed: a field read becomes a lookup by name at runtime rather than
-	 * a known offset, and so does every method call. For a value touched once that is nothing; for
-	 * one touched per column of per frame it is the difference between a renderer that keeps up and
-	 * one that does not.
-	 *
-	 * Only classes declared here qualify. A host class would have to be resolved through the glue,
-	 * and one that turned out not to be there would fail to link and take the whole module with it.
-	 *
-	 * @param path The type name as written, short or fully qualified.
-	 * @return Its full path, or null if this batch does not declare it.
-	 */
-	/**
 	 * Whether an assignment target is a field on something the host owns.
 	 *
 	 * Only a field access qualifies, and only when its object cannot be shown to be a class from this
@@ -2867,6 +2851,15 @@ class CppiaEmitter {
 
 	/**
 	 * Resolves a name to a class this batch declares.
+	 *
+	 * Worth resolving because the alternative is `Dynamic`, and `Dynamic` decides how every later
+	 * access to the value is performed: a field read becomes a lookup by name at runtime rather than
+	 * a known offset, and so does every method call. For a value touched once that is nothing; for
+	 * one touched per column or per frame it is the difference between a renderer that keeps up and
+	 * one that does not.
+	 *
+	 * Only classes declared here qualify. A host class would have to be resolved through the glue,
+	 * and one that turned out not to be there would fail to link and take the whole module with it.
 	 *
 	 * @param path A full path or a short name.
 	 * @return The full path, or null when the batch declares no such class.

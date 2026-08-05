@@ -2334,17 +2334,6 @@ class Interp {
 	}
 
 	/**
-	 * The core evaluator: computes the value of one expression, recursing into its sub-expressions and
-	 * dispatching on the expression kind. Control flow (`break`/`continue`/`return`) is signalled by
-	 * throwing `Stop`.
-	 *
-	 * @param e The expression to evaluate.
-	 * @param t An optional expected type, used to cast the result.
-	 * @param void Whether the value is unused (allows statement-only forms).
-	 * @param mapCompr Whether this is evaluated inside a map comprehension (affects `k => v` handling).
-	 * @return The expression's value.
-	 */
-	/**
 	 * Evaluates a `try`/`catch`, kept out of `expr` deliberately.
 	 *
 	 * `expr` is size-bound on hxcpp: it is one enormous switch, and every line inside it competes
@@ -2893,18 +2882,6 @@ class Interp {
 		}
 	}
 
-	/**
-	 * Applies a type annotation to a value. Abstract `from`/`to` conversions always apply. When
-	 * `Config.typedMode` is on, the value is additionally checked against the declared type: it is
-	 * coerced where Haxe allows an implicit conversion (`Int`->`Float`), passed when already
-	 * assignable, and otherwise rejected with an error -- so a wrong-typed variable, argument, return,
-	 * or `cast(x, T)` throws the way typed Haxe would. When off, non-abstract annotations are ignored.
-	 *
-	 * @param e The value to cast.
-	 * @param type The target type annotation, if any.
-	 * @return The value, coerced to the target where applicable.
-	 * @throws InterpException If typed mode rejects the value, or an abstract can't convert.
-	 */
 	/**
 	 * Checks a non-null value against a core type in typed mode, coercing where Haxe allows it
 	 * implicitly. Split out of `tryCast` so the fast path and the general path share one definition.
@@ -3677,25 +3654,6 @@ class Interp {
 		return Reflect.callMethod(o, f, args);
 	}
 
-	/**
-	 * Evaluates `new cl(args)`: resolves the class (scripted or native) and constructs an instance,
-	 * deferring if the class is an uninitialized scripted type.
-	 *
-	 * @param cl The class name/path.
-	 * @param args Constructor arguments.
-	 * @return The new instance.
-	 */
-	/**
-	 * Whether a value is an instance of the compiled class standing in for a scripted one.
-	 *
-	 * Only asked of a fully compiled world, where `cnew` builds the compiled class, so a value
-	 * annotated with the scripted type holds a native instance and the ordinary check would reject
-	 * the object the interpreter itself just produced.
-	 *
-	 * @param t The declared type.
-	 * @param e The value being checked.
-	 * @return True when the value is that type's compiled form.
-	 */
 	/**
 	 * The class that owns a scripted class's statics.
 	 *

@@ -103,8 +103,9 @@ class AnyMap implements IMap<Dynamic, Dynamic> {
 	/**
 	 * Copies into a map of the same concrete kind, so the copy keeps the original's key semantics
 	 * rather than re-deciding them. A copy taken before the first write is still undecided.
+	 *
+	 * @return A map of the same kind holding the same entries.
 	 */
-	/** @return A map of the same kind holding the same entries. */
 	public function copy():IMap<Dynamic, Dynamic> {
 		var out:AnyMap = new AnyMap();
 		if (inner != null)
