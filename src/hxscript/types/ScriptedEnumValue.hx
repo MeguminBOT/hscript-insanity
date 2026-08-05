@@ -14,7 +14,7 @@ class ScriptedEnumValue implements ICustomEnumValueType {
 	public var index:Int;
 
 	/** The constructor name. */
-	public var constructorName:String;
+	#if (js || lua) @:native("constructorName") #end public var constructor:String;
 
 	/** The constructor arguments, or null for a parameterless constructor. */
 	public var arguments:Array<Dynamic>;
@@ -31,15 +31,15 @@ class ScriptedEnumValue implements ICustomEnumValueType {
 		this.arguments = arguments;
 
 		this.index = index;
-		this.constructorName = (base != null && base.values != null && index >= 0 && index < base.values.length) ? base.values[index] : null;
+		this.constructor = (base != null && base.values != null && index >= 0 && index < base.values.length) ? base.values[index] : null;
 	}
 
 	/** @return `Ctor` or `Ctor(arg,arg)` source-like text. */
 	public function toString():String {
 		if (arguments != null)
-			return '$constructorName(${arguments.join(',')})';
+			return '$constructor(${arguments.join(',')})';
 
-		return constructorName;
+		return constructor;
 	}
 
 	/** @return The enum this value belongs to. */

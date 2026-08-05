@@ -280,7 +280,7 @@ class TypeProxy {
 	 */
 	public static inline function enumConstructor(e:Dynamic):String {
 		if (e is ICustomEnumValueType)
-			return cast(e, ICustomEnumValueType).constructorName;
+			return cast(e, ICustomEnumValueType).constructor;
 
 		return Type.enumConstructor(e);
 	}
@@ -380,7 +380,7 @@ interface ICustomEnumValueType extends ICustomType {
 	public var index:Int;
 
 	/** The value's constructor name. */
-	public var constructorName:String;
+	#if (js || lua) @:native("constructorName") #end public var constructor:String;
 
 	/** The value's constructor arguments. */
 	public var arguments:Array<Dynamic>;
