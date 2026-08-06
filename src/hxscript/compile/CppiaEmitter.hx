@@ -797,7 +797,14 @@ class CppiaEmitter {
 				} else {
 					w.int(1);
 					pushScope();
+
+					// Without this an array literal is built as `Array` while reads inside the
+					// declaring class use the declared `Array.int`, so cppia reads object slots as
+					// ints. Locals and instance fields already infer this; statics did not.
+					expectedArray = elementArray(v.type == null ? null : typeName(v.type));
 					expr(v.expr);
+					expectedArray = null;
+
 					popScope();
 				}
 				w.newline();

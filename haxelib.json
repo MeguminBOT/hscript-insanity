@@ -18,8 +18,8 @@
 		"utility",
 		"game"
 	],
-	"version": "1.1.0",
-	"releasenote": "Adds a runtime compiler: a module can be translated to cppia bytecode while your application runs, with no Haxe toolchain involved, which is worth about 20x on a script's own work. Optional and decided per module, behind `-D hxscript_cppia` here and `-D scriptable` on the host; `Compiler.compile(env)` does the whole integration, and `ExposeMacro` collects what your API offers scripts for the interpreter and the compiler from the same marks. Standard-library types scripts reach by reflection are now kept from being eliminated under the default `-dce std`, which was a long-standing source of reports that looked like library bugs. Also fixes empty array comprehensions returning `[null]`, and array literals annotated with a type that has no runtime identity being rejected outright.",
+	"version": "1.1.1",
+	"releasenote": "Fixes a static variable initialised at its declaration with an array literal being built as an array of objects while reads of it inside its own class used its declared element type, so cppia read object slots as ints and the same array returned different values depending on where it was read from. Reads from other classes were unaffected, which made it look like the field held two sets of values at once. Locals and instance fields already carried the element type through; only statics initialised inline did not.",
 	"contributors": [
 		"MeguminBOT"
 	],
