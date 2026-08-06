@@ -18,8 +18,8 @@
 		"utility",
 		"game"
 	],
-	"version": "1.1.1",
-	"releasenote": "Fixes a static variable initialised at its declaration with an array literal being built as an array of objects while reads of it inside its own class used its declared element type, so cppia read object slots as ints and the same array returned different values depending on where it was read from. Reads from other classes were unaffected, which made it look like the field held two sets of values at once. Locals and instance fields already carried the element type through; only statics initialised inline did not.",
+	"version": "1.1.2",
+	"releasenote": "Three lexer and typing fixes. A dollar sign that begins no interpolation is now a literal dollar without consuming the character after it; previously the character was appended blind, so a string ending in a dollar swallowed its own closing quote and ran on to the next quote elsewhere in the file, reporting the error on an unrelated line. Unary bit-complement is now lexed outside a regex, where it was only ever reached through the regex path and otherwise rejected with the position of the character after it. Nested array literals now carry their declared element type down to the inner arrays, so an array of arrays no longer erases to objects one level in and read back as zeroes under cppia.",
 	"contributors": [
 		"MeguminBOT"
 	],
