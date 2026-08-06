@@ -3,7 +3,7 @@ package hxscript;
 #if (!macro) import hxscript.tools.Defines; #end
 import hxscript.syntax.Expr;
 import hxscript.proxy.*;
-#if hl import hxscript.proxy.HL; #end
+#if hl import hxscript.proxy.HLMath; #end
 
 /**
  * Global, process-wide interpreter configuration: which interpreter class to instantiate, access

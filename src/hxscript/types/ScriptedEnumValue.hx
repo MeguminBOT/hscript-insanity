@@ -14,7 +14,7 @@ class ScriptedEnumValue implements ICustomEnumValueType {
 	public var index:Int;
 
 	/** The constructor name. */
-	public var constructor:String;
+	#if (js || lua) @:native("constructorName") #end public var constructor:String;
 
 	/** The constructor arguments, or null for a parameterless constructor. */
 	public var arguments:Array<Dynamic>;
