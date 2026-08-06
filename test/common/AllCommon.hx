@@ -20,6 +20,7 @@ class AllCommon {
 		{name: 'ClassProbe', run: ClassProbe.run},
 		{name: 'FieldBindTest', run: FieldBindTest.run},
 		{name: 'GapProbe', run: GapProbe.run},
+		{name: 'InterpStringTest', run: InterpStringTest.run},
 		{name: 'LoopTest', run: LoopTest.run},
 		{name: 'PrinterTest', run: PrinterTest.run},
 		{name: 'RangeTest', run: RangeTest.run},

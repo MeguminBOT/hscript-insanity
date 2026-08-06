@@ -372,8 +372,13 @@ class Lexer {
 				} else if (next == '$'.code) {
 					b.addChar(c);
 				} else {
+					// A dollar that begins nothing is a literal dollar, and the character after it has
+					// not been consumed by anything. Push it back rather than appending it blind: it
+					// may be the closing quote, a newline the line counter needs to see, or the end of
+					// input. Appending it swallowed the terminator, so `'$'` ran on to the next quote
+					// somewhere else in the file and reported the failure there.
 					b.addChar(c);
-					b.addChar(next);
+					readPos--;
 				}
 			} else {
 				if (c == 10) {
