@@ -166,6 +166,36 @@ class CppiaTest {
 			public function new() {}
 		');
 
+		// A nested literal has the same hazard one level down: the outer array carried its declared
+		// element type but cleared it before emitting the items, so the inner literals were built
+		// loose while every read of one went through the declared spelling.
+		check('nested array local', 'var d:Array<Array<Int>> = [[1, 2], [3, 4]]; return d[1][0];', '3');
+		check('nested array static, read in class', 'return pick(0, 2);', '87', '
+			public static var TABLE:Array<Array<Int>> = [[0, 52, 87], [1, 2, 3]];
+			public static function pick(a:Int, b:Int):Int {
+				var row:Array<Int> = TABLE[a];
+				return row[b];
+			}
+		');
+		check('nested array static, read outside', 'return T.TABLE[1][2];', '3', '
+			public static var TABLE:Array<Array<Int>> = [[0, 52, 87], [1, 2, 3]];
+		');
+		check('nested array static, summed', 'return total();', '145', '
+			public static var TABLE:Array<Array<Int>> = [[0, 52, 87], [1, 2, 3]];
+			public static function total():Int {
+				var n:Int = 0;
+				for (row in TABLE) for (v in row) n += v;
+				return n;
+			}
+		');
+		check('nested array field', 'var t = new T(); return t.grid[1][1];', '4', '
+			public var grid:Array<Array<Int>> = [[1, 2], [3, 4]];
+			public function new() {}
+		');
+		check('triple nested array', 'var d:Array<Array<Array<Int>>> = [[[5, 6]]]; return d[0][0][1];', '6');
+		check('nested float array', 'var d:Array<Array<Float>> = [[1.5], [2.5]]; return d[1][0];', '2.5');
+		check('nested string array', 'var d:Array<Array<String>> = [["a"], ["b"]]; return d[1][0];', 'b');
+
 		check('static property', 'return T.only;', '42', '
 			public static var only(get, never):Int;
 			static function get_only():Int return 42;

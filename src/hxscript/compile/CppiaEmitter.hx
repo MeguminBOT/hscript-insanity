@@ -119,6 +119,14 @@ class CppiaEmitter {
 	var expectedArray:Null<String> = null;
 
 	/**
+	 * The declared element type of the array literal being emitted, when one was written.
+	 *
+	 * `expectedArray` alone cannot carry this: every array of a non-primitive spells as
+	 * `Array.Object`, so a nested literal has no way to recover what its own elements are.
+	 */
+	var expectedElem:Null<CType> = null;
+
+	/**
 	 * Paths in this batch that were declared as abstracts rather than classes.
 	 *
 	 * An abstract has no runtime form, so a value of one is its underlying value and a method on it
@@ -802,8 +810,10 @@ class CppiaEmitter {
 					// declaring class use the declared `Array.int`, so cppia reads object slots as
 					// ints. Locals and instance fields already infer this; statics did not.
 					expectedArray = elementArray(v.type == null ? null : typeName(v.type));
+					expectedElem = arrayElemOf(v.type);
 					expr(v.expr);
 					expectedArray = null;
+					expectedElem = null;
 
 					popScope();
 				}
@@ -1073,14 +1083,30 @@ class CppiaEmitter {
 					return;
 				}
 				var want:Null<String> = expectedArray;
+				var elem:Null<CType> = expectedElem;
 				expectedArray = null;
+				expectedElem = null;
 
 				w.pos(line);
 				w.token('ADEF');
 				w.type(want == null ? 'Array' : want);
 				w.int(items.length);
-				for (item in items)
+
+				// An array of arrays spells as `Array.Object`, which says nothing about what the
+				// inner ones hold, so the element type has to be handed down from the declaration
+				// rather than read back off the parent's spelling. Without it the inner literals are
+				// built loose while every read of one goes through its declared spelling.
+				var innerWant:Null<String> = arrayNameOf(elem);
+				var innerElem:Null<CType> = arrayElemOf(elem);
+
+				for (item in items) {
+					expectedArray = innerWant;
+					expectedElem = innerElem;
 					expr(item);
+				}
+
+				expectedArray = null;
+				expectedElem = null;
 
 			case ENew(cl, params):
 				// An abstract has nothing to allocate. Its constructor is a static whose leading
@@ -2697,6 +2723,20 @@ class CppiaEmitter {
 	}
 
 	/** An array type carrying an element kind, or null for anything else. */
+	/** The element type of an array type, or null when it is not a written array type. */
+	static function arrayElemOf(t:Null<CType>):Null<CType> {
+		if (t == null)
+			return null;
+		switch (t) {
+			case CTPath(path, params):
+				return (path.join('.') == 'Array' && params != null && params.length == 1) ? params[0] : null;
+			case CTParent(inner) | CTOpt(inner) | CTNamed(_, inner):
+				return arrayElemOf(inner);
+			case _:
+				return null;
+		}
+	}
+
 	static function elementArray(name:Null<String>):Null<String> {
 		return (name != null && name.length > 6 && name.substr(0, 6) == 'Array.') ? name : null;
 	}
@@ -3049,6 +3089,20 @@ class CppiaEmitter {
 	 * @param params The array's type parameters, if written.
 	 * @return The cppia type name.
 	 */
+	/** The cppia spelling for a written array type, or null when it is not one. */
+	function arrayNameOf(t:Null<CType>):Null<String> {
+		if (t == null)
+			return null;
+		switch (t) {
+			case CTPath(path, params):
+				return path.join('.') == 'Array' ? arrayTypeName(params) : null;
+			case CTParent(inner) | CTOpt(inner) | CTNamed(_, inner):
+				return arrayNameOf(inner);
+			case _:
+				return null;
+		}
+	}
+
 	function arrayTypeName(params:Null<Array<CType>>):String {
 		if (params == null || params.length != 1)
 			return 'Array';
