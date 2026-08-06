@@ -16,6 +16,7 @@ class AllCommon {
 		{name: 'AbstractTest', run: AbstractTest.run},
 		{name: 'AccessTest', run: AccessTest.run},
 		{name: 'ArgsTest', run: ArgsTest.run},
+		{name: 'BitwiseTest', run: BitwiseTest.run},
 		{name: 'ClassProbe', run: ClassProbe.run},
 		{name: 'FieldBindTest', run: FieldBindTest.run},
 		{name: 'GapProbe', run: GapProbe.run},

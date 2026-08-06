@@ -611,7 +611,9 @@ class Lexer {
 					char = readChar();
 					if (char == "/".code)
 						return parseRegex();
-					invalidChar(char);
+					this.char = char;
+					this.columnOffset = colOffset;
+					return TOp("~");
 				case "{".code:
 					return TBrOpen;
 				case "}".code:
